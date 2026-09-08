@@ -10,7 +10,7 @@
 
 ## 현재 상태
 
-v1 기능과 첫 번째 UX 확장 작업이 구현·검증된 상태다. 현재 구현 또는 수정 중인 미완료 코드는 없다. Release 빌드와 Core 테스트 15개가 모두 통과했고, 자체 실행 `win-x64` 단일 EXE와 ZIP도 생성·검증했다. `artifacts/`는 생성 산출물이므로 Git에서 제외한다.
+v1 기능과 첫 번째 UX 확장 작업이 구현·검증된 상태다. 현재 구현 또는 수정 중인 미완료 코드는 없다. Release 빌드와 Core 테스트 15개가 모두 통과했고, 자체 실행 `win-x64` 단일 EXE와 ZIP도 생성·검증했다. `artifacts/`는 생성 산출물이므로 Git에서 제외하며, 사용자가 내려받을 배포본은 GitHub `v1.1` Release에 `MyTextEditor.exe`와 `MyTextEditor-win-x64.zip`으로 첨부했다.
 
 ### 완료된 작업
 
@@ -158,7 +158,7 @@ dotnet publish src/MyTextEditor/MyTextEditor.csproj -c Release -r win-x64 --self
 - 수정 문서가 여러 개인 경우의 모든 저장 대화상자 조합은 자동 UI 테스트가 아니라 코드 경로와 수동 스모크 중심으로 확인했다.
 - 간편 조건 입력은 쉼표를 구분자로 사용하므로 검색어 자체에 쉼표를 포함하는 입력 형식은 아직 제공하지 않는다.
 - 대용량 파일은 전체 내용을 메모리에 올리고 WPF `TextBox`로 표시한다. 초대용량 로그 스트리밍은 의도적으로 v1 이후 범위다.
-- `artifacts/`의 EXE와 ZIP은 Git에 포함되지 않는다. 새 소스 변경 후 배포본이 필요하면 다시 publish하고 ZIP을 만들어야 한다.
+- `artifacts/`의 EXE와 ZIP은 Git 히스토리에 포함되지 않고 GitHub Releases에 첨부한다. 현재 배포 위치는 `https://github.com/pubill13/MyTextEditor/releases/tag/v1.1`이다. 새 소스 변경 후에는 다시 publish·ZIP 검증을 수행하고 새 버전 Release에 자산을 올려야 한다.
 
 ## 다음 작업과 우선순위
 
@@ -184,4 +184,3 @@ dotnet publish src/MyTextEditor/MyTextEditor.csproj -c Release -r win-x64 --self
 - 설정과 문서 저장의 임시 파일 교체 방식을 유지한다.
 - 코드 변경 후 최소한 Release 빌드와 Core 전체 테스트를 실행한다. 배포를 갱신했다면 실제 EXE 시작과 ZIP 내부 해시도 확인한다.
 - `bin/`, `obj/`, `artifacts/`, 사용자 설정 파일을 커밋하지 않는다.
-
