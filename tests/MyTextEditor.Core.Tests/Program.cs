@@ -18,7 +18,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Unicode 글자 수 자르기", TestUnicodeCharacterRemoval),
     ("접두/접미 추가", TestPrefixAndSuffix),
     ("구분자 분리와 줄 합치기", TestSplitAndJoin),
-    ("줄번호 추가와 제거", TestLineNumbers)
+    ("줄번호 추가와 제거", TestLineNumbers),
+    ("UTF-8 직접 로드 버퍼", TestUtf8LoadBuffer),
+    ("UTF-16/CP949 UTF-8 변환 버퍼", TestTranscodedLoadBuffer),
+    ("잘못된 UTF-8 버퍼 차단", TestInvalidUtf8Buffer),
+    ("범위 기반 검색과 기존 API 회귀", TestRangeSearch)
 };
 
 var failed = 0;
@@ -294,6 +298,109 @@ static Task TestLineNumbers()
     var foreign = service.RemoveLineNumbers("번호)text\r\n12-other", ")");
     Assert.Equal("번호)text\r\n12-other", foreign.Text);
     Assert.Equal(2, foreign.Summary.SkippedLines);
+    return Task.CompletedTask;
+}
+
+static async Task TestUtf8LoadBuffer()
+{
+    var service = new DocumentFileService();
+    var directory = Path.Combine(Path.GetTempPath(), "MyTextEditor.Core.Tests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try
+    {
+        const string text = "한글😀\0값\n둘째";
+        var body = new UTF8Encoding(false, true).GetBytes(text);
+        var withoutBomPath = Path.Combine(directory, "utf8.txt");
+        await File.WriteAllBytesAsync(withoutBomPath, body);
+        var withoutBom = await service.LoadBufferAsync(withoutBomPath);
+        Assert.SequenceEqual(body, withoutBom.Utf8Buffer.ToArray());
+        Assert.False(withoutBom.HasByteOrderMark);
+        Assert.Equal(65001, withoutBom.OriginalEncoding.CodePage);
+        Assert.Equal("\n", withoutBom.NewLine);
+        Assert.Equal(Path.GetFullPath(withoutBomPath), withoutBom.FilePath);
+
+        var withBomPath = Path.Combine(directory, "utf8-bom.txt");
+        await File.WriteAllBytesAsync(withBomPath, Encoding.UTF8.GetPreamble().Concat(body).ToArray());
+        var withBom = await service.LoadBufferAsync(withBomPath);
+        Assert.SequenceEqual(body, withBom.Utf8Buffer.ToArray());
+        Assert.True(withBom.HasByteOrderMark);
+        Assert.Equal(text, new UTF8Encoding(false, true).GetString(withBom.Utf8Buffer.Span));
+    }
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
+}
+
+static async Task TestTranscodedLoadBuffer()
+{
+    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    var service = new DocumentFileService();
+    var directory = Path.Combine(Path.GetTempPath(), "MyTextEditor.Core.Tests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try
+    {
+        const string unicodeText = "한글😀\0값\r\n둘째";
+        var utf16 = new UnicodeEncoding(false, true, true);
+        var utf16Path = Path.Combine(directory, "utf16.txt");
+        await File.WriteAllBytesAsync(utf16Path,
+            utf16.GetPreamble().Concat(utf16.GetBytes(unicodeText)).ToArray());
+        var utf16Buffer = await service.LoadBufferAsync(utf16Path);
+        Assert.Equal(unicodeText, new UTF8Encoding(false, true).GetString(utf16Buffer.Utf8Buffer.Span));
+        Assert.Equal(1200, utf16Buffer.OriginalEncoding.CodePage);
+        Assert.True(utf16Buffer.HasByteOrderMark);
+        Assert.Equal("\r\n", utf16Buffer.NewLine);
+
+        const string koreanText = "가나다\0ABC\r끝";
+        var cp949 = Encoding.GetEncoding(949,
+            EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        var cp949Path = Path.Combine(directory, "cp949.txt");
+        await File.WriteAllBytesAsync(cp949Path, cp949.GetBytes(koreanText));
+        var cp949Buffer = await service.LoadBufferAsync(cp949Path);
+        Assert.Equal(koreanText, new UTF8Encoding(false, true).GetString(cp949Buffer.Utf8Buffer.Span));
+        Assert.Equal(949, cp949Buffer.OriginalEncoding.CodePage);
+        Assert.False(cp949Buffer.HasByteOrderMark);
+        Assert.Equal("\r", cp949Buffer.NewLine);
+    }
+    finally
+    {
+        Directory.Delete(directory, true);
+    }
+}
+
+static async Task TestInvalidUtf8Buffer()
+{
+    var service = new DocumentFileService();
+    var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".txt");
+    await File.WriteAllBytesAsync(path, [0xEF, 0xBB, 0xBF, 0xC3, 0x28]);
+    try
+    {
+        await Assert.ThrowsAsync<DecoderFallbackException>(() => service.LoadBufferAsync(path));
+        await Assert.ThrowsAsync<DecoderFallbackException>(() => service.LoadAsync(path));
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
+
+static Task TestRangeSearch()
+{
+    const string text = "첫줄\r\n한글 AAA😀\nNUL\0AAA\r마지막";
+    var condition = new TextCondition(TextConditionKind.Contains, "AAA");
+    var options = new SearchOptions(ContextLines: 1);
+    var engine = new TextSearchEngine();
+    var ranges = engine.SearchRanges(text, condition, options);
+    var materialized = engine.Search(text, condition, options);
+
+    Assert.Equal(2, ranges.Count);
+    Assert.Equal("한글 AAA😀", text.Substring(ranges[0].Range.Start, ranges[0].Range.Length));
+    Assert.Equal("NUL\0AAA", text.Substring(ranges[1].Range.Start, ranges[1].Range.Length));
+    Assert.SequenceEqual(new[] { 1, 2, 3 }, ranges[0].Context.Select(item => item.LineNumber));
+    Assert.SequenceEqual(materialized.Select(item => item.LineNumber), ranges.Select(item => item.LineNumber));
+    Assert.SequenceEqual(materialized.Select(item => item.Text),
+        ranges.Select(item => text.Substring(item.Range.Start, item.Range.Length)));
+    Assert.Equal("NUL\0AAA", materialized[1].Text);
     return Task.CompletedTask;
 }
 

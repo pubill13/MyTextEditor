@@ -4,123 +4,149 @@ namespace MyTextEditor.Core;
 
 public sealed class TextSearchEngine
 {
-    public IReadOnlyList<SearchResult> Search(
-        string text,
-        ConditionNode condition,
-        SearchOptions? options = null)
+    public IReadOnlyList<SearchResult> Search(string text, ConditionNode condition, SearchOptions? options = null)
+    {
+        var rangeResults = SearchRanges(text, condition, options);
+        var results = new List<SearchResult>(rangeResults.Count);
+        foreach (var result in rangeResults)
+        {
+            var context = new List<ContextLine>(result.Context.Count);
+            foreach (var item in result.Context)
+            {
+                context.Add(new ContextLine(item.LineNumber,
+                    text.Substring(item.Range.Start, item.Range.Length), item.IsMatch));
+            }
+            results.Add(new SearchResult(result.LineNumber,
+                text.Substring(result.Range.Start, result.Range.Length), context));
+        }
+        return results;
+    }
+
+    public IReadOnlyList<SearchRangeResult> SearchRanges(
+        string text, ConditionNode condition, SearchOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(condition);
         options ??= new SearchOptions();
         if (options.ContextLines < 0)
-        {
             throw new ArgumentOutOfRangeException(nameof(options), "문맥 줄 수는 0 이상이어야 합니다.");
-        }
+        if (!HasValidCondition(condition)) return [];
 
-        if (!HasValidCondition(condition))
-        {
-            return [];
-        }
-
-        var lines = TextLines.Split(text);
-        var results = new List<SearchResult>();
+        var lines = GetLineRanges(text);
+        var matches = new List<int>();
         for (var index = 0; index < lines.Count; index++)
         {
-            if (!Evaluate(condition, lines[index], options))
-            {
-                continue;
-            }
-
-            var context = new List<ContextLine>();
-            var from = Math.Max(0, index - options.ContextLines);
-            var to = Math.Min(lines.Count - 1, index + options.ContextLines);
-            for (var contextIndex = from; contextIndex <= to; contextIndex++)
-            {
-                context.Add(new ContextLine(contextIndex + 1, lines[contextIndex], contextIndex == index));
-            }
-
-            results.Add(new SearchResult(index + 1, lines[index], context));
+            var range = lines[index];
+            if (Evaluate(condition, text.AsSpan(range.Start, range.Length), options)) matches.Add(index);
         }
 
+        var results = new List<SearchRangeResult>(matches.Count);
+        foreach (var matchIndex in matches)
+        {
+            var context = new List<ContextRange>();
+            var from = Math.Max(0, matchIndex - options.ContextLines);
+            var to = Math.Min(lines.Count - 1, matchIndex + options.ContextLines);
+            for (var contextIndex = from; contextIndex <= to; contextIndex++)
+            {
+                context.Add(new ContextRange(contextIndex + 1, lines[contextIndex], contextIndex == matchIndex));
+            }
+            results.Add(new SearchRangeResult(matchIndex + 1, lines[matchIndex], context));
+        }
         return results;
     }
 
-    public bool HasValidCondition(ConditionNode condition) => condition switch
+    public bool HasValidCondition(ConditionNode condition)
     {
-        TextCondition item => !string.IsNullOrWhiteSpace(item.Value),
-        ConditionGroup group => group.Children.Any(HasValidCondition),
-        _ => false
-    };
+        ArgumentNullException.ThrowIfNull(condition);
+        return HasValidConditionCore(condition);
+    }
 
-    private static bool Evaluate(ConditionNode condition, string line, SearchOptions options)
+    private static List<TextRange> GetLineRanges(string text)
     {
-        return condition switch
+        var ranges = new List<TextRange>();
+        var start = 0;
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (text[index] is not ('\r' or '\n')) continue;
+            ranges.Add(new TextRange(start, index - start));
+            if (text[index] == '\r' && index + 1 < text.Length && text[index + 1] == '\n') index++;
+            start = index + 1;
+        }
+        ranges.Add(new TextRange(start, text.Length - start));
+        return ranges;
+    }
+
+    private static bool Evaluate(ConditionNode condition, ReadOnlySpan<char> line, SearchOptions options) =>
+        condition switch
         {
             TextCondition item => EvaluateText(item, line, options),
             ConditionGroup group => EvaluateGroup(group, line, options),
             _ => false
         };
-    }
 
-    private static bool EvaluateGroup(ConditionGroup group, string line, SearchOptions options)
+    private static bool EvaluateGroup(ConditionGroup group, ReadOnlySpan<char> line, SearchOptions options)
     {
-        var validChildren = group.Children.Where(HasValidConditionStatic).ToArray();
-        if (validChildren.Length == 0)
+        var foundValidChild = false;
+        if (group.Operator == ConditionOperator.All)
         {
-            return false;
+            foreach (var child in group.Children)
+            {
+                if (!HasValidConditionCore(child)) continue;
+                foundValidChild = true;
+                if (!Evaluate(child, line, options)) return false;
+            }
+            return foundValidChild;
         }
 
-        return group.Operator == ConditionOperator.All
-            ? validChildren.All(child => Evaluate(child, line, options))
-            : validChildren.Any(child => Evaluate(child, line, options));
+        foreach (var child in group.Children)
+        {
+            if (!HasValidConditionCore(child)) continue;
+            if (Evaluate(child, line, options)) return true;
+        }
+        return false;
     }
 
-    private static bool HasValidConditionStatic(ConditionNode condition) => condition switch
+    private static bool HasValidConditionCore(ConditionNode condition) => condition switch
     {
         TextCondition item => !string.IsNullOrWhiteSpace(item.Value),
-        ConditionGroup group => group.Children.Any(HasValidConditionStatic),
+        ConditionGroup group => HasValidChild(group.Children),
         _ => false
     };
 
-    private static bool EvaluateText(TextCondition condition, string line, SearchOptions options)
+    private static bool HasValidChild(IReadOnlyList<ConditionNode> children)
     {
-        if (string.IsNullOrWhiteSpace(condition.Value))
+        foreach (var child in children)
         {
-            return false;
+            if (HasValidConditionCore(child)) return true;
         }
+        return false;
+    }
 
+    private static bool EvaluateText(TextCondition condition, ReadOnlySpan<char> line, SearchOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(condition.Value)) return false;
+        var comparison = options.MatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var contains = options.WholeWord
-            ? ContainsWholeWord(line, condition.Value, options.MatchCase)
-            : line.Contains(condition.Value, options.MatchCase
-                ? StringComparison.Ordinal
-                : StringComparison.OrdinalIgnoreCase);
-
+            ? ContainsWholeWord(line, condition.Value.AsSpan(), comparison)
+            : line.Contains(condition.Value.AsSpan(), comparison);
         return condition.Kind == TextConditionKind.Contains ? contains : !contains;
     }
 
-    private static bool ContainsWholeWord(string text, string value, bool matchCase)
+    private static bool ContainsWholeWord(
+        ReadOnlySpan<char> text, ReadOnlySpan<char> value, StringComparison comparison)
     {
-        var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var start = 0;
-        while (start <= text.Length - value.Length)
+        var searchedThrough = 0;
+        while (searchedThrough <= text.Length - value.Length)
         {
-            var index = text.IndexOf(value, start, comparison);
-            if (index < 0)
-            {
-                return false;
-            }
-
+            var relativeIndex = text[searchedThrough..].IndexOf(value, comparison);
+            if (relativeIndex < 0) return false;
+            var index = searchedThrough + relativeIndex;
             var leftBoundary = index == 0 || !IsWordCharacter(text[index - 1]);
             var end = index + value.Length;
             var rightBoundary = end == text.Length || !IsWordCharacter(text[end]);
-            if (leftBoundary && rightBoundary)
-            {
-                return true;
-            }
-
-            start = index + 1;
+            if (leftBoundary && rightBoundary) return true;
+            searchedThrough = index + 1;
         }
-
         return false;
     }
 

@@ -33,3 +33,12 @@ public sealed record SearchResult(
     int LineNumber,
     string Text,
     IReadOnlyList<ContextLine> Context);
+
+public readonly record struct TextRange(int Start, int Length);
+
+public sealed record ContextRange(int LineNumber, TextRange Range, bool IsMatch);
+
+public sealed record SearchRangeResult(
+    int LineNumber,
+    TextRange Range,
+    IReadOnlyList<ContextRange> Context);

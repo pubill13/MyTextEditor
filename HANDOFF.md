@@ -2,6 +2,58 @@
 
 최종 갱신: 2026-09-08 (Asia/Seoul)
 
+## v1.2 인수인계 상태
+
+현재 목표는 30MB·약 3천만 자 로그를 빠르게 여는 편집기, 파일 드래그 앤 드롭, 실행별 검색 결과 탭을 제공하는 `1.2.0` 배포다. WPF `TextBox`를 `Scintilla5.NET 7.0.0` 기반 `ScintillaEditorHost`로 교체했고, UTF-8 버퍼를 네이티브 편집기에 직접 한 번 전달한다. UTF-16·CP949만 UTF-8 편집 버퍼로 변환하며 저장 시 원래 인코딩과 BOM·줄바꿈을 보존한다.
+
+### v1.2에서 완료한 작업
+
+- `ScintillaEditorHost`에 로드, 텍스트 조회, 전체 교체, 줄 이동, Undo/Redo, save point, caret·revision·dirty 이벤트, 네이티브 파일 드롭을 캡슐화했다.
+- `DocumentViewModel`의 양방향 전체 문자열 바인딩을 제거했다. Scintilla가 편집 원본이며 `ContentRevision`으로 결과 유효성을 판단한다.
+- `DocumentLoadBuffer`와 `LoadBufferAsync`를 추가했다. 엄격한 UTF-8 검증, BOM 제거, UTF-16 LE/BE·CP949 변환과 NUL 보존을 테스트했다.
+- 범위 기반 `TextSearchEngine.SearchRanges`를 추가해 모든 검색·문맥 줄 문자열 생성을 피했다. 기존 `Search` API는 유지한다.
+- 창과 Scintilla 영역에서 단일·다중 파일 드롭을 받는다. 순서 유지, 열린 파일 중복 방지, 폴더 제외, 실패 일괄 안내를 공통 열기 경로에서 처리한다.
+- 검색할 때마다 `SearchResultSession` 탭을 만든다. 같은 문서와 revision은 참조 계산된 `SearchSnapshot`을 공유하고 마지막 탭이 닫히면 해제한다.
+- 결과 탭은 선택/전체 복사, 줄 번호 포함, 선택/전체 추출, 선택/전체 삭제 미리보기, 개별/다른/모두 닫기를 제공한다. 선택 복사는 문맥 행도 포함하고 전체 복사는 일치 행만 포함한다.
+- 원문 수정 또는 닫힘 뒤에도 스냅샷 결과와 복사를 유지하고 원문 이동·추출·삭제만 비활성화한다. 변환은 별도 고정 `변경 미리보기` 화면에서 기존 내용을 교체한다.
+- `THIRD_PARTY_NOTICES.md`에 Scintilla5.NET의 공식 출처와 MIT 라이선스를 기록했다.
+- 단일 EXE는 Scintilla·Lexilla DLL을 리소스로 포함하고 최초 실행 시 `%LOCALAPPDATA%\MyTextEditor\native\7.0.0\win-x64`에 추출한다. `ScintillaNativeLibrary.SatelliteDirectory`를 이 위치로 지정하므로 별도 runtime 폴더 없이 실행된다.
+- 3천만 자 UTF-8 성능 실행기를 추가했다. 이 PC의 3회 측정은 0.243s, 0.240s, 0.247s, 중앙값 0.243s로 2초 기준을 통과했다.
+- Core 회귀 테스트는 19/19, Release 빌드는 경고 0·오류 0 상태다.
+
+### 현재 수정 중인 작업과 다음 우선순위
+
+구현은 통합됐고 최종 독립 리뷰, 실제 UI 흐름 검증, 자체 포함 publish, GitHub 배포가 남았다.
+
+1. Reviewer가 결과 탭의 선택/전체 복사, stale 원문 차단, snapshot 참조 해제, 드롭 오류 집계를 독립 검토한다.
+2. Release 빌드와 Core 19개 테스트, 성능 실행기를 다시 실행한다.
+3. self-contained `win-x64` 단일 EXE를 publish하고 시작·종료 및 Scintilla native DLL 로딩을 확인한다.
+4. EXE와 ZIP 해시를 확인한 뒤 main 커밋·push, `v1.2` 태그 및 GitHub Release를 만들고 두 자산을 첨부한다.
+
+### v1.2 주요 파일
+
+| 파일 | 역할 |
+| --- | --- |
+| `src/MyTextEditor/Controls/ScintillaEditorHost.cs` | WinFormsHost와 Scintilla 네이티브 편집기 경계 |
+| `src/MyTextEditor.Core/DocumentFileService.cs` | 비동기 원본 바이트 로드, 인코딩 판별과 UTF-8 편집 버퍼 생성 |
+| `src/MyTextEditor.Core/TextSearchEngine.cs` | span 기반 줄 평가와 범위 결과 |
+| `src/MyTextEditor/Models/UiModels.cs` | 검색 스냅샷·세션·표시 행 모델 |
+| `src/MyTextEditor/MainWindow.xaml` | 결과 탭·고정 미리보기·드롭 대상 UI |
+| `src/MyTextEditor/MainWindow.xaml.cs` | 세션 수명, 결과 작업, 공통 다중 파일 열기 |
+| `tests/MyTextEditor.Performance` | 3천만 자 파일 로드+첫 렌더 3회 중앙값 실행기 |
+| `src/MyTextEditor/THIRD_PARTY_NOTICES.md` | Scintilla5.NET 출처와 MIT 고지 |
+
+### v1.2 주의사항과 알려진 한계
+
+- 검색 결과 탭은 실행 중 메모리에만 존재하며 앱 재시작 시 복원하지 않는다. 이는 확정 요구사항이다.
+- 검색 스냅샷은 탭이 존재하는 동안 의도적으로 원문 문자열을 보유한다. 같은 문서·revision에서는 공유되지만 서로 다른 revision 검색은 별도 스냅샷이므로 많은 대형 로그 이력은 메모리를 사용한다.
+- 검색 탭의 stale 여부는 문서 객체가 `Documents`에 남아 있고 revision이 같은지로 판단한다. 원문이 stale일 때 복사 기능까지 막는 회귀를 만들지 않는다.
+- 변환 미리보기의 stale 방어는 검색 세션과 별도인 `_resultDocument`·`_resultSourceRevision` 경로를 사용한다.
+- Scintilla는 WinForms 네이티브 컨트롤이므로 WPF 창의 drop 이벤트만으로는 편집 영역 드롭을 받지 못한다. host의 `FilesDropped` 연결을 유지한다.
+- Scintilla5.NET은 기본적으로 EXE 옆 `runtimes\win-x64\native`를 요구한다. `EnsureNativeLibraries`의 내장 리소스 추출과 `SatelliteDirectory` 설정을 제거하면 단일 EXE가 시작 직후 종료된다.
+- 로딩 성능 수치는 현재 로컬 SSD와 이 PC 기준이다. 성능 실행기는 실제 Scintilla 첫 Render까지 포함하지만 OS 파일 캐시 영향을 받는다.
+- 아래 문서의 v1.1 설명 중 `TextBox` 구조와 15개 테스트 기록은 역사 정보다. 현재 구현 기준은 이 v1.2 섹션을 우선한다.
+
 ## 프로젝트의 현재 목표
 
 복잡한 정규식이나 검색식을 외우지 않아도 줄 단위 검색·추출·삭제·자르기·정리 작업을 쉽게 수행할 수 있는 Windows 데스크톱 텍스트 편집기를 만든다. 대상 환경은 Windows 10/11 x64이며, C#·WPF·.NET 9로 구현한다. UI는 개발자 도구처럼 정돈된 밀도와 라이트·다크 테마를 제공하고, .NET이 설치되지 않은 PC에서도 단일 실행 파일로 사용할 수 있어야 한다.

@@ -31,6 +31,39 @@ public sealed class DocumentFileService
         };
     }
 
+    public async Task<DocumentLoadBuffer> LoadBufferAsync(
+        string filePath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
+        var detected = DetectEncoding(bytes);
+        var preambleLength = detected.HasBom ? detected.Encoding.GetPreamble().Length : 0;
+        var sourceBytes = bytes.AsMemory(preambleLength);
+
+        ReadOnlyMemory<byte> utf8Buffer;
+        string newLine;
+        if (detected.Encoding.CodePage == Encoding.UTF8.CodePage)
+        {
+            StrictUtf8.GetCharCount(sourceBytes.Span);
+            utf8Buffer = sourceBytes;
+            newLine = TextLines.DetectNewLine(sourceBytes.Span);
+        }
+        else
+        {
+            var text = detected.Encoding.GetString(sourceBytes.Span);
+            utf8Buffer = StrictUtf8.GetBytes(text);
+            newLine = TextLines.DetectNewLine(text);
+        }
+
+        return new DocumentLoadBuffer(
+            utf8Buffer,
+            detected.Encoding,
+            detected.HasBom,
+            newLine,
+            Path.GetFullPath(filePath));
+    }
+
     public async Task SaveAsync(DocumentState document, string? filePath = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -101,7 +134,10 @@ public sealed class DocumentFileService
     public static (Encoding Encoding, bool HasBom) DetectEncoding(ReadOnlySpan<byte> bytes)
     {
         if (bytes.StartsWith(Encoding.UTF8.GetPreamble()))
+        {
+            StrictUtf8.GetCharCount(bytes[Encoding.UTF8.GetPreamble().Length..]);
             return (new UTF8Encoding(true, true), true);
+        }
         if (bytes.StartsWith(Encoding.Unicode.GetPreamble()))
             return (new UnicodeEncoding(false, true, true), true);
         if (bytes.StartsWith(Encoding.BigEndianUnicode.GetPreamble()))
@@ -109,7 +145,7 @@ public sealed class DocumentFileService
 
         try
         {
-            StrictUtf8.GetString(bytes);
+            StrictUtf8.GetCharCount(bytes);
             return (new UTF8Encoding(false, true), false);
         }
         catch (DecoderFallbackException)

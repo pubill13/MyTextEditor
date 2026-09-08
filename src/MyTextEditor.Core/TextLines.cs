@@ -61,4 +61,35 @@ internal static class TextLines
         if (cr > 0) return "\r";
         return "\r\n";
     }
+
+    public static string DetectNewLine(ReadOnlySpan<byte> utf8Bytes)
+    {
+        var crlf = 0;
+        var lf = 0;
+        var cr = 0;
+        for (var index = 0; index < utf8Bytes.Length; index++)
+        {
+            if (utf8Bytes[index] == (byte)'\r')
+            {
+                if (index + 1 < utf8Bytes.Length && utf8Bytes[index + 1] == (byte)'\n')
+                {
+                    crlf++;
+                    index++;
+                }
+                else
+                {
+                    cr++;
+                }
+            }
+            else if (utf8Bytes[index] == (byte)'\n')
+            {
+                lf++;
+            }
+        }
+
+        if (crlf >= lf && crlf >= cr && crlf > 0) return "\r\n";
+        if (lf >= cr && lf > 0) return "\n";
+        if (cr > 0) return "\r";
+        return "\r\n";
+    }
 }

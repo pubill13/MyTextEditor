@@ -2,28 +2,24 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Windows.Controls;
+using MyTextEditor.Controls;
 
 namespace MyTextEditor.Models;
 
 public sealed class DocumentViewModel : INotifyPropertyChanged
 {
-    private string _text = string.Empty;
     private bool _isModified;
 
     public string? FilePath { get; set; }
     public Encoding Encoding { get; set; } = new UTF8Encoding(false);
     public bool HasByteOrderMark { get; set; }
     public string NewLine { get; set; } = "\r\n";
-    public TextBox? Editor { get; set; }
+    public ScintillaEditorHost Editor { get; set; } = null!;
     public string DisplayName => FilePath is null ? "새 문서" : Path.GetFileName(FilePath);
     public string TabTitle => IsModified ? $"{DisplayName} •" : DisplayName;
 
-    public string Text
-    {
-        get => _text;
-        set { if (_text == value) return; _text = value; IsModified = true; OnPropertyChanged(); }
-    }
+    public string Text => Editor.GetText();
+    public long ContentRevision => Editor.ContentRevision;
 
     public bool IsModified
     {

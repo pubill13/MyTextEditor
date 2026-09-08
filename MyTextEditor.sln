@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyTextEditor", "src\MyTextE
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyTextEditor.Core.Tests", "tests\MyTextEditor.Core.Tests\MyTextEditor.Core.Tests.csproj", "{EDBB8EBA-D4EF-4E3B-919B-E32768DBD7DB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyTextEditor.Performance", "tests\MyTextEditor.Performance\MyTextEditor.Performance.csproj", "{E742351D-B3E5-4DA0-B253-2AE86FB0971A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{EDBB8EBA-D4EF-4E3B-919B-E32768DBD7DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EDBB8EBA-D4EF-4E3B-919B-E32768DBD7DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EDBB8EBA-D4EF-4E3B-919B-E32768DBD7DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E742351D-B3E5-4DA0-B253-2AE86FB0971A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E742351D-B3E5-4DA0-B253-2AE86FB0971A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E742351D-B3E5-4DA0-B253-2AE86FB0971A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E742351D-B3E5-4DA0-B253-2AE86FB0971A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

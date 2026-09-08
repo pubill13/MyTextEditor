@@ -3,11 +3,16 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>MyTextEditor</AssemblyName>
     <RootNamespace>MyTextEditor</RootNamespace>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <PublishSingleFile>true</PublishSingleFile>
@@ -16,5 +21,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MyTextEditor.Core\MyTextEditor.Core.csproj" />
+    <PackageReference Include="Scintilla5.NET" Version="7.0.0" />
+    <EmbeddedResource Include="$(NuGetPackageRoot)scintilla5.net\7.0.0\runtimes\win-x64\native\Scintilla.dll" LogicalName="MyTextEditor.Native.win-x64.Scintilla.dll" />
+    <EmbeddedResource Include="$(NuGetPackageRoot)scintilla5.net\7.0.0\runtimes\win-x64\native\Lexilla.dll" LogicalName="MyTextEditor.Native.win-x64.Lexilla.dll" />
   </ItemGroup>
 </Project>

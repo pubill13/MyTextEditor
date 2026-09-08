@@ -4,7 +4,8 @@
         xmlns:models="clr-namespace:MyTextEditor.Models"
         Title="나만의 텍스트 편집기" MinWidth="1040" MinHeight="680"
         Width="1380" Height="860" WindowStartupLocation="CenterScreen"
-        Closing="Window_Closing" KeyDown="Window_KeyDown" SizeChanged="Window_SizeChanged">
+        Closing="Window_Closing" KeyDown="Window_KeyDown" SizeChanged="Window_SizeChanged"
+        AllowDrop="True" PreviewDragOver="Window_PreviewDragOver" Drop="Window_Drop" DpiChanged="Window_DpiChanged">
     <Window.Resources>
         <DataTemplate DataType="{x:Type models:SearchResultRow}">
             <Grid Margin="4,2"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="58"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -277,25 +278,38 @@
 
             <GridSplitter Grid.Row="1" Grid.Column="0" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource BorderBrush}" />
             <Border x:Name="ResultPanel" Grid.Row="2" Grid.Column="0" Visibility="Collapsed" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
-                <DockPanel>
-                    <Border DockPanel.Dock="Top" Padding="9,5" Background="{DynamicResource SurfaceAltBrush}">
-                        <DockPanel>
-                            <TextBlock x:Name="ResultHeader" Text="검색 결과" FontWeight="SemiBold" />
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                                <ComboBox x:Name="PreviewFilterCombo" Width="92" ToolTip="미리보기 행 필터" Visibility="Collapsed" SelectionChanged="PreviewFilterCombo_SelectionChanged">
-                                    <ComboBoxItem Content="전체" IsSelected="True"/><ComboBoxItem Content="변경"/><ComboBoxItem Content="건너뜀"/>
-                                </ComboBox>
-                                <Button x:Name="CopyResultsButton" Content="결과 복사" ToolTip="일치한 줄만 클립보드에 복사" Click="CopyResults_Click" />
-                                <Button x:Name="ExtractResultsButton" Content="새 탭으로 추출" ToolTip="일치한 줄을 새 문서로 만들기" Click="ExtractResults_Click" />
-                                <Button x:Name="DeleteResultsButton" Content="일치 줄 삭제" ToolTip="미리보기 후 일치 줄 삭제" Foreground="{DynamicResource DangerBrush}" Click="DeleteResults_Click" />
-                                <Button x:Name="ApplyTransformButton" Content="변경 적용" ToolTip="미리보기 내용을 현재 문서에 적용" Style="{StaticResource PrimaryButton}" Visibility="Collapsed" Click="ApplyTransform_Click" />
-                                <Button x:Name="ResetResultsButton" Content="초기화" ToolTip="현재 검색 결과 또는 미리보기 닫기" Click="ResetResults_Click" />
-                            </StackPanel>
-                        </DockPanel>
-                    </Border>
-                    <Grid>
-                        <ListBox x:Name="SearchResultsList" ItemsSource="{Binding SearchResults}" SelectionChanged="SearchResultsList_SelectionChanged" />
-                        <DataGrid x:Name="PreviewGrid" ItemsSource="{Binding PreviewRows}" AutoGenerateColumns="False" IsReadOnly="True" Visibility="Collapsed">
+                <Grid>
+                    <DockPanel x:Name="SearchResultsView">
+                        <Border DockPanel.Dock="Top" Padding="9,5" Background="{DynamicResource SurfaceAltBrush}">
+                            <DockPanel>
+                                <TextBlock x:Name="SearchSessionStatus" Text="검색 결과" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <WrapPanel DockPanel.Dock="Right" HorizontalAlignment="Right">
+                                    <CheckBox x:Name="IncludeLineNumbersCheck" Content="줄 번호 포함" VerticalAlignment="Center" Checked="IncludeLineNumbers_Changed" Unchecked="IncludeLineNumbers_Changed" />
+                                    <Button Content="선택 복사" Click="CopySelectedResults_Click" />
+                                    <Button Content="전체 복사" Click="CopyAllResults_Click" />
+                                    <Button x:Name="ExtractSelectedButton" Content="선택 추출" Click="ExtractSelectedResults_Click" />
+                                    <Button x:Name="ExtractAllButton" Content="전체 추출" Click="ExtractAllResults_Click" />
+                                    <Button x:Name="DeleteSelectedButton" Content="선택 삭제" Foreground="{DynamicResource DangerBrush}" Click="DeleteSelectedResults_Click" />
+                                    <Button x:Name="DeleteAllButton" Content="전체 삭제" Foreground="{DynamicResource DangerBrush}" Click="DeleteAllResults_Click" />
+                                    <Button Content="다른 결과 닫기" Click="CloseOtherResults_Click" />
+                                    <Button Content="모두 닫기" Click="CloseAllResults_Click" />
+                                </WrapPanel>
+                            </DockPanel>
+                        </Border>
+                        <TabControl x:Name="SearchResultTabs" ItemsSource="{Binding SearchSessions}" SelectionChanged="SearchResultTabs_SelectionChanged">
+                            <TabControl.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" ToolTip="{Binding ToolTip}"><TextBlock Text="{Binding Title}" Margin="0,0,7,0"/><Button Content="×" Tag="{Binding}" Padding="2,0" Margin="0" Background="Transparent" BorderThickness="0" Click="SearchResultClose_Click"/></StackPanel></DataTemplate></TabControl.ItemTemplate>
+                            <TabControl.ContentTemplate><DataTemplate><ListBox ItemsSource="{Binding Rows}" SelectionMode="Extended" Loaded="SearchResultsList_Loaded" MouseDoubleClick="SearchResultsList_MouseDoubleClick" KeyDown="SearchResultsList_KeyDown" /></DataTemplate></TabControl.ContentTemplate>
+                        </TabControl>
+                    </DockPanel>
+                    <DockPanel x:Name="TransformPreviewView" Visibility="Collapsed">
+                        <Border DockPanel.Dock="Top" Padding="9,5" Background="{DynamicResource SurfaceAltBrush}">
+                            <DockPanel><TextBlock x:Name="ResultHeader" Text="변경 미리보기" FontWeight="SemiBold" VerticalAlignment="Center"/><StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <ComboBox x:Name="PreviewFilterCombo" Width="92" ToolTip="미리보기 행 필터" SelectionChanged="PreviewFilterCombo_SelectionChanged"><ComboBoxItem Content="전체" IsSelected="True"/><ComboBoxItem Content="변경"/><ComboBoxItem Content="건너뜀"/></ComboBox>
+                                <Button x:Name="ApplyTransformButton" Content="변경 적용" Style="{StaticResource PrimaryButton}" Click="ApplyTransform_Click" />
+                                <Button Content="미리보기 닫기" Click="ClosePreview_Click" />
+                            </StackPanel></DockPanel>
+                        </Border>
+                        <DataGrid x:Name="PreviewGrid" ItemsSource="{Binding PreviewRows}" AutoGenerateColumns="False" IsReadOnly="True">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="줄" Binding="{Binding LineNumber}" Width="55" />
                                 <DataGridTextColumn Header="변경 전" Binding="{Binding Before}" Width="*" />
@@ -303,8 +317,8 @@
                                 <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="80" />
                             </DataGrid.Columns>
                         </DataGrid>
-                    </Grid>
-                </DockPanel>
+                    </DockPanel>
+                </Grid>
             </Border>
         </Grid>
     </DockPanel>

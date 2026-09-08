@@ -1,18 +1,36 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
+using MyTextEditor.Controls;
 using MyTextEditor.Core;
 using MyTextEditor.Core.Models;
 using MyTextEditor.Models;
 using MyTextEditor.Services;
+using Application = System.Windows.Application;
+using Button = System.Windows.Controls.Button;
+using Brushes = System.Windows.Media.Brushes;
+using Clipboard = System.Windows.Clipboard;
+using ComboBox = System.Windows.Controls.ComboBox;
+using Cursors = System.Windows.Input.Cursors;
+using DpiChangedEventArgs = System.Windows.DpiChangedEventArgs;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MessageBox = System.Windows.MessageBox;
+using Mouse = System.Windows.Input.Mouse;
+using FontFamily = System.Windows.Media.FontFamily;
+using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
+using Orientation = System.Windows.Controls.Orientation;
+using Panel = System.Windows.Controls.Panel;
+using ListBox = System.Windows.Controls.ListBox;
+using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
+using TextBox = System.Windows.Controls.TextBox;
 
 namespace MyTextEditor;
 
@@ -23,10 +41,11 @@ public partial class MainWindow : Window
     private readonly TextTransformService _transformService = new();
     private readonly UserSettings _settings;
     private readonly ConditionEditorNode _rootCondition = new() { IsGroup = true, MatchAll = true };
-    private IReadOnlyList<int> _matchedLineNumbers = [];
+    private readonly Dictionary<(DocumentViewModel Document, long Revision), SearchSnapshot> _searchSnapshots = [];
+    private readonly HashSet<DocumentViewModel> _savingDocuments = [];
     private string? _pendingTransformedText;
     private DocumentViewModel? _resultDocument;
-    private string? _resultSourceText;
+    private long _resultSourceRevision;
     private bool _resultInvalidated;
     private bool _allowClose;
     private bool _closingInProgress;
@@ -36,11 +55,11 @@ public partial class MainWindow : Window
     private readonly string _settingsSnapshot;
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
-    public ObservableCollection<SearchResultRow> SearchResults { get; } = [];
+    public ObservableCollection<SearchResultSession> SearchSessions { get; } = [];
     public ObservableCollection<TransformPreviewRow> PreviewRows { get; } = [];
 
     private DocumentViewModel? CurrentDocument => DocumentTabs.SelectedItem as DocumentViewModel;
-    private TextBox? CurrentEditor => CurrentDocument?.Editor;
+    private ScintillaEditorHost? CurrentEditor => CurrentDocument?.Editor;
 
     public MainWindow()
     {
@@ -74,10 +93,15 @@ public partial class MainWindow : Window
 
     private void NewDocument(string text = "", string? title = null)
     {
-        var document = new DocumentViewModel { Text = text, IsModified = text.Length > 0 };
+        var editor = new ScintillaEditorHost();
+        var document = new DocumentViewModel { Editor = editor };
         if (!string.IsNullOrWhiteSpace(title)) document.FilePath = title;
-        document.Editor = CreateEditor(document);
+        ConfigureEditor(document);
+        editor.SetNewLine(document.NewLine);
+        editor.LoadUtf8(ReadOnlyMemory<byte>.Empty);
+        if (text.Length > 0) editor.ReplaceAll(text);
         Documents.Add(document);
+        document.IsModified = text.Length > 0;
         DocumentTabs.SelectedItem = document;
         EmptyDocumentState.Visibility = Visibility.Collapsed;
         StatusMessage.Text = "새 문서를 만들었습니다.";
@@ -92,36 +116,83 @@ public partial class MainWindow : Window
             Multiselect = true
         };
         if (dialog.ShowDialog(this) != true) return;
-        foreach (var file in dialog.FileNames) await OpenFileAsync(file);
+        await OpenFilesAsync(dialog.FileNames);
     }
 
-    private async Task OpenFileAsync(string filePath)
+    private async Task OpenFileAsync(string filePath) => await OpenFilesAsync([filePath]);
+
+    private async Task OpenFilesAsync(IEnumerable<string> paths)
     {
+        var uniquePaths = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ignoredFolders = 0;
+        foreach (var path in paths)
+        {
+            if (Directory.Exists(path)) { ignoredFolders++; continue; }
+            try
+            {
+                var fullPath = Path.GetFullPath(path);
+                if (seen.Add(fullPath)) uniquePaths.Add(fullPath);
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException) { }
+        }
+        if (uniquePaths.Count == 0)
+        {
+            StatusMessage.Text = ignoredFolders > 0 ? "폴더는 열지 않았습니다. 파일을 놓아 주세요." : "열 수 있는 파일이 없습니다.";
+            return;
+        }
+
+        var errors = new List<string>();
+        var stopwatch = Stopwatch.StartNew();
+        long openedBytes = 0;
+        Mouse.OverrideCursor = Cursors.Wait;
+        StatusMessage.Text = $"{uniquePaths.Count:N0}개 파일을 여는 중…";
         try
         {
-            var alreadyOpen = Documents.FirstOrDefault(item => string.Equals(item.FilePath, Path.GetFullPath(filePath), StringComparison.OrdinalIgnoreCase));
-            if (alreadyOpen is not null) { DocumentTabs.SelectedItem = alreadyOpen; return; }
-
-            var state = await _fileService.LoadAsync(filePath);
-            var document = new DocumentViewModel
+            foreach (var filePath in uniquePaths)
             {
-                FilePath = state.FilePath,
-                Text = state.Text,
-                Encoding = state.Encoding,
-                HasByteOrderMark = state.HasByteOrderMark,
-                NewLine = state.NewLine,
-                IsModified = false
-            };
-            document.Editor = CreateEditor(document);
-            Documents.Add(document);
-            DocumentTabs.SelectedItem = document;
-            AddRecentFile(filePath);
-            StatusMessage.Text = $"{document.DisplayName} 파일을 열었습니다.";
+                try { await OpenFileCoreAsync(filePath); openedBytes += new FileInfo(filePath).Length; }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
+                {
+                    errors.Add($"{Path.GetFileName(filePath)}: {exception.Message}");
+                }
+            }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
+        finally
         {
-            MessageBox.Show(this, $"파일을 열 수 없습니다.\n\n{exception.Message}", "파일 열기", MessageBoxButton.OK, MessageBoxImage.Error);
+            stopwatch.Stop();
+            Mouse.OverrideCursor = null;
         }
+        StatusMessage.Text = errors.Count == 0
+            ? $"{uniquePaths.Count:N0}개 · {FormatFileSize(openedBytes)} · {stopwatch.Elapsed.TotalSeconds:F2}초" + (ignoredFolders > 0 ? $" · 폴더 {ignoredFolders:N0}개 제외" : string.Empty)
+            : $"{uniquePaths.Count - errors.Count:N0}개 · {FormatFileSize(openedBytes)} · {stopwatch.Elapsed.TotalSeconds:F2}초 · 실패 {errors.Count:N0}개";
+        if (errors.Count > 0)
+            MessageBox.Show(this, $"일부 파일을 열 수 없습니다.\n\n{string.Join("\n", errors.Take(12))}", "파일 열기", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private static string FormatFileSize(long bytes) => bytes >= 1024L * 1024 ? $"{bytes / 1024d / 1024d:F1}MB" : bytes >= 1024 ? $"{bytes / 1024d:F1}KB" : $"{bytes}B";
+
+    private async Task OpenFileCoreAsync(string filePath)
+    {
+        var alreadyOpen = Documents.FirstOrDefault(item => string.Equals(item.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
+        if (alreadyOpen is not null) { DocumentTabs.SelectedItem = alreadyOpen; return; }
+        var buffer = await _fileService.LoadBufferAsync(filePath);
+        var editor = new ScintillaEditorHost();
+        var document = new DocumentViewModel
+        {
+            Editor = editor,
+            FilePath = buffer.FilePath,
+            Encoding = buffer.OriginalEncoding,
+            HasByteOrderMark = buffer.HasByteOrderMark,
+            NewLine = buffer.NewLine,
+            IsModified = false
+        };
+        ConfigureEditor(document);
+        editor.SetNewLine(document.NewLine);
+        editor.LoadUtf8(buffer.Utf8Buffer);
+        Documents.Add(document);
+        DocumentTabs.SelectedItem = document;
+        AddRecentFile(filePath);
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveDocumentAsync(CurrentDocument, false);
@@ -130,55 +201,75 @@ public partial class MainWindow : Window
     private async Task<bool> SaveDocumentAsync(DocumentViewModel? document, bool saveAs)
     {
         if (document is null) return true;
-        var path = document.FilePath;
-        if (saveAs || string.IsNullOrWhiteSpace(path))
+        if (!_savingDocuments.Add(document))
         {
-            var dialog = new SaveFileDialog
-            {
-                Title = "다른 이름으로 저장",
-                FileName = document.FilePath is null ? "새 문서.txt" : document.DisplayName,
-                Filter = "텍스트 파일|*.txt|로그 파일|*.log|마크다운|*.md|모든 파일|*.*"
-            };
-            if (dialog.ShowDialog(this) != true) return false;
-            path = dialog.FileName;
+            StatusMessage.Text = $"{document.DisplayName} 파일을 이미 저장하고 있습니다.";
+            return false;
         }
 
-        var state = ToCoreDocument(document);
         try
         {
-            await _fileService.SaveAsync(state, path);
-        }
-        catch (DocumentEncodingException exception)
-        {
-            var answer = MessageBox.Show(this, $"{exception.Message}\n\nUTF-8로 저장할까요?", "문자 인코딩", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (answer != MessageBoxResult.Yes) return false;
-            state.Encoding = new UTF8Encoding(false, true);
-            state.HasByteOrderMark = false;
+            var path = document.FilePath;
+            if (saveAs || string.IsNullOrWhiteSpace(path))
+            {
+                var dialog = new SaveFileDialog
+                {
+                    Title = "다른 이름으로 저장",
+                    FileName = document.FilePath is null ? "새 문서.txt" : document.DisplayName,
+                    Filter = "텍스트 파일|*.txt|로그 파일|*.log|마크다운|*.md|모든 파일|*.*"
+                };
+                if (dialog.ShowDialog(this) != true) return false;
+                path = dialog.FileName;
+            }
+
+            var savedRevision = document.ContentRevision;
+            var state = ToCoreDocument(document);
             try
             {
                 await _fileService.SaveAsync(state, path);
             }
-            catch (Exception retryException) when (retryException is IOException or UnauthorizedAccessException)
+            catch (DocumentEncodingException exception)
             {
-                MessageBox.Show(this, $"UTF-8로도 파일을 저장할 수 없습니다.\n\n{retryException.Message}", "저장", MessageBoxButton.OK, MessageBoxImage.Error);
+                var answer = MessageBox.Show(this, $"{exception.Message}\n\nUTF-8로 저장할까요?", "문자 인코딩", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes) return false;
+                state.Encoding = new UTF8Encoding(false, true);
+                state.HasByteOrderMark = false;
+                try
+                {
+                    await _fileService.SaveAsync(state, path);
+                }
+                catch (Exception retryException) when (retryException is IOException or UnauthorizedAccessException)
+                {
+                    MessageBox.Show(this, $"UTF-8로도 파일을 저장할 수 없습니다.\n\n{retryException.Message}", "저장", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return false;
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(this, $"파일을 저장할 수 없습니다.\n\n{exception.Message}", "저장", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            MessageBox.Show(this, $"파일을 저장할 수 없습니다.\n\n{exception.Message}", "저장", MessageBoxButton.OK, MessageBoxImage.Error);
-            return false;
-        }
 
-        document.FilePath = state.FilePath;
-        document.Encoding = state.Encoding;
-        document.HasByteOrderMark = state.HasByteOrderMark;
-        document.IsModified = false;
-        document.NotifyIdentityChanged();
-        AddRecentFile(path!);
-        UpdateStatus();
-        StatusMessage.Text = $"{document.DisplayName} 파일을 저장했습니다.";
-        return true;
+            document.FilePath = state.FilePath;
+            document.Encoding = state.Encoding;
+            document.HasByteOrderMark = state.HasByteOrderMark;
+            var hasNewerChanges = document.ContentRevision != savedRevision;
+            if (hasNewerChanges)
+                document.IsModified = true;
+            else
+                document.Editor.MarkSaved();
+            document.NotifyIdentityChanged();
+            AddRecentFile(path!);
+            UpdateStatus();
+            StatusMessage.Text = hasNewerChanges
+                ? $"{document.DisplayName} 파일을 저장했습니다. 저장 중 입력한 변경 내용은 아직 저장되지 않았습니다."
+                : $"{document.DisplayName} 파일을 저장했습니다.";
+            return !hasNewerChanges;
+        }
+        finally
+        {
+            _savingDocuments.Remove(document);
+        }
     }
 
     private static DocumentState ToCoreDocument(DocumentViewModel document) => new()
@@ -211,6 +302,7 @@ public partial class MainWindow : Window
             if (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false)) return false;
         }
         Documents.Remove(document);
+        RefreshSearchSessionState();
         EmptyDocumentState.Visibility = Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateStatus();
         return true;
@@ -267,19 +359,24 @@ public partial class MainWindow : Window
         else if (e.Key == Key.F4) { MoveToSearchResult((Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? -1 : 1); e.Handled = true; }
     }
 
-    private void Editor_SelectionChanged(object sender, RoutedEventArgs e) => UpdateStatus();
-    private void Editor_TextChanged(object sender, TextChangedEventArgs e)
+    private void Editor_CaretChanged(object? sender, EventArgs e) => UpdateStatus();
+    private void Editor_RevisionChanged(object? sender, EventArgs e)
     {
-        if (sender is TextBox editor && editor.DataContext is DocumentViewModel document && document == _resultDocument && editor.Text != _resultSourceText)
+        if (sender is ScintillaEditorHost editor && FindDocument(editor) is { } document && document == _resultDocument && document.ContentRevision != _resultSourceRevision)
             InvalidateResults("원문이 변경되었습니다. 검색 또는 미리보기를 다시 실행하세요.");
+        RefreshSearchSessionState();
         UpdateStatus();
+    }
+
+    private void Editor_DirtyChanged(object? sender, EventArgs e)
+    {
+        if (sender is ScintillaEditorHost editor && FindDocument(editor) is { } document)
+            document.IsModified = editor.IsModified;
     }
 
     private void DocumentTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (e.Source != DocumentTabs) return;
-        if (_resultDocument is not null && CurrentDocument != _resultDocument)
-            InvalidateResults("문서 탭이 변경되었습니다. 현재 문서에서 검색 또는 미리보기를 다시 실행하세요.");
         UpdateStatus();
     }
 
@@ -291,42 +388,23 @@ public partial class MainWindow : Window
         {
             CaretStatus.Text = "줄 -, 열 -"; LineCountStatus.Text = "0줄"; EncodingStatus.Text = "-"; NewLineStatus.Text = "-"; return;
         }
-        var caret = editor?.CaretIndex ?? 0;
-        var line = Math.Max(0, editor?.GetLineIndexFromCharacterIndex(caret) ?? 0);
-        var lineStart = Math.Max(0, editor?.GetCharacterIndexFromLineIndex(line) ?? 0);
-        CaretStatus.Text = $"줄 {line + 1}, 열 {caret - lineStart + 1}";
-        LineCountStatus.Text = $"{CountLines(document.Text):N0}줄";
+        CaretStatus.Text = $"줄 {(editor?.CurrentLine ?? 0) + 1}, 열 {(editor?.CurrentColumn ?? 0) + 1}";
+        LineCountStatus.Text = $"{editor?.LineCount ?? 1:N0}줄";
         EncodingStatus.Text = document.Encoding.WebName.ToUpperInvariant();
         NewLineStatus.Text = document.NewLine == "\r\n" ? "CRLF" : document.NewLine == "\n" ? "LF" : "CR";
     }
 
-    private TextBox CreateEditor(DocumentViewModel document)
+    private void ConfigureEditor(DocumentViewModel document)
     {
-        var editor = new TextBox
-        {
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            TextWrapping = TextWrapping.NoWrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(22, 18, 22, 18),
-            UndoLimit = 200,
-            SpellCheck = { IsEnabled = false }
-        };
-        editor.SetResourceReference(Control.FontFamilyProperty, "EditorFontFamily");
-        editor.SetResourceReference(Control.FontSizeProperty, "EditorFontSize");
-        editor.SetBinding(TextBox.TextProperty, new Binding(nameof(DocumentViewModel.Text))
-        {
-            Source = document,
-            Mode = BindingMode.TwoWay,
-            UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
-        });
-        editor.DataContext = document;
-        editor.SelectionChanged += Editor_SelectionChanged;
-        editor.TextChanged += Editor_TextChanged;
-        return editor;
+        var editor = document.Editor;
+        editor.CaretChanged += Editor_CaretChanged;
+        editor.RevisionChanged += Editor_RevisionChanged;
+        editor.DirtyChanged += Editor_DirtyChanged;
+        editor.FilesDropped += paths => _ = Dispatcher.InvokeAsync(async () => await OpenFilesAsync(paths));
+        ApplyEditorAppearance(editor);
     }
+
+    private DocumentViewModel? FindDocument(ScintillaEditorHost editor) => Documents.FirstOrDefault(document => document.Editor == editor);
 
     private void SimpleMode_Click(object sender, RoutedEventArgs e)
     {
@@ -560,21 +638,40 @@ public partial class MainWindow : Window
         {
             var condition = _advancedMode ? ToCoreCondition(_rootCondition) : BuildSimpleCondition();
             var options = new SearchOptions(MatchCaseCheck.IsChecked == true, WholeWordCheck.IsChecked == true, SelectedNumber(ContextLinesCombo));
-            var results = _searchEngine.Search(CurrentDocument.Text, condition, options);
-            SearchResults.Clear();
+            var document = CurrentDocument;
+            var revision = document.ContentRevision;
+            var key = (document, revision);
+            if (!_searchSnapshots.TryGetValue(key, out var snapshot))
+            {
+                snapshot = new SearchSnapshot(document, revision, document.Text, document.NewLine);
+                _searchSnapshots.Add(key, snapshot);
+            }
+            var results = _searchEngine.SearchRanges(snapshot.Text, condition, options);
             var matchedLines = results.Select(result => result.LineNumber).ToHashSet();
-            var displayLines = new Dictionary<int, string>();
+            var displayLines = new Dictionary<int, TextRange>();
             foreach (var result in results)
             {
                 foreach (var context in result.Context)
-                    displayLines.TryAdd(context.LineNumber, context.Text);
+                    displayLines.TryAdd(context.LineNumber, context.Range);
             }
+            var summary = ConditionSummaryText.Text;
+            var shortSummary = summary.Length > 28 ? summary[..28] + "…" : summary;
+            var session = new SearchResultSession
+            {
+                Title = $"{shortSummary} · {results.Count:N0}",
+                ToolTip = $"{document.DisplayName}\n{summary}\n{DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                ConditionSummary = summary,
+                Snapshot = snapshot,
+                MatchedLineNumbers = results.Select(result => result.LineNumber).ToArray()
+            };
             foreach (var line in displayLines.OrderBy(item => item.Key))
-                SearchResults.Add(new SearchResultRow(line.Key, line.Value, !matchedLines.Contains(line.Key)));
-            _matchedLineNumbers = results.Select(result => result.LineNumber).ToArray();
-            CaptureResultSource();
-            ShowSearchResults();
-            ResultHeader.Text = $"검색 결과  ·  {results.Count:N0}개 일치";
+                session.Rows.Add(new SearchResultRow(line.Key, snapshot.Text.Substring(line.Value.Start, line.Value.Length), !matchedLines.Contains(line.Key)));
+            snapshot.ReferenceCount++;
+            SearchSessions.Add(session);
+            SearchResultTabs.SelectedItem = session;
+            if (TransformPreviewView.Visibility != Visibility.Visible)
+                ShowSearchResults();
+            RefreshSearchSessionState();
             StatusMessage.Text = results.Count == 0 ? "일치하는 줄이 없습니다." : $"{results.Count:N0}개 줄을 찾았습니다.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -589,50 +686,84 @@ public partial class MainWindow : Window
         return new ConditionGroup(node.MatchAll ? ConditionOperator.All : ConditionOperator.Any, node.Children.Select(ToCoreCondition).ToArray());
     }
 
-    private void SearchResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (SearchResultsList.SelectedItem is SearchResultRow row) GoToLine(row.LineNumber);
-    }
-
     private void MoveToSearchResult(int direction)
     {
-        if (SearchResults.Count == 0) return;
-        var index = SearchResultsList.SelectedIndex;
-        index = index < 0 ? 0 : (index + direction + SearchResults.Count) % SearchResults.Count;
-        SearchResultsList.SelectedIndex = index;
-        SearchResultsList.ScrollIntoView(SearchResults[index]);
+        if (SearchResultTabs.SelectedItem is not SearchResultSession session || session.Rows.Count == 0 || _activeResultsList is null) return;
+        var index = _activeResultsList.SelectedIndex;
+        index = index < 0 ? 0 : (index + direction + session.Rows.Count) % session.Rows.Count;
+        _activeResultsList.SelectedIndex = index;
+        _activeResultsList.ScrollIntoView(session.Rows[index]);
     }
 
     private void GoToLine(int lineNumber)
     {
         var editor = CurrentEditor;
         if (editor is null || lineNumber < 1 || lineNumber > editor.LineCount) return;
-        var start = editor.GetCharacterIndexFromLineIndex(lineNumber - 1);
-        var length = editor.GetLineLength(lineNumber - 1);
-        editor.Focus(); editor.Select(start, Math.Max(0, length)); editor.ScrollToLine(lineNumber - 1);
+        editor.GoToLine(lineNumber);
     }
 
-    private void CopyResults_Click(object sender, RoutedEventArgs e)
+    private ListBox? _activeResultsList;
+    private SearchResultSession? ActiveSearchSession => SearchResultTabs.SelectedItem as SearchResultSession;
+    private bool IsSessionCurrent(SearchResultSession session) => Documents.Contains(session.Snapshot.Source) && session.Snapshot.Source.ContentRevision == session.Snapshot.Revision;
+    private void SearchResultsList_Loaded(object sender, RoutedEventArgs e) { _activeResultsList = (ListBox)sender; }
+    private void SearchResultsList_MouseDoubleClick(object sender, MouseButtonEventArgs e) => NavigateSelectedResult((ListBox)sender);
+    private void SearchResultsList_KeyDown(object sender, KeyEventArgs e)
     {
-        var matches = SearchResults.Where(item => !item.IsContext).Select(item => item.Text).ToArray();
-        if (matches.Length == 0) return;
-        Clipboard.SetText(string.Join(CurrentDocument?.NewLine ?? Environment.NewLine, matches));
-        StatusMessage.Text = $"일치한 {matches.Length:N0}개 줄만 클립보드에 복사했습니다.";
+        if (e.Key == Key.Enter) { NavigateSelectedResult((ListBox)sender); e.Handled = true; }
+        else if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) != 0) { CopyRows(((ListBox)sender).SelectedItems.Cast<SearchResultRow>()); e.Handled = true; }
     }
-
-    private void ExtractResults_Click(object sender, RoutedEventArgs e)
+    private void NavigateSelectedResult(ListBox list)
     {
-        if (!TryValidateResultSource() || CurrentDocument is null || _matchedLineNumbers.Count == 0) return;
-        var result = _transformService.ExtractLines(CurrentDocument.Text, _matchedLineNumbers, 0, CurrentDocument.NewLine);
-        NewDocument(result.Text);
-        StatusMessage.Text = $"{_matchedLineNumbers.Count:N0}개 줄을 새 탭으로 추출했습니다.";
+        if (ActiveSearchSession is not { } session || list.SelectedItem is not SearchResultRow row || !IsSessionCurrent(session)) return;
+        DocumentTabs.SelectedItem = session.Snapshot.Source;
+        session.Snapshot.Source.Editor.GoToLine(row.LineNumber);
     }
-
-    private void DeleteResults_Click(object sender, RoutedEventArgs e)
+    private void SearchResultTabs_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (e.Source == SearchResultTabs) RefreshSearchSessionState(); }
+    private void IncludeLineNumbers_Changed(object sender, RoutedEventArgs e) { if (ActiveSearchSession is { } session) session.IncludeLineNumbers = IncludeLineNumbersCheck.IsChecked == true; }
+    private void RefreshSearchSessionState()
     {
-        if (!TryValidateResultSource() || CurrentDocument is null || _matchedLineNumbers.Count == 0) return;
-        var result = _transformService.DeleteLines(CurrentDocument.Text, _matchedLineNumbers, CurrentDocument.NewLine);
-        ShowTransformPreview(result, "일치 줄 삭제");
+        if (ActiveSearchSession is not { } session) { SearchSessionStatus.Text = "검색 결과 없음"; return; }
+        IncludeLineNumbersCheck.IsChecked = session.IncludeLineNumbers;
+        var current = IsSessionCurrent(session);
+        SearchSessionStatus.Text = current ? $"{session.Snapshot.Source.DisplayName} · 원문 연결됨" : $"{session.Snapshot.Source.DisplayName} · 원문 변경됨 (복사만 가능)";
+        ExtractSelectedButton.IsEnabled = ExtractAllButton.IsEnabled = DeleteSelectedButton.IsEnabled = DeleteAllButton.IsEnabled = current;
+    }
+    private IEnumerable<SearchResultRow> SelectedMatchRows() => _activeResultsList?.SelectedItems.Cast<SearchResultRow>().Where(row => !row.IsContext) ?? [];
+    private void CopySelectedResults_Click(object sender, RoutedEventArgs e) => CopyRows(_activeResultsList?.SelectedItems.Cast<SearchResultRow>() ?? []);
+    private void CopyAllResults_Click(object sender, RoutedEventArgs e) => CopyRows(ActiveSearchSession?.Rows.Where(row => !row.IsContext) ?? []);
+    private void CopyRows(IEnumerable<SearchResultRow> source)
+    {
+        if (ActiveSearchSession is not { } session) return;
+        var rows = source.ToArray(); if (rows.Length == 0) return;
+        Clipboard.SetText(string.Join(session.Snapshot.NewLine, rows.Select(row => session.IncludeLineNumbers ? $"{row.LineNumber}: {row.Text}" : row.Text)));
+        StatusMessage.Text = $"{rows.Length:N0}개 결과를 복사했습니다.";
+    }
+    private void ExtractSelectedResults_Click(object sender, RoutedEventArgs e) => ExtractSessionRows(SelectedMatchRows().Select(row => row.LineNumber));
+    private void ExtractAllResults_Click(object sender, RoutedEventArgs e) => ExtractSessionRows(ActiveSearchSession?.MatchedLineNumbers ?? []);
+    private void ExtractSessionRows(IEnumerable<int> lines)
+    {
+        if (ActiveSearchSession is not { } session || !IsSessionCurrent(session)) return;
+        var numbers = lines.Distinct().Order().ToArray(); if (numbers.Length == 0) return;
+        var result = _transformService.ExtractLines(session.Snapshot.Source.Text, numbers, 0, session.Snapshot.Source.NewLine);
+        NewDocument(result.Text); StatusMessage.Text = $"{numbers.Length:N0}개 줄을 새 탭으로 추출했습니다.";
+    }
+    private void DeleteSelectedResults_Click(object sender, RoutedEventArgs e) => DeleteSessionRows(SelectedMatchRows().Select(row => row.LineNumber));
+    private void DeleteAllResults_Click(object sender, RoutedEventArgs e) => DeleteSessionRows(ActiveSearchSession?.MatchedLineNumbers ?? []);
+    private void DeleteSessionRows(IEnumerable<int> lines)
+    {
+        if (ActiveSearchSession is not { } session || !IsSessionCurrent(session)) return;
+        var numbers = lines.Distinct().Order().ToArray(); if (numbers.Length == 0) return;
+        DocumentTabs.SelectedItem = session.Snapshot.Source;
+        ShowTransformPreview(_transformService.DeleteLines(session.Snapshot.Source.Text, numbers, session.Snapshot.Source.NewLine), "일치 줄 삭제");
+    }
+    private void SearchResultClose_Click(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is SearchResultSession session) CloseSearchSession(session); e.Handled = true; }
+    private void CloseOtherResults_Click(object sender, RoutedEventArgs e) { if (ActiveSearchSession is not { } keep) return; foreach (var session in SearchSessions.Where(x => x != keep).ToArray()) CloseSearchSession(session); }
+    private void CloseAllResults_Click(object sender, RoutedEventArgs e) { foreach (var session in SearchSessions.ToArray()) CloseSearchSession(session); HideResultPanelIfEmpty(); }
+    private void CloseSearchSession(SearchResultSession session)
+    {
+        SearchSessions.Remove(session); session.Snapshot.ReferenceCount--;
+        if (session.Snapshot.ReferenceCount == 0) _searchSnapshots.Remove((session.Snapshot.Source, session.Snapshot.Revision));
+        RefreshSearchSessionState(); HideResultPanelIfEmpty();
     }
 
     private void TrimOperationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -725,12 +856,9 @@ public partial class MainWindow : Window
         _pendingTransformedText = result.Text;
         CaptureResultSource();
         ResultHeader.Text = $"{title}  ·  변경 {result.Summary.ChangedLines:N0} / 건너뜀 {result.Summary.SkippedLines:N0} / 빈 줄 {result.Summary.EmptyResultLines:N0}";
-        SearchResultsList.Visibility = Visibility.Collapsed;
-        PreviewGrid.Visibility = Visibility.Visible;
-        ApplyTransformButton.Visibility = Visibility.Visible;
+        SearchResultsView.Visibility = Visibility.Collapsed;
+        TransformPreviewView.Visibility = Visibility.Visible;
         ApplyTransformButton.IsEnabled = result.Summary.ChangedLines > 0;
-        PreviewFilterCombo.Visibility = Visibility.Visible;
-        CopyResultsButton.Visibility = ExtractResultsButton.Visibility = DeleteResultsButton.Visibility = Visibility.Collapsed;
         ResultPanel.Visibility = Visibility.Visible;
         ResultRow.MinHeight = 120;
         ResultSplitterRow.Height = new GridLength(5);
@@ -744,16 +872,7 @@ public partial class MainWindow : Window
         if (!TryValidateResultSource() || CurrentDocument is null || _pendingTransformedText is null) return;
         var editor = CurrentEditor;
         if (editor is not null)
-        {
-            editor.BeginChange();
-            editor.SelectAll();
-            editor.SelectedText = _pendingTransformedText;
-            editor.EndChange();
-        }
-        else
-        {
-            CurrentDocument.Text = _pendingTransformedText;
-        }
+            editor.ReplaceAll(_pendingTransformedText);
         _pendingTransformedText = null;
         ApplyTransformButton.Visibility = Visibility.Collapsed;
         StatusMessage.Text = "텍스트 변경을 적용했습니다. Ctrl+Z로 되돌릴 수 있습니다.";
@@ -762,12 +881,8 @@ public partial class MainWindow : Window
 
     private void ShowSearchResults()
     {
-        SearchResultsList.Visibility = Visibility.Visible;
-        PreviewGrid.Visibility = Visibility.Collapsed;
-        PreviewFilterCombo.Visibility = Visibility.Collapsed;
-        ApplyTransformButton.Visibility = Visibility.Collapsed;
-        CopyResultsButton.Visibility = ExtractResultsButton.Visibility = DeleteResultsButton.Visibility = Visibility.Visible;
-        SetResultActionsEnabled(true);
+        SearchResultsView.Visibility = Visibility.Visible;
+        TransformPreviewView.Visibility = Visibility.Collapsed;
         ResultPanel.Visibility = Visibility.Visible;
         ResultRow.MinHeight = 120;
         ResultSplitterRow.Height = new GridLength(5);
@@ -788,36 +903,35 @@ public partial class MainWindow : Window
         foreach (var row in _allPreviewRows.Where(row => filter == "전체" || row.Status == filter)) PreviewRows.Add(row);
     }
 
-    private void ResetResults_Click(object sender, RoutedEventArgs e)
+    private void ClosePreview_Click(object sender, RoutedEventArgs e)
     {
-        SearchResults.Clear();
         PreviewRows.Clear();
         _allPreviewRows.Clear();
-        _matchedLineNumbers = [];
         _pendingTransformedText = null;
         _resultDocument = null;
-        _resultSourceText = null;
+        _resultSourceRevision = 0;
         _resultInvalidated = false;
-        ResultHeader.Text = "검색 결과";
-        ResultPanel.Visibility = Visibility.Collapsed;
-        ResultRow.MinHeight = 0;
-        ResultRow.Height = new GridLength(0);
-        ResultSplitterRow.Height = new GridLength(0);
-        ResultsMenuItem.IsChecked = false;
-        StatusMessage.Text = "결과를 초기화했습니다.";
+        if (SearchSessions.Count > 0) ShowSearchResults(); else HideResultPanelIfEmpty();
+        StatusMessage.Text = "변경 미리보기를 닫았습니다.";
+    }
+
+    private void HideResultPanelIfEmpty()
+    {
+        if (SearchSessions.Count > 0 || TransformPreviewView.Visibility == Visibility.Visible) return;
+        ResultPanel.Visibility = Visibility.Collapsed; ResultRow.MinHeight = 0; ResultRow.Height = new GridLength(0);
+        ResultSplitterRow.Height = new GridLength(0); ResultsMenuItem.IsChecked = false;
     }
 
     private void CaptureResultSource()
     {
         _resultDocument = CurrentDocument;
-        _resultSourceText = CurrentDocument?.Text;
+        _resultSourceRevision = CurrentDocument?.ContentRevision ?? 0;
         _resultInvalidated = false;
-        SetResultActionsEnabled(true);
     }
 
     private bool TryValidateResultSource()
     {
-        var valid = !_resultInvalidated && CurrentDocument is not null && CurrentDocument == _resultDocument && CurrentDocument.Text == _resultSourceText;
+        var valid = !_resultInvalidated && CurrentDocument is not null && CurrentDocument == _resultDocument && CurrentDocument.ContentRevision == _resultSourceRevision;
         if (valid) return true;
         InvalidateResults("문서가 변경되어 이 결과를 적용할 수 없습니다. 검색 또는 미리보기를 다시 실행하세요.");
         MessageBox.Show(this, "결과를 만든 뒤 문서나 원문이 변경되었습니다.\n현재 문서에서 검색 또는 미리보기를 다시 실행해 주세요.", "결과가 만료됨", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -829,17 +943,9 @@ public partial class MainWindow : Window
         if (_resultDocument is null) return;
         _resultInvalidated = true;
         _pendingTransformedText = null;
-        SetResultActionsEnabled(false);
+        ApplyTransformButton.IsEnabled = false;
         ResultHeader.Text = "결과가 만료되었습니다  ·  다시 실행 필요";
         StatusMessage.Text = message;
-    }
-
-    private void SetResultActionsEnabled(bool enabled)
-    {
-        CopyResultsButton.IsEnabled = enabled;
-        ExtractResultsButton.IsEnabled = enabled;
-        DeleteResultsButton.IsEnabled = enabled;
-        ApplyTransformButton.IsEnabled = enabled;
     }
 
     private void ToggleTools_Click(object sender, RoutedEventArgs e)
@@ -869,6 +975,7 @@ public partial class MainWindow : Window
         _settings.Theme = theme == "Dark" ? "Dark" : "Light";
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         dictionaries[0] = new ResourceDictionary { Source = new Uri($"Themes/{_settings.Theme}.xaml", UriKind.Relative) };
+        foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
     }
 
     private void FontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -888,6 +995,7 @@ public partial class MainWindow : Window
         _settings.EditorFontSize = size;
         Application.Current.Resources["EditorFontSize"] = size;
         SelectComboItem(counterpart, size.ToString("0"));
+        foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
     }
 
     private void FontFamilyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -915,6 +1023,29 @@ public partial class MainWindow : Window
         FontFamilyCombo.Text = installed;
         OverflowFontFamilyCombo.Text = installed;
         Application.Current.Resources["EditorFontFamily"] = new FontFamily(installed);
+        foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+    }
+
+    private void ApplyEditorAppearance(ScintillaEditorHost editor)
+    {
+        var dpiScale = IsLoaded ? (float)VisualTreeHelper.GetDpi(this).DpiScaleX : 1f;
+        editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, _settings.Theme == "Dark", dpiScale);
+    }
+
+    private void Window_DpiChanged(object sender, DpiChangedEventArgs e)
+    {
+        foreach (var document in Documents) document.Editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, _settings.Theme == "Dark", (float)e.NewDpi.DpiScaleX);
+    }
+
+    private void Window_PreviewDragOver(object sender, System.Windows.DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void Window_Drop(object sender, System.Windows.DragEventArgs e)
+    {
+        if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths) await OpenFilesAsync(paths);
     }
 
     private void LoadInstalledFonts()

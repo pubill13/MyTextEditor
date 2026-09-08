@@ -13,3 +13,10 @@ public sealed class DocumentState
 
     public string DisplayName => FilePath is null ? "새 문서" : Path.GetFileName(FilePath);
 }
+
+public sealed record DocumentLoadBuffer(
+    ReadOnlyMemory<byte> Utf8Buffer,
+    Encoding OriginalEncoding,
+    bool HasByteOrderMark,
+    string NewLine,
+    string FilePath);
