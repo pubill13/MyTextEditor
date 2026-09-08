@@ -23,12 +23,11 @@
 
 ### 현재 수정 중인 작업과 다음 우선순위
 
-구현은 통합됐고 최종 독립 리뷰, 실제 UI 흐름 검증, 자체 포함 publish, GitHub 배포가 남았다.
+v1.2 구현·독립 리뷰·성능 검증·자체 포함 publish·GitHub 배포까지 완료됐다. Release는 `https://github.com/pubill13/MyTextEditor/releases/tag/v1.2`이며 `MyTextEditor.exe`와 `MyTextEditor-win-x64.zip`이 첨부되어 있다.
 
-1. Reviewer가 결과 탭의 선택/전체 복사, stale 원문 차단, snapshot 참조 해제, 드롭 오류 집계를 독립 검토한다.
-2. Release 빌드와 Core 19개 테스트, 성능 실행기를 다시 실행한다.
-3. self-contained `win-x64` 단일 EXE를 publish하고 시작·종료 및 Scintilla native DLL 로딩을 확인한다.
-4. EXE와 ZIP 해시를 확인한 뒤 main 커밋·push, `v1.2` 태그 및 GitHub Release를 만들고 두 자산을 첨부한다.
+1. 사무실의 실제 대형 로그와 사용 패턴으로 v1.2 체감 성능 및 검색 결과 탭 UX 피드백을 수집한다.
+2. 필요하면 서로 다른 revision의 대형 검색 스냅샷이 차지하는 메모리를 UI에 표시하거나 사용자가 정리하기 쉽게 다듬는다.
+3. 다음 기능 변경 전 v1.2 Release 자산과 현재 main을 기준선으로 사용한다.
 
 ### v1.2 주요 파일
 
