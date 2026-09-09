@@ -21,6 +21,7 @@ public static class TextToolIds
     public const string RemoveBlankLines = "remove-blank-lines";
     public const string CollapseBlankLines = "collapse-blank-lines";
     public const string TrimWhitespace = "trim-whitespace";
+    public const string CleanupLog = "cleanup-log";
     public const string Replace = "replace";
 }
 
@@ -72,6 +73,25 @@ public sealed class SearchInputState
     public List<string> SimpleExcludeTerms { get; set; } = [];
     public SavedConditionNode Condition { get; set; } = new();
     public SavedSearchOptions Options { get; set; } = new();
+
+    public static SearchInputState CreateSimple(IEnumerable<string> allTerms, IEnumerable<string> anyTerms,
+        IEnumerable<string> excludeTerms, SavedSearchOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(allTerms);
+        ArgumentNullException.ThrowIfNull(anyTerms);
+        ArgumentNullException.ThrowIfNull(excludeTerms);
+
+        var state = new SearchInputState
+        {
+            Mode = SavedSearchMode.Simple,
+            SimpleAllTerms = allTerms.ToList(),
+            SimpleAnyTerms = anyTerms.ToList(),
+            SimpleExcludeTerms = excludeTerms.ToList(),
+            Options = options ?? new SavedSearchOptions()
+        };
+        state.Condition = LegacySearchMigration.BuildSimpleCondition(state);
+        return state;
+    }
 }
 
 public sealed class SavedSearch
@@ -127,7 +147,7 @@ public static class SavedSearchHistory
             && left.SimpleAllTerms.SequenceEqual(right.SimpleAllTerms, StringComparer.Ordinal)
             && left.SimpleAnyTerms.SequenceEqual(right.SimpleAnyTerms, StringComparer.Ordinal)
             && left.SimpleExcludeTerms.SequenceEqual(right.SimpleExcludeTerms, StringComparer.Ordinal)
-            && ConditionsEqual(left.Condition, right.Condition);
+            && (left.Mode == SavedSearchMode.Simple || ConditionsEqual(left.Condition, right.Condition));
     }
 
     private static bool ConditionsEqual(SavedConditionNode left, SavedConditionNode right)
@@ -142,6 +162,81 @@ public static class SavedSearchHistory
             && left.Children.Count == right.Children.Count
             && left.Children.Zip(right.Children).All(pair => ConditionsEqual(pair.First, pair.Second));
     }
+}
+
+public static class LegacySearchMigration
+{
+    public static bool TryConvertAdvancedToSimple(SearchInputState source, out SearchInputState simple)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        simple = new SearchInputState();
+        if (source.Mode != SavedSearchMode.Advanced || source.Condition is not
+            { NodeType: SavedConditionNodeType.Group, Operator: SavedConditionOperator.All } root)
+            return false;
+
+        var allTerms = new List<string>();
+        var anyTerms = new List<string>();
+        var excludeTerms = new List<string>();
+        var foundAnyGroup = false;
+
+        foreach (var child in root.Children)
+        {
+            if (child.NodeType == SavedConditionNodeType.Text)
+            {
+                if (!IsSimpleTerm(child.Value)) return false;
+                (child.Kind == SavedTextConditionKind.Contains ? allTerms : excludeTerms).Add(child.Value);
+                continue;
+            }
+
+            if (foundAnyGroup || child.NodeType != SavedConditionNodeType.Group ||
+                child.Operator != SavedConditionOperator.Any || child.Children.Count == 0)
+                return false;
+
+            foreach (var anyChild in child.Children)
+            {
+                if (anyChild.NodeType != SavedConditionNodeType.Text ||
+                    anyChild.Kind != SavedTextConditionKind.Contains || !IsSimpleTerm(anyChild.Value))
+                    return false;
+                anyTerms.Add(anyChild.Value);
+            }
+            foundAnyGroup = true;
+        }
+
+        simple = SearchInputState.CreateSimple(allTerms, anyTerms, excludeTerms, CloneOptions(source.Options));
+        return true;
+    }
+
+    public static SavedConditionNode BuildSimpleCondition(SearchInputState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var children = new List<SavedConditionNode>();
+        children.AddRange(state.SimpleAllTerms.Select(value => Text(SavedTextConditionKind.Contains, value)));
+        if (state.SimpleAnyTerms.Count > 0)
+        {
+            children.Add(new SavedConditionNode
+            {
+                NodeType = SavedConditionNodeType.Group,
+                Operator = SavedConditionOperator.Any,
+                Children = state.SimpleAnyTerms.Select(value => Text(SavedTextConditionKind.Contains, value)).ToList()
+            });
+        }
+        children.AddRange(state.SimpleExcludeTerms.Select(value => Text(SavedTextConditionKind.DoesNotContain, value)));
+        return new SavedConditionNode { NodeType = SavedConditionNodeType.Group, Operator = SavedConditionOperator.All, Children = children };
+    }
+
+    private static SavedConditionNode Text(SavedTextConditionKind kind, string value) =>
+        new() { NodeType = SavedConditionNodeType.Text, Kind = kind, Value = value };
+
+    private static SavedSearchOptions CloneOptions(SavedSearchOptions options) => new()
+    {
+        MatchCase = options.MatchCase,
+        WholeWord = options.WholeWord,
+        ContextLines = options.ContextLines
+    };
+
+    private static bool IsSimpleTerm(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value == value.Trim() && !value.Contains(',') &&
+        !value.Contains('\r') && !value.Contains('\n');
 }
 
 public static class SavedConditionMapper

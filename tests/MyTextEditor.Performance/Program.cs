@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Windows;
 using MyTextEditor.Controls;
@@ -7,6 +8,7 @@ using MyTextEditor.Core;
 using MyTextEditor.Core.Models;
 using MyTextEditor.Models;
 using Application = System.Windows.Application;
+using Forms = System.Windows.Forms;
 
 internal static class Program
 {
@@ -18,6 +20,7 @@ internal static class Program
         var path = Path.Combine(Path.GetTempPath(), "MyTextEditor-30m-utf8.log");
         EnsureFixture(path);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        VerifyEditorShortcutsAndRelease();
         VerifyEditorRoundTrip();
         VerifySettingsModels();
         var times = new List<double>();
@@ -33,7 +36,13 @@ internal static class Program
             stopwatch.Stop();
             times.Add(stopwatch.Elapsed.TotalSeconds);
             Console.WriteLine($"run {run}: {stopwatch.Elapsed.TotalSeconds:F3}s ({buffer.Utf8Buffer.Length:N0} bytes, {host.LineCount:N0} lines)");
+            var closeStopwatch = Stopwatch.StartNew();
+            host.ReleaseResources();
             window.Close();
+            closeStopwatch.Stop();
+            if (closeStopwatch.Elapsed > TimeSpan.FromSeconds(1.5))
+                throw new InvalidOperationException($"30MB 편집기 해제가 종료 기준을 초과했습니다: {closeStopwatch.Elapsed.TotalSeconds:F3}s");
+            Console.WriteLine($"release {run}: {closeStopwatch.Elapsed.TotalSeconds:F3}s (target <= 1.500s)");
         }
         application.Shutdown();
         times.Sort();
@@ -62,8 +71,60 @@ internal static class Program
         host.Redo();
         if (host.GetText() != replacement)
             throw new InvalidOperationException("Scintilla Redo가 변경 내용을 복원하지 않았습니다.");
+        host.ReleaseResources();
         window.Close();
         Console.WriteLine("PASS Scintilla UTF-8/NUL round-trip and single-step Undo/Redo");
+    }
+
+    private static void VerifyEditorShortcutsAndRelease()
+    {
+        var host = new ScintillaEditorHost();
+        var editor = typeof(ScintillaEditorHost).GetField("_editor", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(host)
+            ?? throw new InvalidOperationException("Scintilla editor instance was not found.");
+        var processCmdKey = editor.GetType().GetMethod("ProcessCmdKey", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Scintilla command-key hook was not found.");
+        var expected = new (Forms.Keys Keys, EditorShortcut Shortcut)[]
+        {
+            (Forms.Keys.Control | Forms.Keys.N, EditorShortcut.NewDocument),
+            (Forms.Keys.Control | Forms.Keys.O, EditorShortcut.OpenDocument),
+            (Forms.Keys.Control | Forms.Keys.S, EditorShortcut.SaveDocument),
+            (Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.S, EditorShortcut.SaveDocumentAs),
+            (Forms.Keys.Control | Forms.Keys.W, EditorShortcut.CloseDocument),
+            (Forms.Keys.Control | Forms.Keys.F4, EditorShortcut.CloseDocument),
+            (Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.W, EditorShortcut.CloseAllDocuments),
+            (Forms.Keys.Control | Forms.Keys.F, EditorShortcut.Find),
+            (Forms.Keys.Control | Forms.Keys.H, EditorShortcut.Replace),
+            (Forms.Keys.Control | Forms.Keys.Tab, EditorShortcut.NextDocument),
+            (Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.Tab, EditorShortcut.PreviousDocument),
+            (Forms.Keys.Control | Forms.Keys.PageUp, EditorShortcut.PreviousDocument),
+            (Forms.Keys.Control | Forms.Keys.PageDown, EditorShortcut.NextDocument),
+            (Forms.Keys.F3, EditorShortcut.FindNext),
+            (Forms.Keys.Shift | Forms.Keys.F3, EditorShortcut.FindPrevious)
+        };
+        EditorShortcut? requested = null;
+        host.ShortcutRequested += (_, args) => requested = args.Shortcut;
+        foreach (var item in expected)
+        {
+            requested = null;
+            var arguments = new object[] { Forms.Message.Create(IntPtr.Zero, 0, IntPtr.Zero, IntPtr.Zero), item.Keys };
+            if (processCmdKey.Invoke(editor, arguments) is not true || requested != item.Shortcut)
+                throw new InvalidOperationException($"Editor shortcut was not forwarded: {item.Keys}.");
+        }
+        foreach (var key in new[] { Forms.Keys.Control | Forms.Keys.Z, Forms.Keys.Control | Forms.Keys.Y, Forms.Keys.Control | Forms.Keys.X,
+                     Forms.Keys.Control | Forms.Keys.C, Forms.Keys.Control | Forms.Keys.V, Forms.Keys.Control | Forms.Keys.A })
+        {
+            requested = null;
+            var arguments = new object[] { Forms.Message.Create(IntPtr.Zero, 0, IntPtr.Zero, IntPtr.Zero), key };
+            processCmdKey.Invoke(editor, arguments);
+            if (requested is not null) throw new InvalidOperationException($"Editor command was intercepted: {key}.");
+        }
+        var releaseStopwatch = Stopwatch.StartNew();
+        host.ReleaseResources();
+        releaseStopwatch.Stop();
+        if (releaseStopwatch.Elapsed > TimeSpan.FromMilliseconds(500))
+            throw new InvalidOperationException($"빈 편집기 해제가 종료 기준을 초과했습니다: {releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms");
+        host.ReleaseResources();
+        Console.WriteLine($"PASS editor shortcut forwarding and idempotent resource release ({releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms)");
     }
 
     private static void VerifySettingsModels()
@@ -95,7 +156,50 @@ internal static class Program
         if (history.Count != 20 || history[0].Summary != "검색 24") throw new InvalidOperationException("최근 검색 20개 제한이 올바르지 않습니다.");
         SavedSearchHistory.AddOrMoveToFront(history, history[^1]);
         if (history.Count != 20 || history[0].Summary != "검색 5") throw new InvalidOperationException("최근 검색 중복 이동이 올바르지 않습니다.");
-        Console.WriteLine("PASS saved condition round-trip and recent search history");
+
+        var legacyAdvanced = new SearchInputState
+        {
+            Mode = SavedSearchMode.Advanced,
+            Options = new SavedSearchOptions { MatchCase = true, WholeWord = true, ContextLines = 2 },
+            Condition = new SavedConditionNode
+            {
+                NodeType = SavedConditionNodeType.Group,
+                Operator = SavedConditionOperator.All,
+                Children =
+                [
+                    SavedConditionMapper.FromCore(new TextCondition(TextConditionKind.Contains, "AAA")),
+                    new SavedConditionNode
+                    {
+                        NodeType = SavedConditionNodeType.Group,
+                        Operator = SavedConditionOperator.Any,
+                        Children =
+                        [
+                            SavedConditionMapper.FromCore(new TextCondition(TextConditionKind.Contains, "BBB")),
+                            SavedConditionMapper.FromCore(new TextCondition(TextConditionKind.Contains, "CCC"))
+                        ]
+                    },
+                    SavedConditionMapper.FromCore(new TextCondition(TextConditionKind.DoesNotContain, "제외"))
+                ]
+            }
+        };
+        if (!LegacySearchMigration.TryConvertAdvancedToSimple(legacyAdvanced, out var migrated) ||
+            migrated.Mode != SavedSearchMode.Simple || migrated.SimpleAllTerms is not ["AAA"] ||
+            migrated.SimpleAnyTerms is not ["BBB", "CCC"] || migrated.SimpleExcludeTerms is not ["제외"] ||
+            !migrated.Options.MatchCase || !migrated.Options.WholeWord || migrated.Options.ContextLines != 2)
+            throw new InvalidOperationException("표현 가능한 구버전 고급 조건을 간편 조건으로 변환하지 못했습니다.");
+
+        legacyAdvanced.Condition.Children[1].Children.Add(
+            SavedConditionMapper.FromCore(new TextCondition(TextConditionKind.DoesNotContain, "Any 제외")));
+        if (LegacySearchMigration.TryConvertAdvancedToSimple(legacyAdvanced, out _))
+            throw new InvalidOperationException("간편 조건으로 표현할 수 없는 고급 조건을 허용했습니다.");
+
+        var firstSimple = SearchInputState.CreateSimple(["동일"], [], [], new SavedSearchOptions { ContextLines = 1 });
+        var secondSimple = SearchInputState.CreateSimple(["동일"], [], [], new SavedSearchOptions { ContextLines = 1 });
+        secondSimple.Condition = new SavedConditionNode();
+        if (!SavedSearchHistory.HasSameCriteria(firstSimple, secondSimple))
+            throw new InvalidOperationException("간편 검색 중복 비교가 legacy 조건 DTO에 의존합니다.");
+
+        Console.WriteLine("PASS saved condition round-trip, v1.4 legacy migration, and recent search history");
     }
 
     private static void EnsureFixture(string path)

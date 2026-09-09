@@ -36,6 +36,7 @@
                 <MenuItem x:Name="RecentFilesMenu" Header="최근 파일" />
                 <Separator />
                 <MenuItem Header="현재 탭 닫기(_W)" InputGestureText="Ctrl+W" Click="CloseTab_Click" />
+                <MenuItem Header="모든 탭 닫기" InputGestureText="Ctrl+Shift+W" Click="CloseAllTabs_Click" />
                 <MenuItem Header="끝내기(_X)" Click="Exit_Click" />
             </MenuItem>
             <MenuItem Header="편집(_E)">
@@ -43,6 +44,11 @@
                 <MenuItem Header="다시 실행" InputGestureText="Ctrl+Y" Click="Redo_Click" />
                 <Separator />
                 <MenuItem Header="모두 선택" InputGestureText="Ctrl+A" Click="SelectAll_Click" />
+                <Separator />
+                <MenuItem Header="찾기" InputGestureText="Ctrl+F" Click="Find_Click" />
+                <MenuItem Header="바꾸기" InputGestureText="Ctrl+H" Click="Replace_Click" />
+                <MenuItem Header="다음 검색 결과" InputGestureText="F3" Click="FindNext_Click" />
+                <MenuItem Header="이전 검색 결과" InputGestureText="Shift+F3" Click="FindPrevious_Click" />
             </MenuItem>
             <MenuItem Header="보기(_V)">
                 <MenuItem x:Name="ToolsMenuItem" Header="도구 패널" IsCheckable="True" IsChecked="True" Click="ToggleTools_Click" />
@@ -174,11 +180,9 @@
                                             <TextBlock Text="검색 조건" FontSize="17" FontWeight="SemiBold" />
                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                                 <Button Content="최근 검색 ▾" MinHeight="36" Click="RecentSearches_Click" />
-                                                <Button x:Name="SimpleModeButton" Content="간편" MinHeight="36" Click="SimpleMode_Click" />
-                                                <Button x:Name="AdvancedModeButton" Content="고급" MinHeight="36" Click="AdvancedMode_Click" />
                                             </StackPanel>
                                         </DockPanel>
-                                        <StackPanel x:Name="SimpleConditionsPanel">
+                                        <StackPanel>
                                             <TextBlock Text="쉼표로 여러 검색어를 구분할 수 있습니다." Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" />
                                             <TextBlock Text="모두 포함" Margin="0,5,0,3"/><TextBox x:Name="SimpleAllBox" ToolTip="예: AAA, BBB — 쉼표로 추가" TextChanged="SimpleCondition_TextChanged" KeyDown="SearchInput_KeyDown"/>
                                             <WrapPanel x:Name="SimpleAllTags" Margin="0,4,0,0" />
@@ -186,10 +190,6 @@
                                             <WrapPanel x:Name="SimpleAnyTags" Margin="0,4,0,0" />
                                             <TextBlock Text="제외" Margin="0,8,0,3"/><TextBox x:Name="SimpleExcludeBox" ToolTip="예: 테스트 — 쉼표로 추가" TextChanged="SimpleCondition_TextChanged" KeyDown="SearchInput_KeyDown"/>
                                             <WrapPanel x:Name="SimpleExcludeTags" Margin="0,4,0,0" />
-                                        </StackPanel>
-                                        <StackPanel x:Name="AdvancedConditionsPanel" Visibility="Collapsed">
-                                            <TextBlock Text="각 카드에서 조건과 하위 그룹을 바로 추가할 수 있습니다." Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" TextWrapping="Wrap" />
-                                            <StackPanel x:Name="AdvancedConditionsHost" />
                                         </StackPanel>
                                         <Border Margin="0,10,0,0" Padding="9" CornerRadius="5" Background="{DynamicResource SurfaceAltBrush}">
                                             <TextBlock x:Name="ConditionSummaryText" Text="검색 조건을 입력하세요." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" />
@@ -258,28 +258,40 @@
                                             <CheckBox x:Name="TrimMatchCaseCheck" Content="대소문자 구분" />
                                         </WrapPanel>
                                         <CheckBox x:Name="IncludeBlankLinesCheck" Content="빈 줄에도 적용" Visibility="Collapsed" Margin="0,4"/>
-                                        <Button Content="미리보기" Style="{StaticResource PrimaryButton}" Click="PreviewTrim_Click" />
+                                        <WrapPanel>
+                                            <Button Content="미리보기" Style="{StaticResource PrimaryButton}" Click="PreviewTrim_Click" />
+                                            <Button Content="바로 적용" Click="ApplyTrimDirect_Click" ToolTip="확인창 없이 적용하며 Ctrl+Z로 되돌릴 수 있습니다." />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
                                         <TextBlock Text="빠른 정리" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                        <UniformGrid Columns="2">
-                                            <Button Content="중복 줄 제거" Tag="Duplicate" Click="QuickTransform_Click" />
-                                            <Button Content="빈 줄 제거" Tag="Blank" Click="QuickTransform_Click" />
-                                            <Button Content="빈 줄 합치기" Tag="Collapse" Click="QuickTransform_Click" />
-                                            <Button Content="앞뒤 공백 제거" Tag="Whitespace" Click="QuickTransform_Click" />
-                                        </UniformGrid>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="중복 줄 제거"/><Button Grid.Row="0" Grid.Column="1" Content="미리보기" Tag="Duplicate" ToolTip="중복 줄 제거" Click="QuickTransform_Click"/><Button Grid.Row="0" Grid.Column="2" Content="적용" Tag="Duplicate" ToolTip="중복 줄 제거" Click="ApplyQuickTransform_Click"/>
+                                            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="빈 줄 제거"/><Button Grid.Row="1" Grid.Column="1" Content="미리보기" Tag="Blank" ToolTip="빈 줄 제거" Click="QuickTransform_Click"/><Button Grid.Row="1" Grid.Column="2" Content="적용" Tag="Blank" ToolTip="빈 줄 제거" Click="ApplyQuickTransform_Click"/>
+                                            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="빈 줄 합치기"/><Button Grid.Row="2" Grid.Column="1" Content="미리보기" Tag="Collapse" ToolTip="빈 줄 합치기" Click="QuickTransform_Click"/><Button Grid.Row="2" Grid.Column="2" Content="적용" Tag="Collapse" ToolTip="빈 줄 합치기" Click="ApplyQuickTransform_Click"/>
+                                            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="앞뒤 공백 제거"/><Button Grid.Row="3" Grid.Column="1" Content="미리보기" Tag="Whitespace" ToolTip="앞뒤 공백 제거" Click="QuickTransform_Click"/><Button Grid.Row="3" Grid.Column="2" Content="적용" Tag="Whitespace" ToolTip="앞뒤 공백 제거" Click="ApplyQuickTransform_Click"/>
+                                            <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="로그 정리" ToolTip="ANSI 코드·제어문자·줄 끝 공백·연속 빈 줄을 정리합니다."/><Button Grid.Row="4" Grid.Column="1" Content="미리보기" Tag="LogCleanup" ToolTip="로그 정리" Click="QuickTransform_Click"/><Button Grid.Row="4" Grid.Column="2" Content="적용" Tag="LogCleanup" ToolTip="로그 정리" Click="ApplyQuickTransform_Click"/>
+                                        </Grid>
                                         <Separator Margin="0,10" />
                                         <TextBlock Text="특정 문장 포함 줄 삭제" FontWeight="SemiBold" />
                                         <TextBlock Text="포함된 문장" Margin="0,7,0,3" /><TextBox x:Name="DeleteContainingBox" ToolTip="예: 연결 시간 초과" />
                                         <CheckBox x:Name="DeleteContainingMatchCaseCheck" Content="대소문자 구분" />
-                                        <Button Content="삭제 미리보기" Tag="DeleteContaining" Foreground="{DynamicResource DangerBrush}" Click="PreviewDeleteContaining_Click" />
+                                        <WrapPanel>
+                                            <Button Content="삭제 미리보기" Tag="DeleteContaining" Foreground="{DynamicResource DangerBrush}" Click="PreviewDeleteContaining_Click" />
+                                            <Button Content="바로 삭제" Foreground="{DynamicResource DangerBrush}" Click="ApplyDeleteContainingDirect_Click" ToolTip="확인창 없이 적용하며 Ctrl+Z로 되돌릴 수 있습니다." />
+                                        </WrapPanel>
                                         <Separator Margin="0,10" />
                                         <TextBlock Text="일괄 치환" FontWeight="SemiBold" />
                                         <TextBlock Text="찾을 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceFromBox" />
                                         <TextBlock Text="바꿀 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceToBox" />
-                                        <Button Content="치환 미리보기" Click="PreviewReplace_Click" />
+                                        <WrapPanel>
+                                            <Button Content="치환 미리보기" Click="PreviewReplace_Click" />
+                                            <Button Content="바로 치환" Click="ApplyReplaceDirect_Click" ToolTip="확인창 없이 적용하며 Ctrl+Z로 되돌릴 수 있습니다." />
+                                        </WrapPanel>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

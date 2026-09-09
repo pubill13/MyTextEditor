@@ -12,6 +12,9 @@ var tests = new (string Name, Func<Task> Run)[]
     ("중복/빈 줄 정리", TestLineCleanup),
     ("특정 문장 포함 줄 삭제", TestRemoveLinesContaining),
     ("포함 줄 삭제 경계와 줄바꿈 보존", TestRemoveLinesContainingBoundaries),
+    ("로그 ANSI와 제어문자 정리", TestLogCleanupSequences),
+    ("로그 공백과 원문 보존", TestLogCleanupConservativeRules),
+    ("로그 줄바꿈과 끝 개행 보존", TestLogCleanupNewLines),
     ("추출 및 삭제", TestExtractAndDelete),
     ("UTF-8/UTF-16/CP949 파일 보존", TestFileEncoding),
     ("표현 불가능 문자 저장 차단", TestEncodingLossPrevention),
@@ -184,6 +187,78 @@ static Task TestRemoveLinesContainingBoundaries()
             service.RemoveLinesContaining(unchanged, "없음", newLine: newLine).Text);
     }
 
+    return Task.CompletedTask;
+}
+
+static Task TestLogCleanupSequences()
+{
+    var service = new TextTransformService();
+    var text = "\u001b[31mERROR\u001b[0m\0\u0001 ok\u007f\t  \n"
+        + "\u001b]0;제목\u0007둘째 \n"
+        + "\u001b]8;;https://example.com\u001b\\링크\u001b]8;;\u001b\\";
+    var result = service.CleanupLog(text, "\n");
+
+    Assert.Equal("ERROR ok\n둘째\n링크", result.TransformResult.Text);
+    Assert.Equal(5, result.CleanupSummary.AnsiSequencesRemoved);
+    Assert.Equal(3, result.CleanupSummary.ControlCharactersRemoved);
+    Assert.Equal(4, result.CleanupSummary.TrailingWhitespaceCharactersRemoved);
+    Assert.Equal(0, result.CleanupSummary.CollapsedBlankLines);
+    Assert.Equal(3, result.TransformResult.Summary.ChangedLines);
+
+    var unknown = service.CleanupLog("A\u001bXB\u001b[31", "\n");
+    Assert.Equal("AXB[31", unknown.TransformResult.Text);
+    Assert.Equal(0, unknown.CleanupSummary.AnsiSequencesRemoved);
+    Assert.Equal(2, unknown.CleanupSummary.ControlCharactersRemoved);
+
+    var incompleteOsc = service.CleanupLog("A\u001b]끝나지 않음", "\n");
+    Assert.Equal("A]끝나지 않음", incompleteOsc.TransformResult.Text);
+    Assert.Equal(0, incompleteOsc.CleanupSummary.AnsiSequencesRemoved);
+    Assert.Equal(1, incompleteOsc.CleanupSummary.ControlCharactersRemoved);
+
+    var removableControls = new string(Enumerable.Range(0, 32)
+        .Where(value => value is not (9 or 10 or 13))
+        .Select(value => (char)value)
+        .Append('\u007f')
+        .ToArray());
+    var controls = service.CleanupLog("A" + removableControls + "\tB", "\n");
+    Assert.Equal("A\tB", controls.TransformResult.Text);
+    Assert.Equal(30, controls.CleanupSummary.ControlCharactersRemoved);
+    return Task.CompletedTask;
+}
+
+static Task TestLogCleanupConservativeRules()
+{
+    var service = new TextTransformService();
+    const string text = "\t  들여쓰기  \n같은 줄\n같은 줄\n\n \t\n\n문자열 \\n 유지😀\t";
+    var result = service.CleanupLog(text, "\n");
+
+    Assert.Equal("\t  들여쓰기\n같은 줄\n같은 줄\n\n문자열 \\n 유지😀", result.TransformResult.Text);
+    Assert.Equal(2, result.CleanupSummary.CollapsedBlankLines);
+    Assert.Equal(5, result.CleanupSummary.TrailingWhitespaceCharactersRemoved);
+    Assert.Equal(0, result.CleanupSummary.AnsiSequencesRemoved);
+    Assert.Equal(0, result.CleanupSummary.ControlCharactersRemoved);
+    Assert.Equal(7, result.TransformResult.Preview.Count);
+    Assert.Equal("같은 줄", result.TransformResult.Preview[1].ResultText);
+    Assert.Equal("같은 줄", result.TransformResult.Preview[2].ResultText);
+    return Task.CompletedTask;
+}
+
+static Task TestLogCleanupNewLines()
+{
+    var service = new TextTransformService();
+    foreach (var newLine in new[] { "\r\n", "\n", "\r" })
+    {
+        var withoutTerminal = $"첫  {newLine}{newLine}{newLine}마지막\t";
+        Assert.Equal($"첫{newLine}{newLine}마지막",
+            service.CleanupLog(withoutTerminal, newLine).TransformResult.Text);
+
+        var withTerminal = withoutTerminal + newLine;
+        Assert.Equal($"첫{newLine}{newLine}마지막{newLine}",
+            service.CleanupLog(withTerminal, newLine).TransformResult.Text);
+
+        Assert.Equal(newLine, service.CleanupLog(newLine + newLine, newLine).TransformResult.Text);
+        Assert.Equal(string.Empty, service.CleanupLog(string.Empty, newLine).TransformResult.Text);
+    }
     return Task.CompletedTask;
 }
 

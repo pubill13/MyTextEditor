@@ -17,7 +17,6 @@ using MyTextEditor.Models;
 using MyTextEditor.Services;
 using Application = System.Windows.Application;
 using Button = System.Windows.Controls.Button;
-using Brushes = System.Windows.Media.Brushes;
 using Clipboard = System.Windows.Clipboard;
 using ComboBox = System.Windows.Controls.ComboBox;
 using Cursors = System.Windows.Input.Cursors;
@@ -41,17 +40,16 @@ public partial class MainWindow : Window
     private readonly TextSearchEngine _searchEngine = new();
     private readonly TextTransformService _transformService = new();
     private readonly UserSettings _settings;
-    private readonly ConditionEditorNode _rootCondition = new() { IsGroup = true, MatchAll = true };
     private readonly Dictionary<(DocumentViewModel Document, long Revision), SearchSnapshot> _searchSnapshots = [];
     private readonly HashSet<DocumentViewModel> _savingDocuments = [];
+    private readonly HashSet<DocumentViewModel> _closingDocuments = [];
     private string? _pendingTransformedText;
     private DocumentViewModel? _resultDocument;
     private long _resultSourceRevision;
     private bool _resultInvalidated;
     private bool _allowClose;
     private bool _closingInProgress;
-    private bool _advancedMode;
-    private ConditionEditorNode? _conditionToFocus;
+    private bool _closingAllDocuments;
     private readonly List<TransformPreviewRow> _allPreviewRows = [];
     private string _settingsSnapshot;
     private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -68,7 +66,8 @@ public partial class MainWindow : Window
         new(TextToolIds.RemoveDuplicateLines, "중복 줄 제거", QuickOperation: "Duplicate"),
         new(TextToolIds.RemoveBlankLines, "빈 줄 제거", QuickOperation: "Blank"),
         new(TextToolIds.CollapseBlankLines, "빈 줄 합치기", QuickOperation: "Collapse"),
-        new(TextToolIds.TrimWhitespace, "앞뒤 공백 제거", QuickOperation: "Whitespace")
+        new(TextToolIds.TrimWhitespace, "앞뒤 공백 제거", QuickOperation: "Whitespace"),
+        new(TextToolIds.CleanupLog, "로그 정리", QuickOperation: "LogCleanup")
     ];
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
@@ -84,7 +83,7 @@ public partial class MainWindow : Window
         DataContext = this;
         var loadResult = SettingsService.LoadWithResult();
         _settings = loadResult.Settings;
-        _settingsSnapshot = JsonSerializer.Serialize(_settings);
+        _settingsSnapshot = loadResult.NeedsSave ? string.Empty : JsonSerializer.Serialize(_settings);
         Width = Math.Max(MinWidth, _settings.WindowWidth);
         Height = Math.Max(MinHeight, _settings.WindowHeight);
         RestoreWindowPlacement();
@@ -101,8 +100,6 @@ public partial class MainWindow : Window
         RestorePanelVisibility();
         BuildRecentFilesMenu();
 
-        _rootCondition.Children.Add(new ConditionEditorNode());
-        RenderAdvancedConditions();
         UpdateConditionSummary();
         RestoreWorkState();
         RenderFavoriteTools();
@@ -114,6 +111,13 @@ public partial class MainWindow : Window
         NewDocument();
         if (loadResult.Error is not null)
             Dispatcher.BeginInvoke(() => StatusMessage.Text = $"설정을 불러오지 못해 기본값을 사용했습니다: {loadResult.Error.Message}");
+        else if (loadResult.NeedsSave)
+            Dispatcher.BeginInvoke(() =>
+            {
+                var saved = SaveSettings(false);
+                if (saved && loadResult.RemovedLegacySearchCount > 0)
+                    StatusMessage.Text = $"새 검색 방식으로 바꿀 수 없는 현재 조건 또는 검색 기록 {loadResult.RemovedLegacySearchCount:N0}개를 정리했습니다.";
+            });
     }
 
     private void New_Click(object sender, RoutedEventArgs e) => NewDocument();
@@ -320,32 +324,60 @@ public partial class MainWindow : Window
         if (CurrentDocument is not null) await CloseDocumentAsync(CurrentDocument);
     }
 
+    private async void CloseAllTabs_Click(object sender, RoutedEventArgs e) => await CloseAllDocumentsAsync();
+
     private async Task<bool> CloseDocumentAsync(DocumentViewModel document)
     {
-        if (document.IsModified)
+        if (_closingAllDocuments || !_closingDocuments.Add(document)) return false;
+        try
         {
-            var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "문서 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (answer == MessageBoxResult.Cancel) return false;
-            if (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false)) return false;
+            if (document.IsModified)
+            {
+                var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "문서 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                if (answer == MessageBoxResult.Cancel) return false;
+                if (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false)) return false;
+            }
+            if (!Documents.Contains(document)) return false;
+            RemoveDocument(document);
+            return true;
         }
+        finally
+        {
+            _closingDocuments.Remove(document);
+        }
+    }
+
+    private void RemoveDocument(DocumentViewModel document)
+    {
         Documents.Remove(document);
+        document.Editor.ReleaseResources();
         RefreshSearchSessionState();
         EmptyDocumentState.Visibility = Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateStatus();
-        return true;
     }
 
     private void Undo_Click(object sender, RoutedEventArgs e) { if (CurrentEditor?.CanUndo == true) CurrentEditor.Undo(); }
     private void Redo_Click(object sender, RoutedEventArgs e) { if (CurrentEditor?.CanRedo == true) CurrentEditor.Redo(); }
     private void SelectAll_Click(object sender, RoutedEventArgs e) => CurrentEditor?.SelectAll();
+    private void Find_Click(object sender, RoutedEventArgs e) => ShowSearchInput();
+    private void Replace_Click(object sender, RoutedEventArgs e) => ShowReplaceInput();
+    private void FindNext_Click(object sender, RoutedEventArgs e) => MoveToSearchResult(1);
+    private void FindPrevious_Click(object sender, RoutedEventArgs e) => MoveToSearchResult(-1);
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) return;
+        if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0)
+        {
+            e.Cancel = true;
+            StatusMessage.Text = "진행 중인 문서 저장 또는 닫기가 끝난 뒤 다시 시도하세요.";
+            return;
+        }
         if (!Documents.Any(document => document.IsModified))
         {
-            SaveSettings();
+            _closingInProgress = true;
+            CompleteShutdown();
             return;
         }
         e.Cancel = true;
@@ -357,9 +389,25 @@ public partial class MainWindow : Window
             return;
         }
 
-        SaveSettings();
+        CompleteShutdown();
         _allowClose = true;
         Close();
+    }
+
+    private void CompleteShutdown()
+    {
+        _settingsSaveTimer.Stop();
+        Hide();
+        if (!SaveSettings(false))
+        {
+            Show();
+            MessageBox.Show(this, StatusMessage.Text, "설정 저장", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Hide();
+        }
+        foreach (var document in Documents)
+            document.Editor.ReleaseResources();
+        SearchSessions.Clear();
+        _searchSnapshots.Clear();
     }
 
     private async Task<bool> ConfirmCloseAllAsync()
@@ -376,14 +424,105 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
-        if (e.Key == Key.N) { NewDocument(); e.Handled = true; }
-        else if (e.Key == Key.O) { Open_Click(sender, new RoutedEventArgs()); e.Handled = true; }
-        else if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Shift) != 0) { SaveAs_Click(sender, new RoutedEventArgs()); e.Handled = true; }
-        else if (e.Key == Key.S) { Save_Click(sender, new RoutedEventArgs()); e.Handled = true; }
-        else if (e.Key == Key.W) { CloseTab_Click(sender, new RoutedEventArgs()); e.Handled = true; }
-        else if (e.Key == Key.F) { ToolTabs.SelectedIndex = 0; (_advancedMode ? (FrameworkElement)AdvancedConditionsHost : SimpleAllBox).Focus(); e.Handled = true; }
-        else if (e.Key == Key.F4) { MoveToSearchResult((Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? -1 : 1); e.Handled = true; }
+        if (!TryMapShortcut(e.Key, Keyboard.Modifiers, out var shortcut)) return;
+        e.Handled = true;
+        ExecuteShortcut(shortcut);
+    }
+
+    private static bool TryMapShortcut(Key key, ModifierKeys modifiers, out EditorShortcut shortcut)
+    {
+        shortcut = default;
+        if (modifiers == ModifierKeys.Control)
+        {
+            shortcut = key switch
+            {
+                Key.N => EditorShortcut.NewDocument,
+                Key.O => EditorShortcut.OpenDocument,
+                Key.S => EditorShortcut.SaveDocument,
+                Key.W or Key.F4 => EditorShortcut.CloseDocument,
+                Key.F => EditorShortcut.Find,
+                Key.H => EditorShortcut.Replace,
+                Key.Tab or Key.PageDown => EditorShortcut.NextDocument,
+                Key.PageUp => EditorShortcut.PreviousDocument,
+                _ => default
+            };
+            return key is Key.N or Key.O or Key.S or Key.W or Key.F4 or Key.F or Key.H or Key.Tab or Key.PageDown or Key.PageUp;
+        }
+        if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            shortcut = key switch
+            {
+                Key.S => EditorShortcut.SaveDocumentAs,
+                Key.W => EditorShortcut.CloseAllDocuments,
+                Key.Tab => EditorShortcut.PreviousDocument,
+                _ => default
+            };
+            return key is Key.S or Key.W or Key.Tab;
+        }
+        if (modifiers == ModifierKeys.None && key == Key.F3) { shortcut = EditorShortcut.FindNext; return true; }
+        if (modifiers == ModifierKeys.Shift && key == Key.F3) { shortcut = EditorShortcut.FindPrevious; return true; }
+        return false;
+    }
+
+    private void Editor_ShortcutRequested(object? sender, EditorShortcutEventArgs e) =>
+        Dispatcher.BeginInvoke(() => ExecuteShortcut(e.Shortcut));
+
+    private void ExecuteShortcut(EditorShortcut shortcut)
+    {
+        switch (shortcut)
+        {
+            case EditorShortcut.NewDocument: NewDocument(); break;
+            case EditorShortcut.OpenDocument: Open_Click(this, new RoutedEventArgs()); break;
+            case EditorShortcut.SaveDocument: Save_Click(this, new RoutedEventArgs()); break;
+            case EditorShortcut.SaveDocumentAs: SaveAs_Click(this, new RoutedEventArgs()); break;
+            case EditorShortcut.CloseDocument: CloseTab_Click(this, new RoutedEventArgs()); break;
+            case EditorShortcut.CloseAllDocuments: _ = CloseAllDocumentsAsync(); break;
+            case EditorShortcut.Find: ShowSearchInput(); break;
+            case EditorShortcut.Replace: ShowReplaceInput(); break;
+            case EditorShortcut.NextDocument: SelectRelativeDocument(1); break;
+            case EditorShortcut.PreviousDocument: SelectRelativeDocument(-1); break;
+            case EditorShortcut.FindNext: MoveToSearchResult(1); break;
+            case EditorShortcut.FindPrevious: MoveToSearchResult(-1); break;
+        }
+    }
+
+    private async Task CloseAllDocumentsAsync()
+    {
+        if (_closingAllDocuments || _closingDocuments.Count > 0) return;
+        _closingAllDocuments = true;
+        try
+        {
+            if (!await ConfirmCloseAllAsync()) return;
+            foreach (var document in Documents.ToArray()) RemoveDocument(document);
+        }
+        finally
+        {
+            _closingAllDocuments = false;
+        }
+    }
+
+    private void SelectRelativeDocument(int direction)
+    {
+        if (Documents.Count < 2) return;
+        var index = DocumentTabs.SelectedIndex;
+        DocumentTabs.SelectedIndex = (index + direction + Documents.Count) % Documents.Count;
+        CurrentEditor?.FocusEditor();
+    }
+
+    private void ShowSearchInput()
+    {
+        ToolsMenuItem.IsChecked = true;
+        ToggleTools_Click(ToolsMenuItem, new RoutedEventArgs());
+        ToolTabs.SelectedIndex = 0;
+        SimpleAllBox.Focus();
+    }
+
+    private void ShowReplaceInput()
+    {
+        ToolsMenuItem.IsChecked = true;
+        ToggleTools_Click(ToolsMenuItem, new RoutedEventArgs());
+        ToolTabs.SelectedIndex = 1;
+        ReplaceFromBox.Focus();
     }
 
     private void Editor_CaretChanged(object? sender, EventArgs e) => UpdateStatus();
@@ -427,136 +566,12 @@ public partial class MainWindow : Window
         editor.CaretChanged += Editor_CaretChanged;
         editor.RevisionChanged += Editor_RevisionChanged;
         editor.DirtyChanged += Editor_DirtyChanged;
+        editor.ShortcutRequested += Editor_ShortcutRequested;
         editor.FilesDropped += paths => _ = Dispatcher.InvokeAsync(async () => await OpenFilesAsync(paths));
         ApplyEditorAppearance(editor);
     }
 
     private DocumentViewModel? FindDocument(ScintillaEditorHost editor) => Documents.FirstOrDefault(document => document.Editor == editor);
-
-    private void SimpleMode_Click(object sender, RoutedEventArgs e)
-    {
-        if (!_advancedMode) return;
-        var hasAdvancedInput = EnumerateConditions(_rootCondition).Any(item => !string.IsNullOrWhiteSpace(item.Text));
-        if (hasAdvancedInput && MessageBox.Show(this, "고급 조건을 초기화하고 간편 검색으로 전환할까요?", "검색 방식 변경", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        _rootCondition.Children.Clear();
-        _rootCondition.MatchAll = true;
-        _rootCondition.Children.Add(new ConditionEditorNode());
-        SimpleAllBox.Clear();
-        SimpleAnyBox.Clear();
-        SimpleExcludeBox.Clear();
-        _advancedMode = false;
-        AdvancedConditionsPanel.Visibility = Visibility.Collapsed;
-        SimpleConditionsPanel.Visibility = Visibility.Visible;
-        RenderAdvancedConditions();
-        UpdateConditionSummary();
-    }
-
-    private void AdvancedMode_Click(object sender, RoutedEventArgs e)
-    {
-        if (_advancedMode) return;
-        var simpleCondition = BuildSimpleCondition();
-        _rootCondition.Children.Clear();
-        _rootCondition.MatchAll = true;
-        if (simpleCondition is ConditionGroup simpleGroup)
-            foreach (var child in simpleGroup.Children) AddCoreConditionToEditor(_rootCondition, child);
-        if (_rootCondition.Children.Count == 0) _rootCondition.Children.Add(new ConditionEditorNode());
-        _advancedMode = true;
-        SimpleConditionsPanel.Visibility = Visibility.Collapsed;
-        AdvancedConditionsPanel.Visibility = Visibility.Visible;
-        RenderAdvancedConditions();
-        UpdateConditionSummary();
-    }
-
-    private void RenderAdvancedConditions()
-    {
-        AdvancedConditionsHost.Children.Clear();
-        AdvancedConditionsHost.Children.Add(CreateGroupCard(_rootCondition, null, true));
-    }
-
-    private Border CreateGroupCard(ConditionEditorNode group, ConditionEditorNode? parent, bool isRoot = false)
-    {
-        var body = new StackPanel();
-        var header = new WrapPanel { Orientation = Orientation.Horizontal };
-        header.Children.Add(new TextBlock
-        {
-            Text = isRoot ? "전체 조건" : "괄호로 묶인 조건",
-            VerticalAlignment = VerticalAlignment.Center,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 7, 0),
-            ToolTip = isRoot ? "검색식 전체를 결합하는 기준입니다." : "이 카드 안 조건은 괄호 하나처럼 먼저 계산됩니다."
-        });
-        var operation = new ComboBox { Width = 128, Height = 32, SelectedIndex = group.MatchAll ? 0 : 1, ToolTip = "그룹 안 조건을 결합하는 방식" };
-        operation.Items.Add("모두 만족 (AND)"); operation.Items.Add("하나라도 (OR)");
-        operation.SelectionChanged += (_, _) => { group.MatchAll = operation.SelectedIndex == 0; UpdateConditionSummary(); };
-        header.Children.Add(operation);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        actions.Children.Add(ActionButton("＋ 조건", "이 그룹에 조건 추가", () =>
-        {
-            var condition = new ConditionEditorNode();
-            group.Children.Add(condition);
-            _conditionToFocus = condition;
-            RenderAdvancedConditions();
-            UpdateConditionSummary();
-        }));
-        actions.Children.Add(ActionButton("＋ 그룹", "이 그룹에 하위 그룹 추가", () =>
-        {
-            var child = new ConditionEditorNode { IsGroup = true };
-            var condition = new ConditionEditorNode();
-            child.Children.Add(condition);
-            group.Children.Add(child);
-            _conditionToFocus = condition;
-            RenderAdvancedConditions();
-            UpdateConditionSummary();
-        }));
-        if (!isRoot && parent is not null) actions.Children.Add(ActionButton("삭제", "이 그룹 삭제", () => { parent.Children.Remove(group); RenderAdvancedConditions(); UpdateConditionSummary(); }));
-        header.Children.Add(actions); body.Children.Add(header);
-
-        foreach (var child in group.Children)
-        {
-            if (child.IsGroup) body.Children.Add(CreateGroupCard(child, group));
-            else body.Children.Add(CreateConditionRow(child, group));
-        }
-        var card = new Border { Child = body, MinWidth = 280, Margin = isRoot ? new Thickness(0) : new Thickness(12, 7, 0, 0), Padding = new Thickness(8), CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1) };
-        card.SetResourceReference(Border.BorderBrushProperty, "BorderBrush");
-        card.SetResourceReference(Border.BackgroundProperty, "SurfaceAltBrush");
-        return card;
-    }
-
-    private FrameworkElement CreateConditionRow(ConditionEditorNode condition, ConditionEditorNode parent)
-    {
-        var grid = new Grid { Margin = new Thickness(0, 7, 0, 0) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(105) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var kind = new ComboBox { Height = 36, SelectedIndex = condition.IsExcluded ? 1 : 0 };
-        kind.Items.Add("포함함"); kind.Items.Add("포함 안 함");
-        kind.SelectionChanged += (_, _) => { condition.IsExcluded = kind.SelectedIndex == 1; UpdateConditionSummary(); };
-        var input = new TextBox { MinHeight = 36, Margin = new Thickness(5, 0, 5, 0), Text = condition.Text };
-        input.TextChanged += (_, _) => { condition.Text = input.Text; UpdateConditionSummary(); };
-        input.KeyDown += SearchInput_KeyDown;
-        if (ReferenceEquals(_conditionToFocus, condition))
-        {
-            _conditionToFocus = null;
-            input.Loaded += (_, _) => { input.Focus(); input.CaretIndex = input.Text.Length; };
-        }
-        var remove = ActionButton("×", "이 조건 삭제", () => { parent.Children.Remove(condition); RenderAdvancedConditions(); UpdateConditionSummary(); });
-        Grid.SetColumn(kind, 0); Grid.SetColumn(input, 1); Grid.SetColumn(remove, 2);
-        grid.Children.Add(kind); grid.Children.Add(input); grid.Children.Add(remove);
-        var row = new Border { Child = grid, MinHeight = 36, Background = Brushes.Transparent, CornerRadius = new CornerRadius(4) };
-        row.MouseEnter += (_, _) => row.SetResourceReference(Border.BackgroundProperty, "SurfaceBrush");
-        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
-        row.MouseLeftButtonDown += (_, args) => { if (args.OriginalSource is Border or Grid) input.Focus(); };
-        return row;
-    }
-
-    private static Button ActionButton(string text, string tooltip, Action action)
-    {
-        var button = new Button { Content = text, ToolTip = tooltip, MinWidth = 36, MinHeight = 36, Padding = new Thickness(7, 4, 7, 4) };
-        button.Click += (_, _) => action();
-        return button;
-    }
-
-    private static IEnumerable<ConditionEditorNode> EnumerateConditions(ConditionEditorNode group) => group.Children.SelectMany(child => child.IsGroup ? EnumerateConditions(child) : [child]);
 
     private void SimpleCondition_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -567,31 +582,12 @@ public partial class MainWindow : Window
 
     private void UpdateConditionSummary()
     {
-        var valid = _advancedMode
-            ? EnumerateConditions(_rootCondition).Any(item => !string.IsNullOrWhiteSpace(item.Text))
-            : SimpleDescriptions().Length > 0;
+        var valid = SimpleDescriptions().Length > 0;
         ConditionSummaryText.Text = !valid
             ? "검색 조건을 입력하세요."
-            : _advancedMode
-                ? $"{DescribeAdvancedGroup(_rootCondition)}인 줄을 찾습니다."
-                : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다.";
+            : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다.";
         SearchButton.IsEnabled = valid;
         MarkSettingsDirty();
-    }
-
-    private static string DescribeAdvancedGroup(ConditionEditorNode group, bool nested = false)
-    {
-        var parts = group.Children
-            .Select(child => child.IsGroup
-                ? DescribeAdvancedGroup(child, true)
-                : string.IsNullOrWhiteSpace(child.Text)
-                    ? string.Empty
-                    : child.IsExcluded ? $"'{child.Text}' 제외" : $"'{child.Text}' 포함")
-            .Where(part => part.Length > 0)
-            .ToArray();
-        if (parts.Length == 0) return "고급 조건 사용 중";
-        var description = string.Join(group.MatchAll ? " 그리고 " : " 또는 ", parts);
-        return nested && parts.Length > 1 ? $"({description})" : description;
     }
 
     private string[] SimpleDescriptions()
@@ -648,48 +644,30 @@ public partial class MainWindow : Window
         return new ConditionGroup(ConditionOperator.All, children);
     }
 
-    private SearchInputState CaptureSearchState(ConditionNode? condition = null, SearchOptions? options = null)
+    private SearchInputState CaptureSearchState(SearchOptions? options = null)
     {
-        condition ??= _advancedMode ? ToCoreCondition(_rootCondition) : BuildSimpleCondition();
         options ??= new SearchOptions(MatchCaseCheck.IsChecked == true, WholeWordCheck.IsChecked == true, SelectedNumber(ContextLinesCombo));
-        return new SearchInputState
-        {
-            Mode = _advancedMode ? SavedSearchMode.Advanced : SavedSearchMode.Simple,
-            SimpleAllTerms = _advancedMode ? [] : ParseTerms(SimpleAllBox.Text).ToList(),
-            SimpleAnyTerms = _advancedMode ? [] : ParseTerms(SimpleAnyBox.Text).ToList(),
-            SimpleExcludeTerms = _advancedMode ? [] : ParseTerms(SimpleExcludeBox.Text).ToList(),
-            Condition = SavedConditionMapper.FromCore(condition),
-            Options = new SavedSearchOptions { MatchCase = options.MatchCase, WholeWord = options.WholeWord, ContextLines = options.ContextLines }
-        };
+        return SearchInputState.CreateSimple(
+            ParseTerms(SimpleAllBox.Text), ParseTerms(SimpleAnyBox.Text), ParseTerms(SimpleExcludeBox.Text),
+            new SavedSearchOptions { MatchCase = options.MatchCase, WholeWord = options.WholeWord, ContextLines = options.ContextLines });
     }
 
     private void RestoreSearchState(SearchInputState state)
     {
-        _advancedMode = state.Mode == SavedSearchMode.Advanced;
         SimpleAllBox.Text = string.Join(", ", state.SimpleAllTerms);
         SimpleAnyBox.Text = string.Join(", ", state.SimpleAnyTerms);
         SimpleExcludeBox.Text = string.Join(", ", state.SimpleExcludeTerms);
-        _rootCondition.Children.Clear();
-        _rootCondition.MatchAll = true;
-        if (SavedConditionMapper.ToCore(state.Condition) is ConditionGroup group)
-        {
-            _rootCondition.MatchAll = group.Operator == ConditionOperator.All;
-            foreach (var child in group.Children) AddCoreConditionToEditor(_rootCondition, child);
-        }
-        if (_rootCondition.Children.Count == 0) _rootCondition.Children.Add(new ConditionEditorNode());
-        SimpleConditionsPanel.Visibility = _advancedMode ? Visibility.Collapsed : Visibility.Visible;
-        AdvancedConditionsPanel.Visibility = _advancedMode ? Visibility.Visible : Visibility.Collapsed;
         MatchCaseCheck.IsChecked = state.Options.MatchCase;
         WholeWordCheck.IsChecked = state.Options.WholeWord;
         SelectComboItem(ContextLinesCombo, state.Options.ContextLines.ToString());
-        RenderAdvancedConditions(); RenderSimpleTags(); UpdateConditionSummary();
+        RenderSimpleTags(); UpdateConditionSummary();
     }
 
-    private void RecordRecentSearch(string summary, ConditionNode condition, SearchOptions options)
+    private void RecordRecentSearch(string summary, SearchOptions options)
     {
         SavedSearchHistory.AddOrMoveToFront(_settings.RecentSearches, new SavedSearch
         {
-            Search = CaptureSearchState(condition, options), Summary = summary, ExecutedAt = DateTimeOffset.Now
+            Search = CaptureSearchState(options), Summary = summary, ExecutedAt = DateTimeOffset.Now
         });
         MarkSettingsDirty();
     }
@@ -718,23 +696,12 @@ public partial class MainWindow : Window
         menu.PlacementTarget = (Button)sender; menu.IsOpen = true;
     }
 
-    private static void AddCoreConditionToEditor(ConditionEditorNode parent, ConditionNode condition)
-    {
-        if (condition is TextCondition text) parent.Children.Add(new ConditionEditorNode { Text = text.Value, IsExcluded = text.Kind == TextConditionKind.DoesNotContain });
-        else if (condition is ConditionGroup group)
-        {
-            var editorGroup = new ConditionEditorNode { IsGroup = true, MatchAll = group.Operator == ConditionOperator.All };
-            foreach (var child in group.Children) AddCoreConditionToEditor(editorGroup, child);
-            parent.Children.Add(editorGroup);
-        }
-    }
-
     private void Search_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentDocument is null) return;
         try
         {
-            var condition = _advancedMode ? ToCoreCondition(_rootCondition) : BuildSimpleCondition();
+            var condition = BuildSimpleCondition();
             var options = new SearchOptions(MatchCaseCheck.IsChecked == true, WholeWordCheck.IsChecked == true, SelectedNumber(ContextLinesCombo));
             var document = CurrentDocument;
             var revision = document.ContentRevision;
@@ -753,7 +720,7 @@ public partial class MainWindow : Window
                     displayLines.TryAdd(context.LineNumber, context.Range);
             }
             var summary = ConditionSummaryText.Text;
-            RecordRecentSearch(summary, condition, options);
+            RecordRecentSearch(summary, options);
             var shortSummary = summary.Length > 28 ? summary[..28] + "…" : summary;
             var session = new SearchResultSession
             {
@@ -779,19 +746,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private static ConditionNode ToCoreCondition(ConditionEditorNode node)
-    {
-        if (!node.IsGroup) return new TextCondition(node.IsExcluded ? TextConditionKind.DoesNotContain : TextConditionKind.Contains, node.Text);
-        return new ConditionGroup(node.MatchAll ? ConditionOperator.All : ConditionOperator.Any, node.Children.Select(ToCoreCondition).ToArray());
-    }
-
     private void MoveToSearchResult(int direction)
     {
         if (SearchResultTabs.SelectedItem is not SearchResultSession session || session.Rows.Count == 0 || _activeResultsList is null) return;
-        var index = _activeResultsList.SelectedIndex;
-        index = index < 0 ? 0 : (index + direction + session.Rows.Count) % session.Rows.Count;
-        _activeResultsList.SelectedIndex = index;
-        _activeResultsList.ScrollIntoView(session.Rows[index]);
+        var matches = session.Rows.Where(row => !row.IsContext).ToArray();
+        if (matches.Length == 0) return;
+        var current = _activeResultsList.SelectedItem as SearchResultRow;
+        var index = Array.IndexOf(matches, current);
+        index = index < 0 ? (direction > 0 ? 0 : matches.Length - 1) : (index + direction + matches.Length) % matches.Length;
+        var row = matches[index];
+        _activeResultsList.SelectedItem = row;
+        _activeResultsList.ScrollIntoView(row);
+        if (IsSessionCurrent(session))
+        {
+            DocumentTabs.SelectedItem = session.Snapshot.Source;
+            session.Snapshot.Source.Editor.GoToLine(row.LineNumber);
+        }
     }
 
     private void GoToLine(int lineNumber)
@@ -883,27 +853,30 @@ public partial class MainWindow : Window
         ValueInputLabel.Text = index switch { 6 => "앞에 추가할 텍스트", 7 => "뒤에 추가할 텍스트", 8 => "나눌 구분자", 9 => "줄을 이을 구분자", _ => "텍스트" };
     }
 
-    private void PreviewTrim_Click(object sender, RoutedEventArgs e)
+    private void PreviewTrim_Click(object sender, RoutedEventArgs e) => RunSelectedTransform(preview: true);
+    private void ApplyTrimDirect_Click(object sender, RoutedEventArgs e) => RunSelectedTransform(preview: false);
+
+    private void RunSelectedTransform(bool preview)
     {
         if (CurrentDocument is null) return;
         var index = TrimOperationCombo.SelectedIndex;
         TextTransformResult result;
         if (index is >= 0 and <= 3)
         {
-            if (string.IsNullOrEmpty(StartMarkerBox.Text)) { ShowInputMessage("시작 기준 텍스트를 입력하세요."); return; }
-            if (index is 2 or 3 && string.IsNullOrEmpty(EndMarkerBox.Text)) { ShowInputMessage("종료 기준 텍스트를 입력하세요."); return; }
+            if (string.IsNullOrEmpty(StartMarkerBox.Text)) { ShowInputMessage("시작 기준 텍스트를 입력하세요.", StartMarkerBox); return; }
+            if (index is 2 or 3 && string.IsNullOrEmpty(EndMarkerBox.Text)) { ShowInputMessage("종료 기준 텍스트를 입력하세요.", EndMarkerBox); return; }
             var operation = index switch { 1 => TrimOperation.RemoveAfter, 2 => TrimOperation.RemoveBetween, 3 => TrimOperation.KeepBetween, _ => TrimOperation.RemoveBefore };
             var options = new TrimOptions(operation, StartMarkerBox.Text, EndMarkerBox.Text, KeepStartCheck.IsChecked == true, KeepEndCheck.IsChecked == true, TrimMatchCaseCheck.IsChecked == true);
             result = _transformService.Trim(CurrentDocument.Text, options, CurrentDocument.NewLine);
         }
         else if (index is 4 or 5)
         {
-            if (!int.TryParse(CharacterCountBox.Text, out var count) || count < 0) { ShowInputMessage("삭제할 글자 수에 0 이상의 정수를 입력하세요."); return; }
+            if (!int.TryParse(CharacterCountBox.Text, out var count) || count < 0) { ShowInputMessage("삭제할 글자 수에 0 이상의 정수를 입력하세요.", CharacterCountBox); return; }
             result = _transformService.RemoveCharacters(CurrentDocument.Text, count, index == 4 ? CharacterRemovalSide.Left : CharacterRemovalSide.Right, CurrentDocument.NewLine);
         }
         else if (index is >= 6 and <= 9)
         {
-            if (index is 8 or 9 && string.IsNullOrEmpty(ValueInputBox.Text)) { ShowInputMessage("구분자를 입력하세요."); return; }
+            if (index is 8 or 9 && string.IsNullOrEmpty(ValueInputBox.Text)) { ShowInputMessage("구분자를 입력하세요.", ValueInputBox); return; }
             result = index switch
             {
                 6 => _transformService.AddPrefix(CurrentDocument.Text, ValueInputBox.Text, IncludeBlankLinesCheck.IsChecked == true, CurrentDocument.NewLine),
@@ -914,34 +887,57 @@ public partial class MainWindow : Window
         }
         else
         {
-            if (index == 10 && (!int.TryParse(StartNumberBox.Text, out var startNumber) || startNumber < 0)) { ShowInputMessage("시작 번호에 0 이상의 정수를 입력하세요."); return; }
-            if (string.IsNullOrEmpty(LineNumberSeparatorBox.Text)) { ShowInputMessage("번호 구분자를 입력하세요."); return; }
+            if (index == 10 && (!int.TryParse(StartNumberBox.Text, out var startNumber) || startNumber < 0)) { ShowInputMessage("시작 번호에 0 이상의 정수를 입력하세요.", StartNumberBox); return; }
+            if (string.IsNullOrEmpty(LineNumberSeparatorBox.Text)) { ShowInputMessage("번호 구분자를 입력하세요.", LineNumberSeparatorBox); return; }
             result = index == 10
                 ? _transformService.AddLineNumbers(CurrentDocument.Text, int.Parse(StartNumberBox.Text), LineNumberSeparatorBox.Text, IncludeBlankLinesCheck.IsChecked == true, CurrentDocument.NewLine)
                 : _transformService.RemoveLineNumbers(CurrentDocument.Text, LineNumberSeparatorBox.Text, CurrentDocument.NewLine);
         }
-        ShowTransformPreview(result, $"{(TrimOperationCombo.SelectedItem as ComboBoxItem)?.Content} 미리보기");
+        var title = (TrimOperationCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "텍스트 정리";
+        if (preview) ShowTransformPreview(result, $"{title} 미리보기");
+        else ApplyTransformDirect(result, title);
     }
 
-    private void ShowInputMessage(string message) => MessageBox.Show(this, message, "유용한 기능", MessageBoxButton.OK, MessageBoxImage.Information);
+    private void ShowInputMessage(string message, FrameworkElement? input = null)
+    {
+        StatusMessage.Text = message;
+        input?.Focus();
+    }
 
     private void QuickTransform_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentDocument is null || sender is not FrameworkElement { Tag: string operation }) return;
-        RunQuickTransform(operation, ((Button)sender).Content?.ToString() ?? "빠른 정리");
+        RunQuickTransform(operation, ((Button)sender).ToolTip?.ToString() ?? "빠른 정리", preview: true);
     }
 
-    private void RunQuickTransform(string operation, string title)
+    private void ApplyQuickTransform_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentDocument is null || sender is not FrameworkElement { Tag: string operation }) return;
+        RunQuickTransform(operation, ((Button)sender).ToolTip?.ToString() ?? "빠른 정리", preview: false);
+    }
+
+    private void RunQuickTransform(string operation, string title, bool preview = true)
     {
         if (CurrentDocument is null) return;
+        if (operation == "LogCleanup")
+        {
+            var cleanup = _transformService.CleanupLog(CurrentDocument.Text, CurrentDocument.NewLine);
+            var summary = cleanup.CleanupSummary;
+            var details = $"ANSI {summary.AnsiSequencesRemoved:N0} · 제어문자 {summary.ControlCharactersRemoved:N0} · 뒤 공백 {summary.TrailingWhitespaceCharactersRemoved:N0} · 빈 줄 {summary.CollapsedBlankLines:N0}";
+            if (preview) ShowTransformPreview(cleanup.TransformResult, $"{title} · {details}");
+            else ApplyTransformDirect(cleanup.TransformResult, $"{title} ({details})");
+            return;
+        }
         var result = operation switch
         {
             "Duplicate" => _transformService.RemoveDuplicateLines(CurrentDocument.Text, false, CurrentDocument.NewLine),
             "Blank" => _transformService.RemoveBlankLines(CurrentDocument.Text, CurrentDocument.NewLine),
             "Collapse" => _transformService.CollapseBlankLines(CurrentDocument.Text, CurrentDocument.NewLine),
-            _ => _transformService.TrimWhitespace(CurrentDocument.Text, CurrentDocument.NewLine)
+            "Whitespace" => _transformService.TrimWhitespace(CurrentDocument.Text, CurrentDocument.NewLine),
+            _ => throw new ArgumentException("지원하지 않는 빠른 정리 기능입니다.", nameof(operation))
         };
-        ShowTransformPreview(result, title);
+        if (preview) ShowTransformPreview(result, title);
+        else ApplyTransformDirect(result, title);
     }
 
     private void RenderFavoriteTools()
@@ -991,18 +987,49 @@ public partial class MainWindow : Window
     }
 
     private void PreviewDeleteContaining_Click(object sender, RoutedEventArgs e)
+        => RunDeleteContaining(preview: true);
+
+    private void ApplyDeleteContainingDirect_Click(object sender, RoutedEventArgs e)
+        => RunDeleteContaining(preview: false);
+
+    private void RunDeleteContaining(bool preview)
     {
         if (CurrentDocument is null) return;
-        if (string.IsNullOrEmpty(DeleteContainingBox.Text)) { ShowInputMessage("삭제할 줄에 포함된 문장을 입력하세요."); DeleteContainingBox.Focus(); return; }
-        ShowTransformPreview(_transformService.RemoveLinesContaining(CurrentDocument.Text, DeleteContainingBox.Text,
-            DeleteContainingMatchCaseCheck.IsChecked == true, CurrentDocument.NewLine), "특정 문장 포함 줄 삭제");
+        if (string.IsNullOrEmpty(DeleteContainingBox.Text)) { ShowInputMessage("삭제할 줄에 포함된 문장을 입력하세요.", DeleteContainingBox); return; }
+        var result = _transformService.RemoveLinesContaining(CurrentDocument.Text, DeleteContainingBox.Text,
+            DeleteContainingMatchCaseCheck.IsChecked == true, CurrentDocument.NewLine);
+        if (preview) ShowTransformPreview(result, "특정 문장 포함 줄 삭제");
+        else ApplyTransformDirect(result, "특정 문장 포함 줄 삭제");
     }
 
     private void PreviewReplace_Click(object sender, RoutedEventArgs e)
+        => RunReplace(preview: true);
+
+    private void ApplyReplaceDirect_Click(object sender, RoutedEventArgs e)
+        => RunReplace(preview: false);
+
+    private void RunReplace(bool preview)
     {
         if (CurrentDocument is null) return;
-        if (string.IsNullOrEmpty(ReplaceFromBox.Text)) { MessageBox.Show(this, "찾을 텍스트를 입력하세요.", "일괄 치환", MessageBoxButton.OK, MessageBoxImage.Information); return; }
-        ShowTransformPreview(_transformService.Replace(CurrentDocument.Text, ReplaceFromBox.Text, ReplaceToBox.Text, false, CurrentDocument.NewLine), "치환 미리보기");
+        if (string.IsNullOrEmpty(ReplaceFromBox.Text)) { ShowInputMessage("찾을 텍스트를 입력하세요.", ReplaceFromBox); return; }
+        var result = _transformService.Replace(CurrentDocument.Text, ReplaceFromBox.Text, ReplaceToBox.Text, false, CurrentDocument.NewLine);
+        if (preview) ShowTransformPreview(result, "치환 미리보기");
+        else ApplyTransformDirect(result, "일괄 치환");
+    }
+
+    private void ApplyTransformDirect(TextTransformResult result, string title)
+    {
+        if (CurrentDocument is null) return;
+        if (result.Summary.ChangedLines == 0)
+        {
+            StatusMessage.Text = $"{title}: 변경할 내용이 없습니다.";
+            return;
+        }
+
+        ClearTransformPreview();
+        CurrentEditor?.ReplaceAll(result.Text);
+        StatusMessage.Text = $"{title}: {result.Summary.ChangedLines:N0}개 항목을 적용했습니다. Ctrl+Z로 되돌릴 수 있습니다.";
+        UpdateStatus();
     }
 
     private void ShowTransformPreview(TextTransformResult result, string title)
@@ -1067,14 +1094,20 @@ public partial class MainWindow : Window
 
     private void ClosePreview_Click(object sender, RoutedEventArgs e)
     {
+        ClearTransformPreview();
+        StatusMessage.Text = "변경 미리보기를 닫았습니다.";
+    }
+
+    private void ClearTransformPreview()
+    {
         PreviewRows.Clear();
         _allPreviewRows.Clear();
         _pendingTransformedText = null;
         _resultDocument = null;
         _resultSourceRevision = 0;
         _resultInvalidated = false;
+        TransformPreviewView.Visibility = Visibility.Collapsed;
         if (SearchSessions.Count > 0) ShowSearchResults(); else HideResultPanelIfEmpty();
-        StatusMessage.Text = "변경 미리보기를 닫았습니다.";
     }
 
     private void HideResultPanelIfEmpty()
@@ -1337,7 +1370,7 @@ public partial class MainWindow : Window
 
     private void MarkSettingsDirty()
     {
-        if (!_settingsReady) return;
+        if (!_settingsReady || _closingInProgress) return;
         CaptureWorkState();
         _settingsSaveTimer.Stop(); _settingsSaveTimer.Start();
     }
@@ -1392,7 +1425,7 @@ public partial class MainWindow : Window
     }
 
     private void Help_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "조건 검색\n  조건과 그룹을 추가해 AND/OR/제외 검색을 구성하세요.\n\n텍스트 정리\n  자르기 또는 빠른 정리 후 미리보기를 확인하고 적용하세요.\n\n단축키\n  Ctrl+N 새 문서 · Ctrl+O 열기 · Ctrl+S 저장 · Ctrl+F 조건 검색",
+        "조건 검색\n  모두 포함·하나라도 포함·제외 검색어를 입력하세요.\n\n텍스트 정리\n  미리보기로 확인하거나 바로 적용할 수 있습니다. 로그 정리는 표시 제어 코드와 불필요한 공백을 정리합니다.\n\n단축키\n  Ctrl+N 새 문서 · Ctrl+O 열기 · Ctrl+S 저장 · Ctrl+W 탭 닫기\n  Ctrl+Tab 탭 이동 · Ctrl+F 찾기 · Ctrl+H 바꾸기 · F3 다음 결과",
         "나만의 텍스트 편집기", MessageBoxButton.OK, MessageBoxImage.Information);
 
     private static int SelectedNumber(ComboBox comboBox) => int.TryParse((comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out var result) ? result : 0;

@@ -10,6 +10,27 @@ using MediaBrush = System.Windows.Media.SolidColorBrush;
 
 namespace MyTextEditor.Controls;
 
+public enum EditorShortcut
+{
+    NewDocument,
+    OpenDocument,
+    SaveDocument,
+    SaveDocumentAs,
+    CloseDocument,
+    CloseAllDocuments,
+    Find,
+    Replace,
+    NextDocument,
+    PreviousDocument,
+    FindNext,
+    FindPrevious
+}
+
+public sealed class EditorShortcutEventArgs(EditorShortcut shortcut) : EventArgs
+{
+    public EditorShortcut Shortcut { get; } = shortcut;
+}
+
 public sealed class ScintillaEditorHost : WindowsFormsHost
 {
     private const int SciAddText = 2001;
@@ -19,25 +40,27 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     private const int SciAllocate = 2446;
     private const int Utf8CodePage = 65001;
 
-    private readonly Scintilla _editor;
+    private readonly ShortcutScintilla _editor;
     private bool _loading;
+    private bool _resourcesReleased;
 
     public ScintillaEditorHost()
     {
         EnsureNativeLibraries();
-        _editor = new Scintilla
+        _editor = new ShortcutScintilla
         {
             Dock = Forms.DockStyle.Fill,
             BorderStyle = ScintillaNET.BorderStyle.None,
             WrapMode = WrapMode.None,
             AllowDrop = true
         };
+        _editor.SetShortcutProcessor(ProcessShortcut);
         _editor.Margins[0].Type = MarginType.Number;
         _editor.Margins[0].Width = 44;
         _editor.TextChanged += Editor_TextChanged;
-        _editor.UpdateUI += (_, _) => CaretChanged?.Invoke(this, EventArgs.Empty);
-        _editor.SavePointLeft += (_, _) => DirtyChanged?.Invoke(this, EventArgs.Empty);
-        _editor.SavePointReached += (_, _) => DirtyChanged?.Invoke(this, EventArgs.Empty);
+        _editor.UpdateUI += Editor_UpdateUI;
+        _editor.SavePointLeft += Editor_SavePointChanged;
+        _editor.SavePointReached += Editor_SavePointChanged;
         _editor.DragEnter += Editor_DragEnter;
         _editor.DragDrop += Editor_DragDrop;
         Child = _editor;
@@ -81,7 +104,28 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     public event EventHandler? CaretChanged;
     public event EventHandler? RevisionChanged;
     public event EventHandler? DirtyChanged;
+    public event EventHandler<EditorShortcutEventArgs>? ShortcutRequested;
     public event Action<IReadOnlyList<string>>? FilesDropped;
+
+    public void ReleaseResources()
+    {
+        if (_resourcesReleased) return;
+        _resourcesReleased = true;
+        _editor.SetShortcutProcessor(null);
+        _editor.TextChanged -= Editor_TextChanged;
+        _editor.UpdateUI -= Editor_UpdateUI;
+        _editor.SavePointLeft -= Editor_SavePointChanged;
+        _editor.SavePointReached -= Editor_SavePointChanged;
+        _editor.DragEnter -= Editor_DragEnter;
+        _editor.DragDrop -= Editor_DragDrop;
+        Child = null;
+        _editor.Dispose();
+        CaretChanged = null;
+        RevisionChanged = null;
+        DirtyChanged = null;
+        ShortcutRequested = null;
+        FilesDropped = null;
+    }
 
     public unsafe void LoadUtf8(ReadOnlyMemory<byte> utf8)
     {
@@ -198,6 +242,62 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         RevisionChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private void Editor_UpdateUI(object? sender, UpdateUIEventArgs e) => CaretChanged?.Invoke(this, EventArgs.Empty);
+
+    private void Editor_SavePointChanged(object? sender, EventArgs e) => DirtyChanged?.Invoke(this, EventArgs.Empty);
+
+    private bool ProcessShortcut(Forms.Keys keyData)
+    {
+        if (!TryGetShortcut(keyData, out var shortcut) || ShortcutRequested is not { } handler) return false;
+        handler(this, new EditorShortcutEventArgs(shortcut));
+        return true;
+    }
+
+    private static bool TryGetShortcut(Forms.Keys keyData, out EditorShortcut shortcut)
+    {
+        shortcut = default;
+        var key = keyData & Forms.Keys.KeyCode;
+        var modifiers = keyData & Forms.Keys.Modifiers;
+        if (modifiers == Forms.Keys.Control)
+        {
+            shortcut = key switch
+            {
+                Forms.Keys.N => EditorShortcut.NewDocument,
+                Forms.Keys.O => EditorShortcut.OpenDocument,
+                Forms.Keys.S => EditorShortcut.SaveDocument,
+                Forms.Keys.W or Forms.Keys.F4 => EditorShortcut.CloseDocument,
+                Forms.Keys.F => EditorShortcut.Find,
+                Forms.Keys.H => EditorShortcut.Replace,
+                Forms.Keys.Tab or Forms.Keys.PageDown => EditorShortcut.NextDocument,
+                Forms.Keys.PageUp => EditorShortcut.PreviousDocument,
+                _ => default
+            };
+            return key is Forms.Keys.N or Forms.Keys.O or Forms.Keys.S or Forms.Keys.W or Forms.Keys.F4 or Forms.Keys.F or Forms.Keys.H or Forms.Keys.Tab or Forms.Keys.PageDown or Forms.Keys.PageUp;
+        }
+        if (modifiers == (Forms.Keys.Control | Forms.Keys.Shift))
+        {
+            shortcut = key switch
+            {
+                Forms.Keys.S => EditorShortcut.SaveDocumentAs,
+                Forms.Keys.W => EditorShortcut.CloseAllDocuments,
+                Forms.Keys.Tab => EditorShortcut.PreviousDocument,
+                _ => default
+            };
+            return key is Forms.Keys.S or Forms.Keys.W or Forms.Keys.Tab;
+        }
+        if (modifiers == Forms.Keys.None && key == Forms.Keys.F3)
+        {
+            shortcut = EditorShortcut.FindNext;
+            return true;
+        }
+        if (modifiers == Forms.Keys.Shift && key == Forms.Keys.F3)
+        {
+            shortcut = EditorShortcut.FindPrevious;
+            return true;
+        }
+        return false;
+    }
+
     private static void Editor_DragEnter(object? sender, Forms.DragEventArgs e)
     {
         e.Effect = e.Data?.GetDataPresent(Forms.DataFormats.FileDrop) == true ? Forms.DragDropEffects.Copy : Forms.DragDropEffects.None;
@@ -207,5 +307,15 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     {
         if (e.Data?.GetData(Forms.DataFormats.FileDrop) is string[] paths)
             FilesDropped?.Invoke(paths);
+    }
+
+    private sealed class ShortcutScintilla : Scintilla
+    {
+        private Func<Forms.Keys, bool>? _shortcutProcessor;
+
+        public void SetShortcutProcessor(Func<Forms.Keys, bool>? shortcutProcessor) => _shortcutProcessor = shortcutProcessor;
+
+        protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData) =>
+            _shortcutProcessor?.Invoke(keyData) == true || base.ProcessCmdKey(ref msg, keyData);
     }
 }

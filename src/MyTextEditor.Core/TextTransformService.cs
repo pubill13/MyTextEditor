@@ -186,6 +186,50 @@ public sealed class TextTransformService
         });
     }
 
+    public LogCleanupResult CleanupLog(string text, string newLine = "\r\n")
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ValidateNewLine(newLine);
+
+        var lines = TextLines.Split(text);
+        var hasTerminalNewLine = TextLines.EndsWithNewLine(text);
+        var contentLineCount = hasTerminalNewLine ? lines.Count - 1 : lines.Count;
+        var cleanedLines = new List<string>(contentLineCount);
+        var preview = new List<TextChangePreview>(contentLineCount);
+        var previousWasBlank = false;
+        var ansiSequencesRemoved = 0;
+        var controlCharactersRemoved = 0;
+        var trailingWhitespaceCharactersRemoved = 0;
+        var collapsedBlankLines = 0;
+
+        for (var index = 0; index < contentLineCount; index++)
+        {
+            var original = lines[index];
+            var cleaned = CleanLogLine(original, ref ansiSequencesRemoved, ref controlCharactersRemoved);
+            var contentEnd = cleaned.Length;
+            while (contentEnd > 0 && cleaned[contentEnd - 1] is ' ' or '\t') contentEnd--;
+            trailingWhitespaceCharactersRemoved += cleaned.Length - contentEnd;
+            if (contentEnd != cleaned.Length) cleaned = cleaned[..contentEnd];
+
+            var isBlank = cleaned.Length == 0;
+            var keep = !isBlank || !previousWasBlank;
+            previousWasBlank = isBlank;
+            if (keep) cleanedLines.Add(cleaned);
+            else collapsedBlankLines++;
+
+            var resultText = keep ? cleaned : string.Empty;
+            preview.Add(new TextChangePreview(index + 1, original, resultText,
+                keep && resultText == original ? TextChangeStatus.Unchanged : TextChangeStatus.Changed));
+        }
+
+        var result = string.Join(newLine, cleanedLines);
+        if (hasTerminalNewLine && cleanedLines.Count > 0) result += newLine;
+        return new LogCleanupResult(
+            BuildResult(result, preview),
+            new LogCleanupSummary(ansiSequencesRemoved, controlCharactersRemoved,
+                trailingWhitespaceCharactersRemoved, collapsedBlankLines));
+    }
+
     public TextTransformResult DeleteLines(string text, IEnumerable<int> oneBasedLineNumbers,
         string newLine = "\r\n")
     {
@@ -343,6 +387,74 @@ public sealed class TextTransformService
         var empty = preview.Count(item => item.Status == TextChangeStatus.Changed && item.ResultText.Length == 0);
         return new TextTransformResult(text, preview, new TextTransformSummary(changed, skipped, empty));
     }
+
+    private static string CleanLogLine(string line, ref int ansiSequencesRemoved,
+        ref int controlCharactersRemoved)
+    {
+        System.Text.StringBuilder? builder = null;
+        var copiedThrough = 0;
+        for (var index = 0; index < line.Length; index++)
+        {
+            var character = line[index];
+            var ansiLength = character == '\u001b' ? GetAnsiSequenceLength(line, index) : 0;
+            var removeControl = ansiLength == 0 && IsRemovableControl(character);
+            if (ansiLength == 0 && !removeControl) continue;
+
+            builder ??= new System.Text.StringBuilder(line.Length);
+            builder.Append(line, copiedThrough, index - copiedThrough);
+            if (ansiLength > 0)
+            {
+                ansiSequencesRemoved++;
+                index += ansiLength - 1;
+            }
+            else
+            {
+                controlCharactersRemoved++;
+            }
+            copiedThrough = index + 1;
+        }
+
+        if (builder is null) return line;
+        builder.Append(line, copiedThrough, line.Length - copiedThrough);
+        return builder.ToString();
+    }
+
+    private static int GetAnsiSequenceLength(string text, int start)
+    {
+        if (start + 1 >= text.Length) return 0;
+        return text[start + 1] switch
+        {
+            '[' => GetCsiSequenceLength(text, start),
+            ']' => GetOscSequenceLength(text, start),
+            _ => 0
+        };
+    }
+
+    private static int GetCsiSequenceLength(string text, int start)
+    {
+        var index = start + 2;
+        while (index < text.Length && text[index] is >= '\u0030' and <= '\u003f') index++;
+        while (index < text.Length && text[index] is >= '\u0020' and <= '\u002f') index++;
+        return index < text.Length && text[index] is >= '\u0040' and <= '\u007e'
+            ? index - start + 1
+            : 0;
+    }
+
+    private static int GetOscSequenceLength(string text, int start)
+    {
+        for (var index = start + 2; index < text.Length; index++)
+        {
+            if (text[index] == '\u0007') return index - start + 1;
+            if (text[index] is '\r' or '\n') return 0;
+            if (text[index] != '\u001b') continue;
+            if (index + 1 < text.Length && text[index + 1] == '\\') return index - start + 2;
+            return 0;
+        }
+        return 0;
+    }
+
+    private static bool IsRemovableControl(char character) =>
+        character == '\u007f' || character < '\u0020' && character is not ('\t' or '\r' or '\n');
 
     private static TextTransformResult BuildWholeDocumentResult(string original, string result)
     {

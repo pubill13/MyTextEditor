@@ -22,8 +22,9 @@ public static class SettingsService
         try
         {
             var settings = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(FilePath)) ?? new UserSettings();
-            Normalize(settings);
-            return new SettingsLoadResult(settings, null);
+            var normalization = Normalize(settings);
+            return new SettingsLoadResult(settings, null, normalization.RemovedLegacySearchCount,
+                normalization.LegacySearchSettingsChanged);
         }
         catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -34,7 +35,7 @@ public static class SettingsService
     public static void Save(UserSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        Normalize(settings);
+        _ = Normalize(settings);
         Directory.CreateDirectory(DirectoryPath);
         var temporaryPath = FilePath + ".tmp";
         try
@@ -61,7 +62,7 @@ public static class SettingsService
         }
     }
 
-    private static void Normalize(UserSettings settings)
+    private static SettingsNormalizationResult Normalize(UserSettings settings)
     {
         settings.Theme = string.Equals(settings.Theme, "Dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
         settings.EditorFontFamily = string.IsNullOrWhiteSpace(settings.EditorFontFamily) ? "Cascadia Mono" : settings.EditorFontFamily;
@@ -85,12 +86,33 @@ public static class SettingsService
         settings.RecentSearches.RemoveAll(item => item is null);
 
         NormalizeSearch(settings.SearchState);
+        var legacySearchSettingsChanged = settings.SearchState.Mode == SavedSearchMode.Advanced;
+        var removedLegacySearchCount = 0;
+        if (legacySearchSettingsChanged && !LegacySearchMigration.TryConvertAdvancedToSimple(settings.SearchState, out _))
+            removedLegacySearchCount++;
+        settings.SearchState = MigrateActiveSearch(settings.SearchState);
         NormalizeTransform(settings.TransformState);
-        foreach (var savedSearch in settings.RecentSearches)
+        for (var index = settings.RecentSearches.Count - 1; index >= 0; index--)
         {
+            var savedSearch = settings.RecentSearches[index];
             savedSearch.Search ??= new SearchInputState();
             savedSearch.Summary ??= string.Empty;
             NormalizeSearch(savedSearch.Search);
+            if (savedSearch.Search.Mode == SavedSearchMode.Advanced)
+            {
+                legacySearchSettingsChanged = true;
+                if (!LegacySearchMigration.TryConvertAdvancedToSimple(savedSearch.Search, out var simple))
+                {
+                    settings.RecentSearches.RemoveAt(index);
+                    removedLegacySearchCount++;
+                    continue;
+                }
+                savedSearch.Search = simple;
+            }
+            else
+            {
+                savedSearch.Search.Condition = LegacySearchMigration.BuildSimpleCondition(savedSearch.Search);
+            }
         }
 
         for (var index = settings.RecentSearches.Count - 1; index >= 0; index--)
@@ -101,6 +123,17 @@ public static class SettingsService
 
         if (settings.RecentSearches.Count > SavedSearchHistory.MaximumCount)
             settings.RecentSearches.RemoveRange(SavedSearchHistory.MaximumCount, settings.RecentSearches.Count - SavedSearchHistory.MaximumCount);
+        return new SettingsNormalizationResult(removedLegacySearchCount, legacySearchSettingsChanged);
+    }
+
+    private static SearchInputState MigrateActiveSearch(SearchInputState search)
+    {
+        if (search.Mode == SavedSearchMode.Advanced)
+            return LegacySearchMigration.TryConvertAdvancedToSimple(search, out var simple) ? simple : new SearchInputState();
+
+        search.Mode = SavedSearchMode.Simple;
+        search.Condition = LegacySearchMigration.BuildSimpleCondition(search);
+        return search;
     }
 
     private static void NormalizeSearch(SearchInputState search)
@@ -151,7 +184,10 @@ public static class SettingsService
     }
 }
 
-public sealed record SettingsLoadResult(UserSettings Settings, Exception? Error)
+internal readonly record struct SettingsNormalizationResult(int RemovedLegacySearchCount, bool LegacySearchSettingsChanged);
+
+public sealed record SettingsLoadResult(UserSettings Settings, Exception? Error, int RemovedLegacySearchCount = 0,
+    bool NeedsSave = false)
 {
     public bool Succeeded => Error is null;
 }
