@@ -11,6 +11,8 @@
 - `RemoveLinesContaining`은 끝 개행이 만드는 가상 빈 줄을 처리 대상에서 제외하고, 일치한 실제 행과 해당 구분자를 제거한다. 남은 행이 있을 때는 원본의 끝 개행 유무를 CRLF·LF·CR 형식으로 보존하며, 모든 행이 삭제되면 빈 문자열을 반환한다.
 - Core 회귀 테스트에 첫·중간·마지막·유일·전체 행 삭제, 끝 개행 유무, CRLF·LF·CR 사례를 추가했다.
 
+독립 Reviewer 결과 BLOCKER/P1은 없었다. Core 21/21, Release 빌드 경고 0·오류 0, Scintilla Undo/NUL 회귀, 3천만 자 성능 중앙값 0.281초, 자체 포함 EXE 시작과 FileVersion `1.3.1.0`을 검증했다. `main`과 `v1.3.1` 태그를 게시했으며 GitHub Release `https://github.com/pubill13/MyTextEditor/releases/tag/v1.3.1`에 `MyTextEditor.exe`와 `MyTextEditor-win-x64.zip`을 첨부했다. EXE SHA-256은 `DC6F3EA15E68E348CCA089EE418456860A4CA2B4FEFD46255D9D2E04D5F111F8`, ZIP SHA-256은 `544ABB9E29AB77A2482C1169911E5D19ADAEF819D449E00E5BB1FC4FCDABE848`이다.
+
 다음 Agent는 미리보기 버튼을 다시 `Collapsed`로 만들지 말아야 한다. `RemoveLinesContaining`의 전용 끝 개행 보존 경로를 일반 `FilterLines`와 합칠 경우 중복·빈 줄 정리 동작까지 바뀔 수 있으므로 관련 변환 전체를 함께 회귀 검증해야 한다.
 
 ## v1.3 인수인계 상태
