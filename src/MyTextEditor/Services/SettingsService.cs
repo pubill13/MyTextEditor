@@ -79,6 +79,7 @@ public static class SettingsService
         settings.RecentSearches ??= [];
         settings.SearchState ??= new SearchInputState();
         settings.TransformState ??= new TransformInputState();
+        settings.Diff ??= new DiffUserSettings();
 
         settings.RecentFiles.RemoveAll(item => item is null);
         settings.FavoriteToolIds.RemoveAll(item => string.IsNullOrWhiteSpace(item));
@@ -92,6 +93,7 @@ public static class SettingsService
             removedLegacySearchCount++;
         settings.SearchState = MigrateActiveSearch(settings.SearchState);
         NormalizeTransform(settings.TransformState);
+        NormalizeDiff(settings.Diff);
         for (var index = settings.RecentSearches.Count - 1; index >= 0; index--)
         {
             var savedSearch = settings.RecentSearches[index];
@@ -175,6 +177,14 @@ public static class SettingsService
         transform.ReplaceFrom ??= string.Empty;
         transform.ReplaceTo ??= string.Empty;
         transform.RemoveLinesContainingText ??= string.Empty;
+    }
+
+    private static void NormalizeDiff(DiffUserSettings diff)
+    {
+        diff.WindowWidth = double.IsFinite(diff.WindowWidth) ? Math.Max(1040, diff.WindowWidth) : 1440;
+        diff.WindowHeight = double.IsFinite(diff.WindowHeight) ? Math.Max(680, diff.WindowHeight) : 860;
+        if (diff.WindowLeft is not null && !double.IsFinite(diff.WindowLeft.Value)) diff.WindowLeft = null;
+        if (diff.WindowTop is not null && !double.IsFinite(diff.WindowTop.Value)) diff.WindowTop = null;
     }
 
     private static void RemoveDuplicates(List<string> values)

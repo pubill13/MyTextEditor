@@ -23,4 +23,17 @@ public sealed class UserSettings
     public List<SavedSearch> RecentSearches { get; set; } = [];
     public SearchInputState SearchState { get; set; } = new();
     public TransformInputState TransformState { get; set; } = new();
+    public DiffUserSettings Diff { get; set; } = new();
+}
+
+public sealed class DiffUserSettings
+{
+    public bool IgnoreWhitespace { get; set; }
+    public bool IgnoreCase { get; set; }
+    public bool IgnoreEmptyLines { get; set; }
+    public bool ScrollSync { get; set; } = true;
+    public double WindowWidth { get; set; } = 1440;
+    public double WindowHeight { get; set; } = 860;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
 }

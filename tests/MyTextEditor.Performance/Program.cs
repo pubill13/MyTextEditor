@@ -6,6 +6,7 @@ using System.Windows;
 using MyTextEditor.Controls;
 using MyTextEditor.Core;
 using MyTextEditor.Core.Models;
+using MyTextEditor.Diff;
 using MyTextEditor.Models;
 using Application = System.Windows.Application;
 using Forms = System.Windows.Forms;
@@ -22,6 +23,7 @@ internal static class Program
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         VerifyEditorShortcutsAndRelease();
         VerifyEditorRoundTrip();
+        VerifyDiffWindowAndMergeUndo();
         VerifySettingsModels();
         var times = new List<double>();
         for (var run = 1; run <= 3; run++)
@@ -61,6 +63,16 @@ internal static class Program
         host.LoadUtf8(new UTF8Encoding(false, true).GetBytes(original));
         if (host.GetText() != original || host.IsModified || host.CanUndo)
             throw new InvalidOperationException("Scintilla UTF-8 초기 로드 상태가 올바르지 않습니다.");
+        var koreanAndNul = host.GetLineTextRange(0, 2, 2);
+        var emoji = host.GetLineTextRange(1, 3, 2);
+        if (host.GetTextRange(koreanAndNul) != "줄\0" || host.GetTextRange(emoji) != "😀")
+            throw new InvalidOperationException("Diff 인라인 범위가 한글·NUL·이모지 문자 위치를 보존하지 못했습니다.");
+        try
+        {
+            host.GetLineTextRange(1, 4, 1);
+            throw new InvalidOperationException("UTF-16 surrogate 중간 범위를 허용했습니다.");
+        }
+        catch (ArgumentException) { }
 
         host.ReplaceAll(replacement);
         if (host.GetText() != replacement || !host.IsModified || !host.CanUndo)
@@ -99,10 +111,14 @@ internal static class Program
             (Forms.Keys.Control | Forms.Keys.PageUp, EditorShortcut.PreviousDocument),
             (Forms.Keys.Control | Forms.Keys.PageDown, EditorShortcut.NextDocument),
             (Forms.Keys.F3, EditorShortcut.FindNext),
-            (Forms.Keys.Shift | Forms.Keys.F3, EditorShortcut.FindPrevious)
+            (Forms.Keys.Shift | Forms.Keys.F3, EditorShortcut.FindPrevious),
+            (Forms.Keys.Alt | Forms.Keys.Up, EditorShortcut.PreviousDifference),
+            (Forms.Keys.Alt | Forms.Keys.Down, EditorShortcut.NextDifference),
+            (Forms.Keys.Alt | Forms.Keys.Left, EditorShortcut.MergeRightToLeft),
+            (Forms.Keys.Alt | Forms.Keys.Right, EditorShortcut.MergeLeftToRight)
         };
         EditorShortcut? requested = null;
-        host.ShortcutRequested += (_, args) => requested = args.Shortcut;
+        host.ShortcutRequested += (_, args) => { requested = args.Shortcut; args.Handled = true; };
         foreach (var item in expected)
         {
             requested = null;
@@ -125,6 +141,63 @@ internal static class Program
             throw new InvalidOperationException($"빈 편집기 해제가 종료 기준을 초과했습니다: {releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms");
         host.ReleaseResources();
         Console.WriteLine($"PASS editor shortcut forwarding and idempotent resource release ({releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms)");
+    }
+
+    private static void VerifyDiffWindowAndMergeUndo()
+    {
+        var callbacks = new DiffWindowCallbacks
+        {
+            GetSourceRevision = _ => -1,
+            GetSourceSnapshot = _ => null,
+            ApplyToSourceAsync = (_, _, _, _) => Task.FromResult(false),
+            SaveSourceAsync = _ => Task.FromResult(false),
+            CreateDocumentAsync = (_, _) => Task.CompletedTask,
+            SettingsChanged = _ => { }
+        };
+        var window = new DiffWindow(
+            new DiffEndpoint { Kind = DiffEndpointKind.Clipboard, DisplayName = "left", Text = "a\nold", IsReadOnly = false, NewLine = "\n" },
+            new DiffEndpoint { Kind = DiffEndpointKind.Clipboard, DisplayName = "right", Text = "a\nnew", IsReadOnly = false, NewLine = "\n" },
+            new DiffWindowOptions(), callbacks, new DiffAppearance("Consolas", 12, false))
+        {
+            ShowInTaskbar = false,
+            WindowStyle = WindowStyle.ToolWindow
+        };
+        window.Show();
+
+        var resultField = typeof(DiffWindow).GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        PumpDispatcherUntil(() => resultField.GetValue(window) is TextDiffResult, TimeSpan.FromSeconds(3));
+        var merge = typeof(DiffWindow).GetMethod("MergeCurrent", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        merge.Invoke(window, [DiffSide.Left]);
+        var rightEditor = (ScintillaEditorHost)typeof(DiffWindow)
+            .GetField("_rightEditor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        if (rightEditor.GetText() != "a\nold")
+            throw new InvalidOperationException("Diff 블록 병합 결과가 올바르지 않습니다.");
+        rightEditor.Undo();
+        if (rightEditor.GetText() != "a\nnew")
+            throw new InvalidOperationException("Diff 블록 병합이 한 번의 Undo로 복원되지 않았습니다.");
+
+        typeof(DiffWindow).GetField("_closingApproved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, true);
+        window.Close();
+        Console.WriteLine("PASS modeless Diff window compare, merge, and single-step Undo");
+    }
+
+    private static void PumpDispatcherUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (stopwatch.Elapsed > timeout)
+                throw new TimeoutException("Diff 창 비교가 제한 시간 안에 완료되지 않았습니다.");
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            var timer = new System.Windows.Threading.DispatcherTimer(
+                TimeSpan.FromMilliseconds(10),
+                System.Windows.Threading.DispatcherPriority.Background,
+                (_, _) => frame.Continue = false,
+                System.Windows.Threading.Dispatcher.CurrentDispatcher);
+            timer.Start();
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+            timer.Stop();
+        }
     }
 
     private static void VerifySettingsModels()

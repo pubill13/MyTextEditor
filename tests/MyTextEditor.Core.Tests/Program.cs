@@ -27,7 +27,13 @@ var tests = new (string Name, Func<Task> Run)[]
     ("UTF-8 직접 로드 버퍼", TestUtf8LoadBuffer),
     ("UTF-16/CP949 UTF-8 변환 버퍼", TestTranscodedLoadBuffer),
     ("잘못된 UTF-8 버퍼 차단", TestInvalidUtf8Buffer),
-    ("범위 기반 검색과 기존 API 회귀", TestRangeSearch)
+    ("범위 기반 검색과 기존 API 회귀", TestRangeSearch),
+    ("Diff 기본 블록과 인라인 범위", TestDiffBlocksAndInlineSpans),
+    ("Diff 옵션과 원본 줄 매핑", TestDiffOptionsAndLineMapping),
+    ("Diff 줄바꿈과 끝 개행", TestDiffNewLinesAndTerminalNewLine),
+    ("Diff 블록 양방향 병합", TestDiffBlockMerge),
+    ("Diff 전체 및 연속 병합", TestDiffApplyAllAndSequentialMerge),
+    ("Diff 5만 줄 성능", TestDiffPerformance)
 };
 
 var failed = 0;
@@ -549,6 +555,150 @@ static Task TestRangeSearch()
     Assert.SequenceEqual(materialized.Select(item => item.Text),
         ranges.Select(item => text.Substring(item.Range.Start, item.Range.Length)));
     Assert.Equal("NUL\0AAA", materialized[1].Text);
+    return Task.CompletedTask;
+}
+
+static Task TestDiffBlocksAndInlineSpans()
+{
+    var engine = new TextDiffEngine();
+    var modified = engine.Compare("alpha\nhello old world\nomega", "alpha\nhello new world\nomega");
+    Assert.Equal(1, modified.Blocks.Count);
+    Assert.Equal(DiffBlockKind.Modified, modified.Blocks[0].Kind);
+    Assert.Equal(2, modified.Blocks[0].LeftStartLine);
+    Assert.Equal(2, modified.Blocks[0].RightStartLine);
+    Assert.Equal("hello old world", modified.Blocks[0].Lines[0].LeftText);
+    Assert.True(modified.Blocks[0].Lines[0].LeftChanges.Count > 0);
+    Assert.True(modified.Blocks[0].Lines[0].RightChanges.Count > 0);
+    foreach (var span in modified.Blocks[0].Lines[0].LeftChanges)
+        Assert.True(span.Start >= 0 && span.Start + span.Length <= "hello old world".Length);
+    Assert.Equal(1, modified.ModifiedLines);
+    Assert.SequenceEqual(new[] { 1, 3 }, modified.ScrollAnchors.Select(anchor => anchor.LeftLineNumber));
+
+    var added = engine.Compare("a\nz", "a\nnew\nz");
+    Assert.Equal(DiffBlockKind.Added, added.Blocks[0].Kind);
+    Assert.Equal(0, added.Blocks[0].LeftLineCount);
+    Assert.Equal(1, added.Blocks[0].RightLineCount);
+    Assert.Equal(1, added.AddedLines);
+
+    var deleted = engine.Compare("a\nold\nz", "a\nz");
+    Assert.Equal(DiffBlockKind.Deleted, deleted.Blocks[0].Kind);
+    Assert.Equal(1, deleted.DeletedLines);
+
+    var multiple = engine.Compare("a\nold1\nkeep\nold2\nz", "a\nnew1\nkeep\nnew2\nz");
+    Assert.Equal(2, multiple.Blocks.Count);
+
+    var unicode = engine.Compare("상태 😀 완료", "상태 😃 완료").Blocks[0].Lines[0];
+    foreach (var span in unicode.LeftChanges.Concat(unicode.RightChanges))
+    {
+        var text = unicode.LeftChanges.Contains(span) ? unicode.LeftText! : unicode.RightText!;
+        Assert.False(span.Start > 0 && span.Start < text.Length &&
+            char.IsHighSurrogate(text[span.Start - 1]) && char.IsLowSurrogate(text[span.Start]));
+        var end = span.Start + span.Length;
+        Assert.False(end > 0 && end < text.Length &&
+            char.IsHighSurrogate(text[end - 1]) && char.IsLowSurrogate(text[end]));
+    }
+    return Task.CompletedTask;
+}
+
+static Task TestDiffOptionsAndLineMapping()
+{
+    var engine = new TextDiffEngine();
+    Assert.False(engine.Compare("  Alpha\t beta  ", "alpha beta",
+        new DiffOptions(IgnoreWhitespace: true, IgnoreCase: true)).HasDifferences);
+    Assert.True(engine.Compare("  Alpha\t beta  ", "alpha beta").HasDifferences);
+
+    var ignoredBlank = engine.Compare("head\n\nOLD\ntail", "head\nNEW\ntail",
+        new DiffOptions(IgnoreEmptyLines: true));
+    Assert.Equal(3, ignoredBlank.Blocks[0].LeftStartLine);
+    Assert.Equal(2, ignoredBlank.Blocks[0].RightStartLine);
+    Assert.Equal(3, ignoredBlank.Blocks[0].Lines[0].LeftLineNumber);
+    Assert.False(engine.Compare("a\n\n b", "a\n b", new DiffOptions(IgnoreEmptyLines: true)).HasDifferences);
+    return Task.CompletedTask;
+}
+
+static Task TestDiffNewLinesAndTerminalNewLine()
+{
+    var engine = new TextDiffEngine();
+    Assert.False(engine.Compare("가\r\n나\r\n", "가\n나\n").HasDifferences);
+    Assert.False(engine.Compare("가\r나\r", "가\n나\n").HasDifferences);
+
+    var terminal = engine.Compare("a\n", "a");
+    Assert.Equal(1, terminal.Blocks.Count);
+    Assert.True(terminal.Blocks[0].IsTerminalNewLineChange);
+    Assert.True(terminal.LeftHasTerminalNewLine);
+    Assert.False(terminal.RightHasTerminalNewLine);
+
+    var emptyToNewLine = engine.Compare(string.Empty, "\n");
+    Assert.Equal(1, emptyToNewLine.Blocks.Count);
+    Assert.True(emptyToNewLine.Blocks[0].IsTerminalNewLineChange);
+    Assert.Equal(0, emptyToNewLine.AddedLines);
+    return Task.CompletedTask;
+}
+
+static Task TestDiffBlockMerge()
+{
+    var engine = new TextDiffEngine();
+    var merger = new TextMergeService();
+    const string left = "a\r\nLEFT\r\nz\r\n";
+    const string right = "a\nRIGHT\nz\n";
+    var block = engine.Compare(left, right).Blocks[0];
+
+    var leftToRight = merger.ApplyBlock(left, right, block, DiffSide.Left, "\r\n", "\n");
+    Assert.Equal("a\nLEFT\nz\n", leftToRight.RightText);
+    Assert.Equal(left, leftToRight.LeftText);
+    Assert.Equal(DiffSide.Right, leftToRight.ChangedSide);
+
+    var rightToLeft = merger.ApplyBlock(left, right, block, DiffSide.Right, "\r\n", "\n");
+    Assert.Equal("a\r\nRIGHT\r\nz\r\n", rightToLeft.LeftText);
+
+    const string withExtra = "a\nextra\nz";
+    const string withoutExtra = "a\nz";
+    var deletion = engine.Compare(withExtra, withoutExtra).Blocks[0];
+    Assert.Equal(withoutExtra, merger.ApplyBlock(withExtra, withoutExtra, deletion, DiffSide.Right).LeftText);
+    Assert.Equal(withExtra, merger.ApplyBlock(withExtra, withoutExtra, deletion, DiffSide.Left).RightText);
+
+    var terminal = engine.Compare("a\r\n", "a").Blocks[0];
+    Assert.Equal("a\n", merger.ApplyBlock("a\r\n", "a", terminal, DiffSide.Left, "\r\n", "\n").RightText);
+    var emptyTerminal = engine.Compare(string.Empty, "\n").Blocks[0];
+    Assert.Equal("\n", merger.ApplyBlock(string.Empty, "\n", emptyTerminal, DiffSide.Right, "\n", "\n").LeftText);
+    Assert.Equal("a\n", merger.ApplyBlock("a\n\n", "a\n", engine.Compare("a\n\n", "a\n").Blocks[0],
+        DiffSide.Right, "\n", "\n").LeftText);
+    return Task.CompletedTask;
+}
+
+static Task TestDiffApplyAllAndSequentialMerge()
+{
+    var engine = new TextDiffEngine();
+    var merger = new TextMergeService();
+    var all = merger.ApplyAll("가\r\n나\r\n", "old\n", DiffSide.Left, "\r\n", "\n");
+    Assert.Equal("가\n나\n", all.RightText);
+    Assert.Equal("가\r\n나\r\n", all.LeftText);
+
+    var left = "a\nLEFT1\nkeep\nLEFT2\nz";
+    var right = "a\nright1\nkeep\nright2\nz";
+    var first = engine.Compare(left, right).Blocks[0];
+    right = merger.ApplyBlock(left, right, first, DiffSide.Left).RightText;
+    var remaining = engine.Compare(left, right);
+    Assert.Equal(1, remaining.Blocks.Count);
+    right = merger.ApplyBlock(left, right, remaining.Blocks[0], DiffSide.Left).RightText;
+    Assert.Equal(left, right);
+    Assert.False(engine.Compare(left, right).HasDifferences);
+    return Task.CompletedTask;
+}
+
+static Task TestDiffPerformance()
+{
+    var leftLines = Enumerable.Range(1, 50_000).Select(index => $"{index:D5} 일반 로그 내용").ToArray();
+    var rightLines = leftLines.ToArray();
+    for (var index = 0; index < rightLines.Length; index += 500)
+        rightLines[index] += " 변경";
+
+    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    var result = new TextDiffEngine().Compare(string.Join('\n', leftLines), string.Join('\n', rightLines));
+    stopwatch.Stop();
+    Assert.Equal(100, result.Blocks.Count);
+    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3));
+    Console.WriteLine($"  50,000-line diff: {stopwatch.Elapsed.TotalMilliseconds:F0}ms");
     return Task.CompletedTask;
 }
 

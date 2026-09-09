@@ -10,6 +10,7 @@ public sealed class DocumentViewModel : INotifyPropertyChanged
 {
     private bool _isModified;
 
+    public Guid Id { get; } = Guid.NewGuid();
     public string? FilePath { get; set; }
     public Encoding Encoding { get; set; } = new UTF8Encoding(false);
     public bool HasByteOrderMark { get; set; }

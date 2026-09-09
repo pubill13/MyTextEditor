@@ -23,13 +23,38 @@ public enum EditorShortcut
     NextDocument,
     PreviousDocument,
     FindNext,
-    FindPrevious
+    FindPrevious,
+    DiffPrevious,
+    DiffNext,
+    MergeLeft,
+    MergeRight,
+    PreviousDifference = DiffPrevious,
+    NextDifference = DiffNext,
+    MergeRightToLeft = MergeLeft,
+    MergeLeftToRight = MergeRight
 }
 
 public sealed class EditorShortcutEventArgs(EditorShortcut shortcut) : EventArgs
 {
     public EditorShortcut Shortcut { get; } = shortcut;
+    public bool Handled { get; set; }
 }
+
+public enum DiffHighlightKind
+{
+    Added,
+    Deleted,
+    Modified
+}
+
+public readonly record struct EditorTextRange(int Start, int Length)
+{
+    public int End => Start + Length;
+}
+
+public readonly record struct DiffLineHighlight(int StartLine, int LineCount, DiffHighlightKind Kind);
+
+public readonly record struct DiffInlineHighlight(int Start, int Length, DiffHighlightKind Kind);
 
 public sealed class ScintillaEditorHost : WindowsFormsHost
 {
@@ -39,6 +64,12 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     private const int SciSetCodePage = 2037;
     private const int SciAllocate = 2446;
     private const int Utf8CodePage = 65001;
+    private const int AddedMarker = 20;
+    private const int DeletedMarker = 21;
+    private const int ModifiedMarker = 22;
+    private const int AddedIndicator = 20;
+    private const int DeletedIndicator = 21;
+    private const int ModifiedIndicator = 22;
 
     private readonly ShortcutScintilla _editor;
     private bool _loading;
@@ -97,13 +128,32 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     public bool IsModified => _editor.Modified;
     public bool CanUndo => _editor.CanUndo;
     public bool CanRedo => _editor.CanRedo;
+    public bool IsReadOnly
+    {
+        get => _editor.ReadOnly;
+        set => _editor.ReadOnly = value;
+    }
+    public bool HasSelection => _editor.SelectionStart != _editor.SelectionEnd;
+    public string SelectedText => _editor.SelectedText;
+    public EditorTextRange SelectionRange
+    {
+        get
+        {
+            var start = Math.Min(_editor.SelectionStart, _editor.SelectionEnd);
+            return new EditorTextRange(start, Math.Abs(_editor.SelectionEnd - _editor.SelectionStart));
+        }
+    }
     public int LineCount => _editor.Lines.Count;
     public int CurrentLine => _editor.LineFromPosition(_editor.CurrentPosition);
     public int CurrentColumn => _editor.GetColumn(_editor.CurrentPosition);
+    public int FirstVisibleLine => _editor.FirstVisibleLine;
+    public int LinesOnScreen => _editor.LinesOnScreen;
 
     public event EventHandler? CaretChanged;
     public event EventHandler? RevisionChanged;
     public event EventHandler? DirtyChanged;
+    public event EventHandler? ViewportChanged;
+    public event EventHandler? VerticalScrolled;
     public event EventHandler<EditorShortcutEventArgs>? ShortcutRequested;
     public event Action<IReadOnlyList<string>>? FilesDropped;
 
@@ -123,6 +173,8 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         CaretChanged = null;
         RevisionChanged = null;
         DirtyChanged = null;
+        ViewportChanged = null;
+        VerticalScrolled = null;
         ShortcutRequested = null;
         FilesDropped = null;
     }
@@ -157,6 +209,39 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
 
     public string GetText() => _editor.Text;
 
+    public string GetTextRange(EditorTextRange range)
+    {
+        ValidateRange(range);
+        return _editor.GetTextRange(range.Start, range.Length);
+    }
+
+    public EditorTextRange GetLineTextRange(int zeroBasedLine, int utf16Start, int utf16Length)
+    {
+        if (zeroBasedLine < 0 || zeroBasedLine >= _editor.Lines.Count)
+            throw new ArgumentOutOfRangeException(nameof(zeroBasedLine));
+
+        var line = _editor.Lines[zeroBasedLine];
+        var lineText = line.Text;
+        var contentLength = lineText.Length;
+        if (contentLength > 0 && lineText[^1] == '\n')
+        {
+            contentLength--;
+            if (contentLength > 0 && lineText[contentLength - 1] == '\r') contentLength--;
+        }
+        else if (contentLength > 0 && lineText[^1] == '\r')
+        {
+            contentLength--;
+        }
+
+        if (utf16Start < 0 || utf16Length < 0 || (long)utf16Start + utf16Length > contentLength)
+            throw new ArgumentOutOfRangeException(nameof(utf16Start));
+        if (!IsUtf16Boundary(lineText, utf16Start) || !IsUtf16Boundary(lineText, utf16Start + utf16Length))
+            throw new ArgumentException("범위가 UTF-16 surrogate pair의 중간을 가리킵니다.");
+
+        // ScintillaNET converts its public character positions to native UTF-8 byte offsets.
+        return new EditorTextRange(line.Position + utf16Start, utf16Length);
+    }
+
     public void ReplaceAll(string text)
     {
         var revision = ContentRevision;
@@ -174,6 +259,79 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         {
             ContentRevision++;
             RevisionChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public bool ReplaceRange(EditorTextRange range, string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ValidateRange(range);
+        if (_editor.ReadOnly) return false;
+
+        _editor.BeginUndoAction();
+        try
+        {
+            _editor.TargetStart = range.Start;
+            _editor.TargetEnd = range.End;
+            _editor.ReplaceTarget(text);
+        }
+        finally
+        {
+            _editor.EndUndoAction();
+        }
+        return true;
+    }
+
+    public void SetSelection(EditorTextRange range)
+    {
+        ValidateRange(range);
+        _editor.SetSelection(range.End, range.Start);
+    }
+
+    public void SetFirstVisibleLine(int zeroBasedLine)
+    {
+        if (_editor.Lines.Count == 0) return;
+        _editor.FirstVisibleLine = Math.Clamp(zeroBasedLine, 0, _editor.Lines.Count - 1);
+    }
+
+    public void ScrollToLine(int zeroBasedLine) => SetFirstVisibleLine(zeroBasedLine);
+
+    public void SetDiffHighlights(
+        IEnumerable<DiffLineHighlight> lineHighlights,
+        IEnumerable<DiffInlineHighlight>? inlineHighlights = null)
+    {
+        ArgumentNullException.ThrowIfNull(lineHighlights);
+        ClearDiffHighlights();
+
+        foreach (var highlight in lineHighlights)
+        {
+            if (highlight.LineCount <= 0) continue;
+            var start = Math.Clamp(highlight.StartLine, 0, _editor.Lines.Count);
+            var end = Math.Clamp((long)highlight.StartLine + highlight.LineCount, 0, _editor.Lines.Count);
+            var marker = GetMarker(highlight.Kind);
+            for (var line = start; line < end; line++)
+                _editor.Lines[line].MarkerAdd(marker);
+        }
+
+        if (inlineHighlights is null) return;
+        foreach (var highlight in inlineHighlights)
+        {
+            if (highlight.Length <= 0) continue;
+            ValidateRange(new EditorTextRange(highlight.Start, highlight.Length));
+            _editor.IndicatorCurrent = GetIndicator(highlight.Kind);
+            _editor.IndicatorFillRange(highlight.Start, highlight.Length);
+        }
+    }
+
+    public void ClearDiffHighlights()
+    {
+        _editor.Markers[AddedMarker].DeleteAll();
+        _editor.Markers[DeletedMarker].DeleteAll();
+        _editor.Markers[ModifiedMarker].DeleteAll();
+        foreach (var indicator in new[] { AddedIndicator, DeletedIndicator, ModifiedIndicator })
+        {
+            _editor.IndicatorCurrent = indicator;
+            _editor.IndicatorClearRange(0, _editor.TextLength);
         }
     }
 
@@ -232,8 +390,60 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         _editor.Styles[ScintillaNET.Style.LineNumber].BackColor = marginBack;
         _editor.Styles[ScintillaNET.Style.LineNumber].ForeColor = marginFore;
         _editor.Margins[0].Width = Math.Max(36, (int)Math.Round(44 * Math.Max(1f, dpiScale)));
+        ConfigureDiffMarkers(darkTheme);
         Background = new MediaBrush(MediaColor.FromRgb(editorBack.R, editorBack.G, editorBack.B));
     }
+
+    private void ConfigureDiffMarkers(bool darkTheme)
+    {
+        ConfigureMarker(AddedMarker, darkTheme ? DrawingColor.FromArgb(31, 66, 49) : DrawingColor.FromArgb(222, 247, 230));
+        ConfigureMarker(DeletedMarker, darkTheme ? DrawingColor.FromArgb(74, 39, 43) : DrawingColor.FromArgb(255, 230, 230));
+        ConfigureMarker(ModifiedMarker, darkTheme ? DrawingColor.FromArgb(67, 58, 31) : DrawingColor.FromArgb(255, 245, 204));
+        ConfigureIndicator(AddedIndicator, darkTheme ? DrawingColor.FromArgb(46, 160, 87) : DrawingColor.FromArgb(64, 160, 91));
+        ConfigureIndicator(DeletedIndicator, darkTheme ? DrawingColor.FromArgb(218, 84, 89) : DrawingColor.FromArgb(210, 63, 68));
+        ConfigureIndicator(ModifiedIndicator, darkTheme ? DrawingColor.FromArgb(218, 176, 66) : DrawingColor.FromArgb(205, 151, 31));
+    }
+
+    private void ConfigureMarker(int index, DrawingColor color)
+    {
+        var marker = _editor.Markers[index];
+        marker.Symbol = MarkerSymbol.Background;
+        marker.SetBackColor(color);
+    }
+
+    private void ConfigureIndicator(int index, DrawingColor color)
+    {
+        var indicator = _editor.Indicators[index];
+        indicator.Style = IndicatorStyle.FullBox;
+        indicator.ForeColor = color;
+        indicator.Alpha = 80;
+        indicator.OutlineAlpha = 110;
+        indicator.Under = true;
+    }
+
+    private static int GetMarker(DiffHighlightKind kind) => kind switch
+    {
+        DiffHighlightKind.Added => AddedMarker,
+        DiffHighlightKind.Deleted => DeletedMarker,
+        _ => ModifiedMarker
+    };
+
+    private static int GetIndicator(DiffHighlightKind kind) => kind switch
+    {
+        DiffHighlightKind.Added => AddedIndicator,
+        DiffHighlightKind.Deleted => DeletedIndicator,
+        _ => ModifiedIndicator
+    };
+
+    private void ValidateRange(EditorTextRange range)
+    {
+        if (range.Start < 0 || range.Length < 0 || range.End > _editor.TextLength)
+            throw new ArgumentOutOfRangeException(nameof(range));
+    }
+
+    private static bool IsUtf16Boundary(string text, int index) =>
+        index <= 0 || index >= text.Length ||
+        !(char.IsHighSurrogate(text[index - 1]) && char.IsLowSurrogate(text[index]));
 
     private void Editor_TextChanged(object? sender, EventArgs e)
     {
@@ -242,15 +452,24 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         RevisionChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private void Editor_UpdateUI(object? sender, UpdateUIEventArgs e) => CaretChanged?.Invoke(this, EventArgs.Empty);
+    private void Editor_UpdateUI(object? sender, UpdateUIEventArgs e)
+    {
+        CaretChanged?.Invoke(this, EventArgs.Empty);
+        if ((e.Change & UpdateChange.VScroll) != 0)
+        {
+            ViewportChanged?.Invoke(this, EventArgs.Empty);
+            VerticalScrolled?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private void Editor_SavePointChanged(object? sender, EventArgs e) => DirtyChanged?.Invoke(this, EventArgs.Empty);
 
     private bool ProcessShortcut(Forms.Keys keyData)
     {
         if (!TryGetShortcut(keyData, out var shortcut) || ShortcutRequested is not { } handler) return false;
-        handler(this, new EditorShortcutEventArgs(shortcut));
-        return true;
+        var args = new EditorShortcutEventArgs(shortcut);
+        handler(this, args);
+        return args.Handled;
     }
 
     private static bool TryGetShortcut(Forms.Keys keyData, out EditorShortcut shortcut)
@@ -294,6 +513,18 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         {
             shortcut = EditorShortcut.FindPrevious;
             return true;
+        }
+        if (modifiers == Forms.Keys.Alt)
+        {
+            shortcut = key switch
+            {
+                Forms.Keys.Up => EditorShortcut.DiffPrevious,
+                Forms.Keys.Down => EditorShortcut.DiffNext,
+                Forms.Keys.Left => EditorShortcut.MergeLeft,
+                Forms.Keys.Right => EditorShortcut.MergeRight,
+                _ => default
+            };
+            return key is Forms.Keys.Up or Forms.Keys.Down or Forms.Keys.Left or Forms.Keys.Right;
         }
         return false;
     }

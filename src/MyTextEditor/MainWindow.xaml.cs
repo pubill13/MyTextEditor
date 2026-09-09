@@ -350,6 +350,7 @@ public partial class MainWindow : Window
     private void RemoveDocument(DocumentViewModel document)
     {
         Documents.Remove(document);
+        RefreshDiffSourceStates();
         document.Editor.ReleaseResources();
         RefreshSearchSessionState();
         EmptyDocumentState.Visibility = Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -374,7 +375,7 @@ public partial class MainWindow : Window
             StatusMessage.Text = "진행 중인 문서 저장 또는 닫기가 끝난 뒤 다시 시도하세요.";
             return;
         }
-        if (!Documents.Any(document => document.IsModified))
+        if (_diffWindows.Count == 0 && !Documents.Any(document => document.IsModified))
         {
             _closingInProgress = true;
             CompleteShutdown();
@@ -383,8 +384,14 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closingInProgress) return;
         _closingInProgress = true;
+        if (!await ConfirmCloseDiffWindowsAsync())
+        {
+            _closingInProgress = false;
+            return;
+        }
         if (!await ConfirmCloseAllAsync())
         {
+            ResetDiffCloseApprovals();
             _closingInProgress = false;
             return;
         }
@@ -397,6 +404,7 @@ public partial class MainWindow : Window
     private void CompleteShutdown()
     {
         _settingsSaveTimer.Stop();
+        foreach (var diffWindow in _diffWindows.ToArray()) diffWindow.Close();
         Hide();
         if (!SaveSettings(false))
         {
@@ -464,8 +472,13 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void Editor_ShortcutRequested(object? sender, EditorShortcutEventArgs e) =>
+    private void Editor_ShortcutRequested(object? sender, EditorShortcutEventArgs e)
+    {
+        if (e.Shortcut is EditorShortcut.PreviousDifference or EditorShortcut.NextDifference or
+            EditorShortcut.MergeRightToLeft or EditorShortcut.MergeLeftToRight) return;
+        e.Handled = true;
         Dispatcher.BeginInvoke(() => ExecuteShortcut(e.Shortcut));
+    }
 
     private void ExecuteShortcut(EditorShortcut shortcut)
     {
@@ -531,6 +544,7 @@ public partial class MainWindow : Window
         if (sender is ScintillaEditorHost editor && FindDocument(editor) is { } document && document == _resultDocument && document.ContentRevision != _resultSourceRevision)
             InvalidateResults("원문이 변경되었습니다. 검색 또는 미리보기를 다시 실행하세요.");
         RefreshSearchSessionState();
+        RefreshDiffSourceStates();
         UpdateStatus();
     }
 
@@ -1176,6 +1190,7 @@ public partial class MainWindow : Window
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         dictionaries[0] = new ResourceDictionary { Source = new Uri($"Themes/{_settings.Theme}.xaml", UriKind.Relative) };
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+        ApplyDiffAppearanceToWindows();
         MarkSettingsDirty();
     }
 
@@ -1197,6 +1212,7 @@ public partial class MainWindow : Window
         Application.Current.Resources["EditorFontSize"] = size;
         SelectComboItem(counterpart, size.ToString("0"));
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+        ApplyDiffAppearanceToWindows();
         MarkSettingsDirty();
     }
 
@@ -1229,6 +1245,7 @@ public partial class MainWindow : Window
         OverflowFontFamilyCombo.SelectedItem = installed;
         Application.Current.Resources["EditorFontFamily"] = new FontFamily(installed.FamilyName);
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+        ApplyDiffAppearanceToWindows();
         MarkSettingsDirty();
     }
 
@@ -1241,6 +1258,7 @@ public partial class MainWindow : Window
     private void Window_DpiChanged(object sender, DpiChangedEventArgs e)
     {
         foreach (var document in Documents) document.Editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, _settings.Theme == "Dark", (float)e.NewDpi.DpiScaleX);
+        ApplyDiffAppearanceToWindows();
     }
 
     private void Window_PreviewDragOver(object sender, System.Windows.DragEventArgs e)
