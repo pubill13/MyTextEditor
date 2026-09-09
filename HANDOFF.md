@@ -25,7 +25,7 @@ MyTextEditor는 복잡한 정규식 없이 줄 검색·추출·삭제·가공을
 
 ## 현재 구현/수정 중인 작업
 
-v1.5 기능 구현과 로컬 자동 검증은 완료 단계다. Release 자체 포함 EXE/ZIP 생성, 실제 배포본 시작·종료 확인, Git 커밋·`v1.5` 태그·GitHub Release 게시가 남아 있다. 게시가 끝나면 이 절을 실제 커밋, 자산 크기와 SHA-256으로 갱신해야 한다.
+v1.5 구현, 검토, 로컬 검증과 배포가 완료됐다. 구현 커밋은 `1c9f3dc`, 태그는 `v1.5`이며 GitHub Release는 `https://github.com/pubill13/MyTextEditor/releases/tag/v1.5`다. Release에 자체 포함 `MyTextEditor.exe`와 문서가 포함된 `MyTextEditor-win-x64.zip`을 첨부했다.
 
 ## 주요 설계 결정과 이유
 
@@ -77,7 +77,12 @@ v1.5 기능 구현과 로컬 자동 검증은 완료 단계다. Release 자체 �
 - UTF-8/NUL round-trip, 한글·이모지 inline 범위, 단일 Undo/Redo: 통과
 - 30,000,044바이트 로그 3회 로딩 중앙값: 0.241초, 2초 기준 통과
 - 30MB Scintilla 해제: 0.022~0.057초, 1.5초 기준 통과
-- GUI 및 최종 publish 검증 결과는 배포 뒤 갱신한다.
+- 자체 포함 EXE FileVersion: `1.5.0.0`; ProductVersion은 구현 커밋 `1c9f3dc`를 가리킴
+- 배포 EXE 실제 시작·clean close: 58ms
+- EXE 크기: 79,957,647바이트; SHA-256: `85491EDC642FBCEA046A96E1F6F8EA35775171DC281300C6AE98254532C080DB`
+- ZIP 크기: 74,436,900바이트; SHA-256: `22497675D91F33688244B382DFDE53DA3DAB91FC5B672DB3F752F107125630AB`
+- ZIP 내부 EXE와 독립 EXE SHA-256 일치
+- GitHub 공개 Release와 두 자산 조회 확인: `https://github.com/pubill13/MyTextEditor/releases/tag/v1.5`
 
 ## 알려진 문제/미해결 이슈
 
@@ -89,10 +94,9 @@ v1.5 기능 구현과 로컬 자동 검증은 완료 단계다. Release 자체 �
 
 ## 다음에 해야 할 작업과 우선순위
 
-1. 자체 포함 win-x64 단일 EXE와 ZIP을 생성하고 실제 시작·clean close를 확인한다.
-2. 배포본 버전, 자산 크기, ZIP 내부 EXE 일치와 SHA-256을 검증한다.
-3. 변경을 `main`에 커밋하고 `v1.5` 태그와 GitHub Release에 EXE·ZIP을 게시한다.
-4. 실제 사무실 데이터와 100%·125%·150% DPI에서 Diff 강조, gutter 위치, 다크 테마를 육안 확인한다.
+1. 실제 사무실 데이터와 100%·125%·150% DPI에서 Diff 강조, gutter 위치, 다크 테마를 육안 확인한다.
+2. 큰 추가·삭제 블록이 있는 파일로 anchor 보간 스크롤 감각과 gutter 버튼 위치를 조정한다.
+3. 후속 요구가 생기면 Heatmap, 동일 영역 접기, Smart Merge 등 확정된 v1.5 제외 범위의 우선순위를 다시 정한다.
 
 ## 다음 Agent가 반드시 알아야 할 주의사항
 
