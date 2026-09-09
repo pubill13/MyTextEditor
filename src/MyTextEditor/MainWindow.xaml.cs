@@ -1017,6 +1017,7 @@ public partial class MainWindow : Window
         ResultHeader.Text = $"{title}  ·  변경 {result.Summary.ChangedLines:N0} / 건너뜀 {result.Summary.SkippedLines:N0} / 빈 줄 {result.Summary.EmptyResultLines:N0}";
         SearchResultsView.Visibility = Visibility.Collapsed;
         TransformPreviewView.Visibility = Visibility.Visible;
+        ApplyTransformButton.Visibility = Visibility.Visible;
         ApplyTransformButton.IsEnabled = result.Summary.ChangedLines > 0;
         ResultPanel.Visibility = Visibility.Visible;
         ResultRow.MinHeight = 120;
@@ -1030,10 +1031,12 @@ public partial class MainWindow : Window
     {
         if (!TryValidateResultSource() || CurrentDocument is null || _pendingTransformedText is null) return;
         var editor = CurrentEditor;
+        _resultDocument = null;
         if (editor is not null)
             editor.ReplaceAll(_pendingTransformedText);
         _pendingTransformedText = null;
-        ApplyTransformButton.Visibility = Visibility.Collapsed;
+        ApplyTransformButton.Visibility = Visibility.Visible;
+        ApplyTransformButton.IsEnabled = false;
         StatusMessage.Text = "텍스트 변경을 적용했습니다. Ctrl+Z로 되돌릴 수 있습니다.";
         UpdateStatus();
     }
@@ -1102,6 +1105,7 @@ public partial class MainWindow : Window
         if (_resultDocument is null) return;
         _resultInvalidated = true;
         _pendingTransformedText = null;
+        ApplyTransformButton.Visibility = Visibility.Visible;
         ApplyTransformButton.IsEnabled = false;
         ResultHeader.Text = "결과가 만료되었습니다  ·  다시 실행 필요";
         StatusMessage.Text = message;

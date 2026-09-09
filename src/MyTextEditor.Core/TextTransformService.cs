@@ -168,7 +168,7 @@ public sealed class TextTransformService
         ArgumentException.ThrowIfNullOrEmpty(value);
         ValidateNewLine(newLine);
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        return FilterLines(TextLines.Split(text), newLine,
+        return FilterLinesPreservingTerminalNewLine(text, newLine,
             (_, line) => !line.Contains(value, comparison));
     }
 
@@ -311,6 +311,29 @@ public sealed class TextTransformService
                 keep ? TextChangeStatus.Unchanged : TextChangeStatus.Changed));
         }
         return BuildResult(string.Join(newLine, kept), preview);
+    }
+
+    private static TextTransformResult FilterLinesPreservingTerminalNewLine(string text, string newLine,
+        Func<int, string, bool> shouldKeep)
+    {
+        var lines = TextLines.Split(text);
+        var hasTerminalNewLine = TextLines.EndsWithNewLine(text);
+        var contentLineCount = hasTerminalNewLine ? lines.Count - 1 : lines.Count;
+        var kept = new List<string>(contentLineCount);
+        var preview = new List<TextChangePreview>(contentLineCount);
+
+        for (var index = 0; index < contentLineCount; index++)
+        {
+            var keep = shouldKeep(index, lines[index]);
+            if (keep) kept.Add(lines[index]);
+            preview.Add(new TextChangePreview(index + 1, lines[index], keep ? lines[index] : string.Empty,
+                keep ? TextChangeStatus.Unchanged : TextChangeStatus.Changed));
+        }
+
+        var result = string.Join(newLine, kept);
+        if (hasTerminalNewLine && kept.Count > 0)
+            result += newLine;
+        return BuildResult(result, preview);
     }
 
     private static TextTransformResult BuildResult(string text, IReadOnlyList<TextChangePreview> preview)

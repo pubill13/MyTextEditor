@@ -2,6 +2,8 @@ namespace MyTextEditor.Core;
 
 internal static class TextLines
 {
+    public static bool EndsWithNewLine(string text) => text.EndsWith('\r') || text.EndsWith('\n');
+
     public static IReadOnlyList<string> Split(string text)
     {
         if (text.Length == 0)

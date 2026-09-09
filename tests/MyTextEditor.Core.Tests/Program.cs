@@ -11,6 +11,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("치환 및 공백 정리", TestReplaceAndWhitespace),
     ("중복/빈 줄 정리", TestLineCleanup),
     ("특정 문장 포함 줄 삭제", TestRemoveLinesContaining),
+    ("포함 줄 삭제 경계와 줄바꿈 보존", TestRemoveLinesContainingBoundaries),
     ("추출 및 삭제", TestExtractAndDelete),
     ("UTF-8/UTF-16/CP949 파일 보존", TestFileEncoding),
     ("표현 불가능 문자 저장 차단", TestEncodingLossPrevention),
@@ -140,9 +141,49 @@ static Task TestRemoveLinesContaining()
 
     var trailingNewLine = service.RemoveLinesContaining("삭제 문장\n유지\n", "삭제", newLine: "\n");
     Assert.Equal("유지\n", trailingNewLine.Text);
-    Assert.Equal(3, trailingNewLine.Preview.Count);
+    Assert.Equal(2, trailingNewLine.Preview.Count);
 
     Assert.Throws<ArgumentException>(() => service.RemoveLinesContaining("내용", string.Empty));
+    return Task.CompletedTask;
+}
+
+static Task TestRemoveLinesContainingBoundaries()
+{
+    var service = new TextTransformService();
+    foreach (var newLine in new[] { "\r\n", "\n", "\r" })
+    {
+        Assert.Equal($"둘{newLine}셋",
+            service.RemoveLinesContaining($"삭제{newLine}둘{newLine}셋", "삭제", newLine: newLine).Text);
+        Assert.Equal($"첫{newLine}셋",
+            service.RemoveLinesContaining($"첫{newLine}삭제{newLine}셋", "삭제", newLine: newLine).Text);
+        Assert.Equal($"첫{newLine}둘",
+            service.RemoveLinesContaining($"첫{newLine}둘{newLine}삭제", "삭제", newLine: newLine).Text);
+
+        Assert.Equal($"둘{newLine}셋{newLine}",
+            service.RemoveLinesContaining($"삭제{newLine}둘{newLine}셋{newLine}", "삭제", newLine: newLine).Text);
+        Assert.Equal($"첫{newLine}셋{newLine}",
+            service.RemoveLinesContaining($"첫{newLine}삭제{newLine}셋{newLine}", "삭제", newLine: newLine).Text);
+        Assert.Equal($"첫{newLine}둘{newLine}",
+            service.RemoveLinesContaining($"첫{newLine}둘{newLine}삭제{newLine}", "삭제", newLine: newLine).Text);
+
+        Assert.Equal(string.Empty,
+            service.RemoveLinesContaining("삭제", "삭제", newLine: newLine).Text);
+        Assert.Equal(string.Empty,
+            service.RemoveLinesContaining($"삭제{newLine}", "삭제", newLine: newLine).Text);
+        Assert.Equal(string.Empty,
+            service.RemoveLinesContaining($"삭제1{newLine}삭제2", "삭제", newLine: newLine).Text);
+        Assert.Equal(string.Empty,
+            service.RemoveLinesContaining($"삭제1{newLine}삭제2{newLine}", "삭제", newLine: newLine).Text);
+
+        var onlyLine = service.RemoveLinesContaining($"삭제{newLine}", "삭제", newLine: newLine);
+        Assert.Equal(1, onlyLine.Preview.Count);
+        Assert.Equal(1, onlyLine.Summary.ChangedLines);
+
+        var unchanged = $"첫{newLine}둘{newLine}";
+        Assert.Equal(unchanged,
+            service.RemoveLinesContaining(unchanged, "없음", newLine: newLine).Text);
+    }
+
     return Task.CompletedTask;
 }
 
