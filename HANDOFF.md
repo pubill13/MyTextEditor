@@ -26,7 +26,7 @@ MyTextEditor는 복잡한 정규식 없이 줄 단위 검색·추출·삭제·�
 
 ## 현재 구현 또는 수정 중인 작업
 
-소스 구현과 로컬 검증은 끝났다. `main` 커밋, `v1.4` 태그, GitHub Release와 EXE·ZIP 업로드가 남아 있다. 배포 완료 뒤 이 항목과 아래 배포 정보를 최종 갱신해야 한다.
+v1.4 소스 구현, 교차 리뷰, 로컬 검증, 배포가 모두 끝났다. 현재 구현 또는 수정 중인 미완료 작업은 없다. `main`의 구현 커밋은 `3ab9e3b`, 태그는 `v1.4`이며 GitHub Release는 `https://github.com/pubill13/MyTextEditor/releases/tag/v1.4`다. Release에 `MyTextEditor.exe`와 `MyTextEditor-win-x64.zip`이 첨부되어 있다.
 
 ## 주요 설계 결정과 그 이유
 
@@ -79,6 +79,8 @@ MyTextEditor는 복잡한 정규식 없이 줄 단위 검색·추출·삭제·�
 - ZIP 내부 EXE와 독립 EXE SHA-256 일치
 - EXE SHA-256: `3048229A13F2E7E7B728398412EB928DF112283AA284DD5D06C30C1BB5BE230D`
 - ZIP SHA-256: `5E2E92486B36B72D3B9C48323354CD1336E0FC7EB2A13FD505A1A487CC704386`
+- GitHub Release: `https://github.com/pubill13/MyTextEditor/releases/tag/v1.4`
+- 공개 자산 크기: EXE 79,907,327바이트, ZIP 74,387,138바이트
 
 ## 알려진 문제와 미해결 이슈
 
@@ -91,10 +93,9 @@ MyTextEditor는 복잡한 정규식 없이 줄 단위 검색·추출·삭제·�
 
 ## 다음에 해야 할 작업과 우선순위
 
-1. `main` 커밋과 `v1.4` 태그를 push하고 GitHub Release에 `MyTextEditor.exe`, `MyTextEditor-win-x64.zip`을 첨부한다.
-2. 실제 사무실 로그로 로그 정리 결과와 30MB 미리보기 메모리 사용량을 확인한다.
-3. 100%·125%·150% DPI와 라이트·다크 테마에서 새 빠른 정리 3열 UI의 잘림과 클릭 영역을 육안 점검한다.
-4. 수정 탭 여러 개의 저장/저장 안 함/취소 및 저장 오류를 실제 UI로 회귀 확인한다.
+1. 실제 사무실 로그로 로그 정리 결과와 30MB 미리보기 메모리 사용량을 확인한다.
+2. 100%·125%·150% DPI와 라이트·다크 테마에서 새 빠른 정리 3열 UI의 잘림과 클릭 영역을 육안 점검한다.
+3. 수정 탭 여러 개의 저장/저장 안 함/취소 및 저장 오류를 실제 UI로 회귀 확인한다.
 
 ## 다음 Agent가 작업을 이어갈 때 반드시 알아야 할 주의사항
 
