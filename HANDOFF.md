@@ -14,7 +14,7 @@
 - WPF 기본 밝은 chrome을 ComboBox, 메뉴, 탭, 스크롤바, 목록, DataGrid, 상태바, ToolTip, CheckBox에서 동적 테마 스타일로 교체했다. Scintilla 줄번호·비활성 선택·host 배경도 함께 적용한다.
 - Core 테스트는 20개이며 성능 실행기는 설정 조건 왕복과 최근 검색 제한도 검증한다.
 
-독립 Reviewer 결과 BLOCKER/P1은 없었다. Release 빌드 경고 0·오류 0, Core 20/20, 설정 조건 왕복, 최근 검색 제한, Scintilla Undo/NUL, GUI 시작을 통과했고 30MB 로그 중앙값은 0.255초였다. 자체 포함 EXE FileVersion은 1.3.0.0이며 단독 시작을 확인했다. 남은 작업은 `main`·`v1.3` 태그·GitHub Release 게시뿐이다. 실제 모니터별 100%·125%·150% DPI 육안 비교는 자동 환경에서 수행하지 못했다. 검색 결과 탭과 문서는 재실행 시 복원하지 않는 기존 정책을 유지한다.
+독립 Reviewer 결과 BLOCKER/P1은 없었다. Release 빌드 경고 0·오류 0, Core 20/20, 설정 조건 왕복, 최근 검색 제한, Scintilla Undo/NUL, GUI 시작을 통과했고 30MB 로그 중앙값은 0.255초였다. 자체 포함 EXE FileVersion은 1.3.0.0이며 단독 시작을 확인했다. `main` 커밋과 `v1.3` 태그를 게시했고 GitHub Release `https://github.com/pubill13/MyTextEditor/releases/tag/v1.3`에 EXE와 ZIP을 첨부했다. 실제 모니터별 100%·125%·150% DPI 육안 비교는 자동 환경에서 수행하지 못했다. 검색 결과 탭과 문서는 재실행 시 복원하지 않는 기존 정책을 유지한다.
 
 ## v1.2 인수인계 상태
 
