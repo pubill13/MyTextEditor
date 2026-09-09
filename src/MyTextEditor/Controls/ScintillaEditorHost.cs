@@ -5,6 +5,8 @@ using System.Windows.Forms.Integration;
 using ScintillaNET;
 using DrawingColor = System.Drawing.Color;
 using Forms = System.Windows.Forms;
+using MediaColor = System.Windows.Media.Color;
+using MediaBrush = System.Windows.Media.SolidColorBrush;
 
 namespace MyTextEditor.Controls;
 
@@ -161,19 +163,32 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
 
     public void ApplyAppearance(string fontFamily, float fontSize, bool darkTheme, float dpiScale = 1f)
     {
+        var editorBack = darkTheme ? DrawingColor.FromArgb(25, 31, 41) : DrawingColor.White;
+        var editorFore = darkTheme ? DrawingColor.FromArgb(236, 240, 246) : DrawingColor.FromArgb(32, 38, 49);
+        var marginBack = darkTheme ? DrawingColor.FromArgb(17, 21, 28) : DrawingColor.FromArgb(247, 249, 252);
+        var marginFore = darkTheme ? DrawingColor.FromArgb(163, 174, 194) : DrawingColor.FromArgb(102, 112, 133);
+        var selectionBack = darkTheme ? DrawingColor.FromArgb(41, 70, 119) : DrawingColor.FromArgb(220, 232, 255);
+        var inactiveSelectionBack = darkTheme ? DrawingColor.FromArgb(48, 58, 74) : DrawingColor.FromArgb(226, 230, 237);
         var style = _editor.Styles[ScintillaNET.Style.Default];
         style.Font = fontFamily;
         style.SizeF = Math.Max(7f, fontSize);
-        style.ForeColor = darkTheme ? DrawingColor.FromArgb(236, 240, 246) : DrawingColor.FromArgb(32, 38, 49);
-        style.BackColor = darkTheme ? DrawingColor.FromArgb(25, 31, 41) : DrawingColor.White;
+        style.ForeColor = editorFore;
+        style.BackColor = editorBack;
         _editor.StyleClearAll();
-        _editor.BackColor = style.BackColor;
-        _editor.ForeColor = style.ForeColor;
+        _editor.BackColor = editorBack;
+        _editor.ForeColor = editorFore;
         _editor.CaretForeColor = darkTheme ? DrawingColor.White : DrawingColor.FromArgb(32, 38, 49);
         _editor.CaretLineBackColor = darkTheme ? DrawingColor.FromArgb(70, 32, 39, 52) : DrawingColor.FromArgb(90, 224, 232, 245);
-        _editor.SelectionBackColor = darkTheme ? DrawingColor.FromArgb(41, 70, 119) : DrawingColor.FromArgb(220, 232, 255);
-        _editor.Margins[0].BackColor = darkTheme ? DrawingColor.FromArgb(25, 31, 41) : DrawingColor.FromArgb(247, 249, 252);
+        _editor.SelectionBackColor = selectionBack;
+        _editor.SelectionInactiveBackColor = inactiveSelectionBack;
+        _editor.SelectionInactiveTextColor = editorFore;
+        _editor.SelectionInactiveAdditionalBackColor = inactiveSelectionBack;
+        _editor.SelectionInactiveAdditionalTextColor = editorFore;
+        _editor.Margins[0].BackColor = marginBack;
+        _editor.Styles[ScintillaNET.Style.LineNumber].BackColor = marginBack;
+        _editor.Styles[ScintillaNET.Style.LineNumber].ForeColor = marginFore;
         _editor.Margins[0].Width = Math.Max(36, (int)Math.Round(44 * Math.Max(1f, dpiScale)));
+        Background = new MediaBrush(MediaColor.FromRgb(editorBack.R, editorBack.G, editorBack.B));
     }
 
     private void Editor_TextChanged(object? sender, EventArgs e)

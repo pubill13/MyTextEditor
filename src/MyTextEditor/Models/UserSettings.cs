@@ -15,4 +15,12 @@ public sealed class UserSettings
     public double? WindowTop { get; set; }
     public string WindowState { get; set; } = "Normal";
     public List<string> RecentFiles { get; set; } = [];
+    public List<string> FavoriteToolIds { get; set; } =
+    [
+        TextToolIds.RemoveLinesContaining,
+        TextToolIds.Replace
+    ];
+    public List<SavedSearch> RecentSearches { get; set; } = [];
+    public SearchInputState SearchState { get; set; } = new();
+    public TransformInputState TransformState { get; set; } = new();
 }

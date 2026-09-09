@@ -10,6 +10,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("사이 지우기", TestRemoveBetween),
     ("치환 및 공백 정리", TestReplaceAndWhitespace),
     ("중복/빈 줄 정리", TestLineCleanup),
+    ("특정 문장 포함 줄 삭제", TestRemoveLinesContaining),
     ("추출 및 삭제", TestExtractAndDelete),
     ("UTF-8/UTF-16/CP949 파일 보존", TestFileEncoding),
     ("표현 불가능 문자 저장 차단", TestEncodingLossPrevention),
@@ -111,6 +112,37 @@ static Task TestLineCleanup()
     Assert.Equal("A\r\nB", service.RemoveDuplicateLines("A\r\na\r\nB").Text);
     Assert.Equal("A\r\nB", service.RemoveBlankLines("A\r\n  \r\nB").Text);
     Assert.Equal("A\r\n\r\nB", service.CollapseBlankLines("A\r\n\r\n \r\nB").Text);
+    return Task.CompletedTask;
+}
+
+static Task TestRemoveLinesContaining()
+{
+    var service = new TextTransformService();
+    var text = "유지할 한글\r\n오류: 연결 실패\r\nERROR: timeout\r\nerror: retry\r\n\r\n마지막 줄";
+
+    var korean = service.RemoveLinesContaining(text, "연결 실패");
+    Assert.Equal("유지할 한글\r\nERROR: timeout\r\nerror: retry\r\n\r\n마지막 줄", korean.Text);
+    Assert.Equal(1, korean.Summary.ChangedLines);
+    Assert.Equal(TextChangeStatus.Changed, korean.Preview[1].Status);
+    Assert.Equal(string.Empty, korean.Preview[1].ResultText);
+
+    var ignoreCase = service.RemoveLinesContaining("ERROR: timeout\nerror: retry\n정상", "error", newLine: "\n");
+    Assert.Equal("정상", ignoreCase.Text);
+    Assert.Equal(2, ignoreCase.Summary.ChangedLines);
+
+    var matchCase = service.RemoveLinesContaining("ERROR: timeout\nerror: retry\n정상", "error", true, "\n");
+    Assert.Equal("ERROR: timeout\n정상", matchCase.Text);
+
+    var blankLine = service.RemoveLinesContaining("첫째\r\n\r\n셋째", "찾을 문장");
+    Assert.Equal("첫째\r\n\r\n셋째", blankLine.Text);
+    Assert.Equal(0, blankLine.Summary.ChangedLines);
+    Assert.Equal(TextChangeStatus.Unchanged, blankLine.Preview[1].Status);
+
+    var trailingNewLine = service.RemoveLinesContaining("삭제 문장\n유지\n", "삭제", newLine: "\n");
+    Assert.Equal("유지\n", trailingNewLine.Text);
+    Assert.Equal(3, trailingNewLine.Preview.Count);
+
+    Assert.Throws<ArgumentException>(() => service.RemoveLinesContaining("내용", string.Empty));
     return Task.CompletedTask;
 }
 
@@ -425,6 +457,13 @@ static class Assert
     public static void SequenceEqual<T>(IEnumerable<T> expected, IEnumerable<T> actual)
     {
         if (!expected.SequenceEqual(actual)) throw new InvalidOperationException("Sequences differ.");
+    }
+
+    public static void Throws<TException>(Action action) where TException : Exception
+    {
+        try { action(); }
+        catch (TException) { return; }
+        throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
     }
 
     public static async Task ThrowsAsync<TException>(Func<Task> action) where TException : Exception

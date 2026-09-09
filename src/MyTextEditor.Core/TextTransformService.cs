@@ -161,6 +161,17 @@ public sealed class TextTransformService
         return FilterLines(TextLines.Split(text), newLine, (_, line) => !string.IsNullOrWhiteSpace(line));
     }
 
+    public TextTransformResult RemoveLinesContaining(string text, string value, bool matchCase = false,
+        string newLine = "\r\n")
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentException.ThrowIfNullOrEmpty(value);
+        ValidateNewLine(newLine);
+        var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        return FilterLines(TextLines.Split(text), newLine,
+            (_, line) => !line.Contains(value, comparison));
+    }
+
     public TextTransformResult CollapseBlankLines(string text, string newLine = "\r\n")
     {
         ArgumentNullException.ThrowIfNull(text);

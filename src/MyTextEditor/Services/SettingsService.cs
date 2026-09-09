@@ -11,18 +11,30 @@ public static class SettingsService
 
     public static UserSettings Load()
     {
+        return LoadWithResult().Settings;
+    }
+
+    public static SettingsLoadResult LoadWithResult()
+    {
+        if (!File.Exists(FilePath))
+            return new SettingsLoadResult(new UserSettings(), null);
+
         try
         {
-            return File.Exists(FilePath)
-                ? JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(FilePath)) ?? new UserSettings()
-                : new UserSettings();
+            var settings = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(FilePath)) ?? new UserSettings();
+            Normalize(settings);
+            return new SettingsLoadResult(settings, null);
         }
-        catch (JsonException) { return new UserSettings(); }
-        catch (IOException) { return new UserSettings(); }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return new SettingsLoadResult(new UserSettings(), exception);
+        }
     }
 
     public static void Save(UserSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        Normalize(settings);
         Directory.CreateDirectory(DirectoryPath);
         var temporaryPath = FilePath + ".tmp";
         try
@@ -35,4 +47,116 @@ public static class SettingsService
             if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
         }
     }
+
+    public static SettingsSaveResult TrySave(UserSettings settings)
+    {
+        try
+        {
+            Save(settings);
+            return new SettingsSaveResult(null);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
+        {
+            return new SettingsSaveResult(exception);
+        }
+    }
+
+    private static void Normalize(UserSettings settings)
+    {
+        settings.Theme = string.Equals(settings.Theme, "Dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
+        settings.EditorFontFamily = string.IsNullOrWhiteSpace(settings.EditorFontFamily) ? "Cascadia Mono" : settings.EditorFontFamily;
+        settings.EditorFontSize = double.IsFinite(settings.EditorFontSize) ? Math.Clamp(settings.EditorFontSize, 7, 72) : 15;
+        settings.WindowWidth = double.IsFinite(settings.WindowWidth) ? Math.Max(1040, settings.WindowWidth) : 1380;
+        settings.WindowHeight = double.IsFinite(settings.WindowHeight) ? Math.Max(680, settings.WindowHeight) : 860;
+        settings.ToolPanelWidth = double.IsFinite(settings.ToolPanelWidth) ? Math.Max(280, settings.ToolPanelWidth) : 360;
+        settings.ResultPanelHeight = double.IsFinite(settings.ResultPanelHeight) ? Math.Max(120, settings.ResultPanelHeight) : 220;
+        if (settings.WindowLeft is not null && !double.IsFinite(settings.WindowLeft.Value)) settings.WindowLeft = null;
+        if (settings.WindowTop is not null && !double.IsFinite(settings.WindowTop.Value)) settings.WindowTop = null;
+        settings.WindowState = settings.WindowState == "Maximized" ? "Maximized" : "Normal";
+        settings.RecentFiles ??= [];
+        settings.FavoriteToolIds ??= [TextToolIds.RemoveLinesContaining, TextToolIds.Replace];
+        settings.RecentSearches ??= [];
+        settings.SearchState ??= new SearchInputState();
+        settings.TransformState ??= new TransformInputState();
+
+        settings.RecentFiles.RemoveAll(item => item is null);
+        settings.FavoriteToolIds.RemoveAll(item => string.IsNullOrWhiteSpace(item));
+        RemoveDuplicates(settings.FavoriteToolIds);
+        settings.RecentSearches.RemoveAll(item => item is null);
+
+        NormalizeSearch(settings.SearchState);
+        NormalizeTransform(settings.TransformState);
+        foreach (var savedSearch in settings.RecentSearches)
+        {
+            savedSearch.Search ??= new SearchInputState();
+            savedSearch.Summary ??= string.Empty;
+            NormalizeSearch(savedSearch.Search);
+        }
+
+        for (var index = settings.RecentSearches.Count - 1; index >= 0; index--)
+        {
+            if (settings.RecentSearches.Take(index).Any(existing => SavedSearchHistory.HasSameCriteria(existing.Search, settings.RecentSearches[index].Search)))
+                settings.RecentSearches.RemoveAt(index);
+        }
+
+        if (settings.RecentSearches.Count > SavedSearchHistory.MaximumCount)
+            settings.RecentSearches.RemoveRange(SavedSearchHistory.MaximumCount, settings.RecentSearches.Count - SavedSearchHistory.MaximumCount);
+    }
+
+    private static void NormalizeSearch(SearchInputState search)
+    {
+        if (!Enum.IsDefined(search.Mode)) search.Mode = SavedSearchMode.Simple;
+        search.SimpleAllTerms ??= [];
+        search.SimpleAnyTerms ??= [];
+        search.SimpleExcludeTerms ??= [];
+        search.Condition ??= new SavedConditionNode();
+        search.Options ??= new SavedSearchOptions();
+        search.SimpleAllTerms.RemoveAll(item => item is null);
+        search.SimpleAnyTerms.RemoveAll(item => item is null);
+        search.SimpleExcludeTerms.RemoveAll(item => item is null);
+        search.Options.ContextLines = Math.Max(0, search.Options.ContextLines);
+        NormalizeCondition(search.Condition);
+    }
+
+    private static void NormalizeCondition(SavedConditionNode condition)
+    {
+        if (!Enum.IsDefined(condition.NodeType)) condition.NodeType = SavedConditionNodeType.Group;
+        if (!Enum.IsDefined(condition.Operator)) condition.Operator = SavedConditionOperator.All;
+        if (!Enum.IsDefined(condition.Kind)) condition.Kind = SavedTextConditionKind.Contains;
+        condition.Value ??= string.Empty;
+        condition.Children ??= [];
+        condition.Children.RemoveAll(child => child is null);
+        foreach (var child in condition.Children)
+            NormalizeCondition(child);
+    }
+
+    private static void NormalizeTransform(TransformInputState transform)
+    {
+        transform.SelectedToolId = string.IsNullOrWhiteSpace(transform.SelectedToolId) ? TextToolIds.RemoveBefore : transform.SelectedToolId;
+        transform.StartMarker ??= string.Empty;
+        transform.EndMarker ??= string.Empty;
+        transform.CharacterCount = Math.Max(0, transform.CharacterCount);
+        transform.Value ??= string.Empty;
+        transform.StartNumber = Math.Max(0, transform.StartNumber);
+        transform.LineNumberSeparator ??= ": ";
+        transform.ReplaceFrom ??= string.Empty;
+        transform.ReplaceTo ??= string.Empty;
+        transform.RemoveLinesContainingText ??= string.Empty;
+    }
+
+    private static void RemoveDuplicates(List<string> values)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        values.RemoveAll(value => !seen.Add(value));
+    }
+}
+
+public sealed record SettingsLoadResult(UserSettings Settings, Exception? Error)
+{
+    public bool Succeeded => Error is null;
+}
+
+public sealed record SettingsSaveResult(Exception? Error)
+{
+    public bool Succeeded => Error is null;
 }

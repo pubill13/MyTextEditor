@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using MyTextEditor.Controls;
 using MyTextEditor.Core;
@@ -52,7 +53,23 @@ public partial class MainWindow : Window
     private bool _advancedMode;
     private ConditionEditorNode? _conditionToFocus;
     private readonly List<TransformPreviewRow> _allPreviewRows = [];
-    private readonly string _settingsSnapshot;
+    private string _settingsSnapshot;
+    private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private bool _settingsReady;
+    private static readonly ToolDescriptor[] TextTools =
+    [
+        new(TextToolIds.RemoveBefore, "머리 자르기", 0), new(TextToolIds.RemoveAfter, "꼬리 자르기", 1),
+        new(TextToolIds.RemoveBetween, "사이 지우기", 2), new(TextToolIds.KeepBetween, "사이만 남기기", 3),
+        new(TextToolIds.RemoveCharactersLeft, "왼쪽 글자 삭제", 4), new(TextToolIds.RemoveCharactersRight, "오른쪽 글자 삭제", 5),
+        new(TextToolIds.AddPrefix, "접두사 추가", 6), new(TextToolIds.AddSuffix, "접미사 추가", 7),
+        new(TextToolIds.SplitByDelimiter, "줄 나누기", 8), new(TextToolIds.JoinLines, "줄 합치기", 9),
+        new(TextToolIds.AddLineNumbers, "줄 번호 추가", 10), new(TextToolIds.RemoveLineNumbers, "줄 번호 제거", 11),
+        new(TextToolIds.RemoveLinesContaining, "포함 줄 삭제"), new(TextToolIds.Replace, "일괄 치환"),
+        new(TextToolIds.RemoveDuplicateLines, "중복 줄 제거", QuickOperation: "Duplicate"),
+        new(TextToolIds.RemoveBlankLines, "빈 줄 제거", QuickOperation: "Blank"),
+        new(TextToolIds.CollapseBlankLines, "빈 줄 합치기", QuickOperation: "Collapse"),
+        new(TextToolIds.TrimWhitespace, "앞뒤 공백 제거", QuickOperation: "Whitespace")
+    ];
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
     public ObservableCollection<SearchResultSession> SearchSessions { get; } = [];
@@ -65,7 +82,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = this;
-        _settings = SettingsService.Load();
+        var loadResult = SettingsService.LoadWithResult();
+        _settings = loadResult.Settings;
         _settingsSnapshot = JsonSerializer.Serialize(_settings);
         Width = Math.Max(MinWidth, _settings.WindowWidth);
         Height = Math.Max(MinHeight, _settings.WindowHeight);
@@ -86,7 +104,16 @@ public partial class MainWindow : Window
         _rootCondition.Children.Add(new ConditionEditorNode());
         RenderAdvancedConditions();
         UpdateConditionSummary();
+        RestoreWorkState();
+        RenderFavoriteTools();
+        _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); SaveSettings(false); };
+        AttachSettingsTracking();
+        _settingsReady = true;
+        LocationChanged += (_, _) => MarkSettingsDirty();
+        StateChanged += (_, _) => MarkSettingsDirty();
         NewDocument();
+        if (loadResult.Error is not null)
+            Dispatcher.BeginInvoke(() => StatusMessage.Text = $"설정을 불러오지 못해 기본값을 사용했습니다: {loadResult.Error.Message}");
     }
 
     private void New_Click(object sender, RoutedEventArgs e) => NewDocument();
@@ -549,6 +576,7 @@ public partial class MainWindow : Window
                 ? $"{DescribeAdvancedGroup(_rootCondition)}인 줄을 찾습니다."
                 : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다.";
         SearchButton.IsEnabled = valid;
+        MarkSettingsDirty();
     }
 
     private static string DescribeAdvancedGroup(ConditionEditorNode group, bool nested = false)
@@ -620,6 +648,76 @@ public partial class MainWindow : Window
         return new ConditionGroup(ConditionOperator.All, children);
     }
 
+    private SearchInputState CaptureSearchState(ConditionNode? condition = null, SearchOptions? options = null)
+    {
+        condition ??= _advancedMode ? ToCoreCondition(_rootCondition) : BuildSimpleCondition();
+        options ??= new SearchOptions(MatchCaseCheck.IsChecked == true, WholeWordCheck.IsChecked == true, SelectedNumber(ContextLinesCombo));
+        return new SearchInputState
+        {
+            Mode = _advancedMode ? SavedSearchMode.Advanced : SavedSearchMode.Simple,
+            SimpleAllTerms = _advancedMode ? [] : ParseTerms(SimpleAllBox.Text).ToList(),
+            SimpleAnyTerms = _advancedMode ? [] : ParseTerms(SimpleAnyBox.Text).ToList(),
+            SimpleExcludeTerms = _advancedMode ? [] : ParseTerms(SimpleExcludeBox.Text).ToList(),
+            Condition = SavedConditionMapper.FromCore(condition),
+            Options = new SavedSearchOptions { MatchCase = options.MatchCase, WholeWord = options.WholeWord, ContextLines = options.ContextLines }
+        };
+    }
+
+    private void RestoreSearchState(SearchInputState state)
+    {
+        _advancedMode = state.Mode == SavedSearchMode.Advanced;
+        SimpleAllBox.Text = string.Join(", ", state.SimpleAllTerms);
+        SimpleAnyBox.Text = string.Join(", ", state.SimpleAnyTerms);
+        SimpleExcludeBox.Text = string.Join(", ", state.SimpleExcludeTerms);
+        _rootCondition.Children.Clear();
+        _rootCondition.MatchAll = true;
+        if (SavedConditionMapper.ToCore(state.Condition) is ConditionGroup group)
+        {
+            _rootCondition.MatchAll = group.Operator == ConditionOperator.All;
+            foreach (var child in group.Children) AddCoreConditionToEditor(_rootCondition, child);
+        }
+        if (_rootCondition.Children.Count == 0) _rootCondition.Children.Add(new ConditionEditorNode());
+        SimpleConditionsPanel.Visibility = _advancedMode ? Visibility.Collapsed : Visibility.Visible;
+        AdvancedConditionsPanel.Visibility = _advancedMode ? Visibility.Visible : Visibility.Collapsed;
+        MatchCaseCheck.IsChecked = state.Options.MatchCase;
+        WholeWordCheck.IsChecked = state.Options.WholeWord;
+        SelectComboItem(ContextLinesCombo, state.Options.ContextLines.ToString());
+        RenderAdvancedConditions(); RenderSimpleTags(); UpdateConditionSummary();
+    }
+
+    private void RecordRecentSearch(string summary, ConditionNode condition, SearchOptions options)
+    {
+        SavedSearchHistory.AddOrMoveToFront(_settings.RecentSearches, new SavedSearch
+        {
+            Search = CaptureSearchState(condition, options), Summary = summary, ExecutedAt = DateTimeOffset.Now
+        });
+        MarkSettingsDirty();
+    }
+
+    private void RecentSearches_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        if (_settings.RecentSearches.Count == 0) menu.Items.Add(new MenuItem { Header = "최근 검색 없음", IsEnabled = false });
+        foreach (var saved in _settings.RecentSearches.ToArray())
+        {
+            var header = saved.Summary.Length > 60 ? saved.Summary[..60] + "…" : saved.Summary;
+            var parent = new MenuItem { Header = header, ToolTip = $"{saved.Summary}\n{saved.ExecutedAt.ToLocalTime():yyyy-MM-dd HH:mm}" };
+            var load = new MenuItem { Header = "조건 불러오기" };
+            load.Click += (_, _) => { RestoreSearchState(saved.Search); _settings.SearchState = CaptureSearchState(); MarkSettingsDirty(); };
+            var remove = new MenuItem { Header = "기록 삭제" };
+            remove.Click += (_, _) => { _settings.RecentSearches.Remove(saved); MarkSettingsDirty(); };
+            parent.Items.Add(load); parent.Items.Add(remove); menu.Items.Add(parent);
+        }
+        if (_settings.RecentSearches.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+            var clear = new MenuItem { Header = "모든 최근 검색 삭제" };
+            clear.Click += (_, _) => { _settings.RecentSearches.Clear(); MarkSettingsDirty(); };
+            menu.Items.Add(clear);
+        }
+        menu.PlacementTarget = (Button)sender; menu.IsOpen = true;
+    }
+
     private static void AddCoreConditionToEditor(ConditionEditorNode parent, ConditionNode condition)
     {
         if (condition is TextCondition text) parent.Children.Add(new ConditionEditorNode { Text = text.Value, IsExcluded = text.Kind == TextConditionKind.DoesNotContain });
@@ -655,6 +753,7 @@ public partial class MainWindow : Window
                     displayLines.TryAdd(context.LineNumber, context.Range);
             }
             var summary = ConditionSummaryText.Text;
+            RecordRecentSearch(summary, condition, options);
             var shortSummary = summary.Length > 28 ? summary[..28] + "…" : summary;
             var session = new SearchResultSession
             {
@@ -829,6 +928,12 @@ public partial class MainWindow : Window
     private void QuickTransform_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentDocument is null || sender is not FrameworkElement { Tag: string operation }) return;
+        RunQuickTransform(operation, ((Button)sender).Content?.ToString() ?? "빠른 정리");
+    }
+
+    private void RunQuickTransform(string operation, string title)
+    {
+        if (CurrentDocument is null) return;
         var result = operation switch
         {
             "Duplicate" => _transformService.RemoveDuplicateLines(CurrentDocument.Text, false, CurrentDocument.NewLine),
@@ -836,7 +941,61 @@ public partial class MainWindow : Window
             "Collapse" => _transformService.CollapseBlankLines(CurrentDocument.Text, CurrentDocument.NewLine),
             _ => _transformService.TrimWhitespace(CurrentDocument.Text, CurrentDocument.NewLine)
         };
-        ShowTransformPreview(result, ((Button)sender).Content?.ToString() ?? "빠른 정리");
+        ShowTransformPreview(result, title);
+    }
+
+    private void RenderFavoriteTools()
+    {
+        if (FavoriteToolsPanel is null) return;
+        FavoriteToolsPanel.Children.Clear();
+        foreach (var id in _settings.FavoriteToolIds)
+        {
+            var tool = TextTools.FirstOrDefault(item => item.Id == id);
+            if (tool is null) continue;
+            var button = new Button { Content = tool.DisplayName, ToolTip = $"즐겨찾기: {tool.DisplayName}", Height = 28, Padding = new Thickness(8, 2, 8, 2), Tag = tool };
+            button.Click += FavoriteTool_Click;
+            FavoriteToolsPanel.Children.Add(button);
+        }
+    }
+
+    private void FavoriteToolsEdit_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        foreach (var tool in TextTools)
+        {
+            var item = new MenuItem { Header = tool.DisplayName, IsCheckable = true, IsChecked = _settings.FavoriteToolIds.Contains(tool.Id), Tag = tool };
+            item.Click += (_, _) =>
+            {
+                if (item.IsChecked) { if (!_settings.FavoriteToolIds.Contains(tool.Id)) _settings.FavoriteToolIds.Add(tool.Id); }
+                else _settings.FavoriteToolIds.Remove(tool.Id);
+                RenderFavoriteTools(); MarkSettingsDirty();
+            };
+            menu.Items.Add(item);
+        }
+        menu.PlacementTarget = FavoriteToolsEditButton; menu.IsOpen = true;
+    }
+
+    private void FavoriteTool_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ToolDescriptor tool) return;
+        ToolsMenuItem.IsChecked = true; ToggleTools_Click(ToolsMenuItem, new RoutedEventArgs()); ToolTabs.SelectedIndex = 1;
+        if (tool.QuickOperation is not null) { RunQuickTransform(tool.QuickOperation, tool.DisplayName); return; }
+        if (tool.OperationIndex is int index)
+        {
+            TrimOperationCombo.SelectedIndex = index;
+            (index switch { <= 3 => StartMarkerBox, <= 5 => CharacterCountBox, <= 9 => ValueInputBox, 10 => StartNumberBox, _ => LineNumberSeparatorBox }).Focus();
+            return;
+        }
+        if (tool.Id == TextToolIds.RemoveLinesContaining) DeleteContainingBox.Focus();
+        else if (tool.Id == TextToolIds.Replace) ReplaceFromBox.Focus();
+    }
+
+    private void PreviewDeleteContaining_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentDocument is null) return;
+        if (string.IsNullOrEmpty(DeleteContainingBox.Text)) { ShowInputMessage("삭제할 줄에 포함된 문장을 입력하세요."); DeleteContainingBox.Focus(); return; }
+        ShowTransformPreview(_transformService.RemoveLinesContaining(CurrentDocument.Text, DeleteContainingBox.Text,
+            DeleteContainingMatchCaseCheck.IsChecked == true, CurrentDocument.NewLine), "특정 문장 포함 줄 삭제");
     }
 
     private void PreviewReplace_Click(object sender, RoutedEventArgs e)
@@ -955,6 +1114,7 @@ public partial class MainWindow : Window
         ToolColumn.Width = show ? new GridLength(Math.Max(280, _settings.ToolPanelWidth)) : new GridLength(0);
         ToolSplitterColumn.Width = show ? new GridLength(5) : new GridLength(0);
         ToolPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        MarkSettingsDirty();
     }
 
     private void ToggleResults_Click(object sender, RoutedEventArgs e)
@@ -964,7 +1124,10 @@ public partial class MainWindow : Window
         ResultRow.Height = show ? new GridLength(Math.Max(120, _settings.ResultPanelHeight)) : new GridLength(0);
         ResultSplitterRow.Height = show ? new GridLength(5) : new GridLength(0);
         ResultPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        MarkSettingsDirty();
     }
+
+    private void PanelSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => MarkSettingsDirty();
 
     private void LightTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme("Light");
     private void DarkTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme("Dark");
@@ -976,6 +1139,7 @@ public partial class MainWindow : Window
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         dictionaries[0] = new ResourceDictionary { Source = new Uri($"Themes/{_settings.Theme}.xaml", UriKind.Relative) };
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+        MarkSettingsDirty();
     }
 
     private void FontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -996,12 +1160,13 @@ public partial class MainWindow : Window
         Application.Current.Resources["EditorFontSize"] = size;
         SelectComboItem(counterpart, size.ToString("0"));
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+        MarkSettingsDirty();
     }
 
     private void FontFamilyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
-        ApplyEditorFont(FontFamilyCombo.SelectedItem?.ToString());
+        ApplyEditorFont((FontFamilyCombo.SelectedItem as FontChoice)?.FamilyName ?? FontFamilyCombo.SelectedItem?.ToString());
     }
 
     private void FontFamilyCombo_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ApplyEditorFont(FontFamilyCombo.Text);
@@ -1009,7 +1174,7 @@ public partial class MainWindow : Window
     private void OverflowFontFamilyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
-        ApplyEditorFont(OverflowFontFamilyCombo.SelectedItem?.ToString());
+        ApplyEditorFont((OverflowFontFamilyCombo.SelectedItem as FontChoice)?.FamilyName ?? OverflowFontFamilyCombo.SelectedItem?.ToString());
     }
 
     private void OverflowFontFamilyCombo_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ApplyEditorFont(OverflowFontFamilyCombo.Text);
@@ -1017,13 +1182,17 @@ public partial class MainWindow : Window
     private void ApplyEditorFont(string? familyName)
     {
         if (string.IsNullOrWhiteSpace(familyName)) return;
-        var installed = FontFamilyCombo.Items.Cast<string>().FirstOrDefault(item => string.Equals(item, familyName.Trim(), StringComparison.CurrentCultureIgnoreCase));
+        var installed = FontFamilyCombo.Items.Cast<FontChoice>().FirstOrDefault(item =>
+            string.Equals(item.FamilyName, familyName.Trim(), StringComparison.CurrentCultureIgnoreCase) ||
+            string.Equals(item.DisplayName, familyName.Trim(), StringComparison.CurrentCultureIgnoreCase) ||
+            familyName.Trim() == "맑은 고딕" && item.FamilyName == "Malgun Gothic");
         if (installed is null) return;
-        _settings.EditorFontFamily = installed;
-        FontFamilyCombo.Text = installed;
-        OverflowFontFamilyCombo.Text = installed;
-        Application.Current.Resources["EditorFontFamily"] = new FontFamily(installed);
+        _settings.EditorFontFamily = installed.FamilyName;
+        FontFamilyCombo.SelectedItem = installed;
+        OverflowFontFamilyCombo.SelectedItem = installed;
+        Application.Current.Resources["EditorFontFamily"] = new FontFamily(installed.FamilyName);
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
+        MarkSettingsDirty();
     }
 
     private void ApplyEditorAppearance(ScintillaEditorHost editor)
@@ -1050,30 +1219,35 @@ public partial class MainWindow : Window
 
     private void LoadInstalledFonts()
     {
-        string[][] preferredAliases =
+        (string Display, string FamilyName, string[] Aliases)[] preferredAliases =
         {
-            ["맑은 고딕", "Malgun Gothic"], ["D2Coding"], ["나눔고딕", "NanumGothic"],
-            ["Noto Sans KR"], ["Pretendard"], ["Cascadia Mono"], ["Consolas"], ["JetBrains Mono"],
-            ["굴림", "Gulim"], ["돋움", "Dotum"], ["바탕", "Batang"], ["궁서", "Gungsuh"], ["Segoe UI"]
+            ("맑은 고딕 (Malgun Gothic)", "Malgun Gothic", ["Malgun Gothic", "맑은 고딕"]), ("D2Coding", "D2Coding", ["D2Coding"]),
+            ("나눔고딕 (NanumGothic)", "NanumGothic", ["NanumGothic", "나눔고딕"]), ("Noto Sans KR", "Noto Sans KR", ["Noto Sans KR"]),
+            ("Pretendard", "Pretendard", ["Pretendard"]), ("Cascadia Mono", "Cascadia Mono", ["Cascadia Mono"]), ("Consolas", "Consolas", ["Consolas"]),
+            ("JetBrains Mono", "JetBrains Mono", ["JetBrains Mono"]), ("굴림 (Gulim)", "Gulim", ["Gulim", "굴림"]),
+            ("돋움 (Dotum)", "Dotum", ["Dotum", "돋움"]), ("바탕 (Batang)", "Batang", ["Batang", "바탕"]),
+            ("궁서 (Gungsuh)", "Gungsuh", ["Gungsuh", "궁서"]), ("Segoe UI", "Segoe UI", ["Segoe UI"])
         };
         var installed = Fonts.SystemFontFamilies.Select(family => family.Source).Distinct(StringComparer.CurrentCultureIgnoreCase).ToArray();
         var preferred = preferredAliases
-            .Select(aliases => aliases.FirstOrDefault(alias => installed.Contains(alias, StringComparer.CurrentCultureIgnoreCase)))
-            .Where(name => name is not null)
-            .Cast<string>()
+            .Where(item => item.Aliases.Any(alias => installed.Contains(alias, StringComparer.CurrentCultureIgnoreCase)))
+            .Select(item => new FontChoice(item.Display, item.FamilyName))
             .ToArray();
+        var preferredInstalledNames = preferredAliases.SelectMany(item => item.Aliases).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
         var orderedFonts = preferred
-            .Concat(installed.Where(name => !preferred.Contains(name, StringComparer.CurrentCultureIgnoreCase)).OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+            .Concat(installed.Where(name => !preferredInstalledNames.Contains(name))
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).Select(name => new FontChoice(name, name)))
             .ToArray();
         FontFamilyCombo.ItemsSource = orderedFonts;
         OverflowFontFamilyCombo.ItemsSource = orderedFonts;
-        var selected = orderedFonts.FirstOrDefault(name => string.Equals(name, _settings.EditorFontFamily, StringComparison.CurrentCultureIgnoreCase))
-            ?? preferredAliases[0].Select(alias => orderedFonts.FirstOrDefault(name => string.Equals(name, alias, StringComparison.CurrentCultureIgnoreCase))).FirstOrDefault(name => name is not null)
-            ?? orderedFonts.FirstOrDefault(name => string.Equals(name, "Consolas", StringComparison.CurrentCultureIgnoreCase))
+        var selected = orderedFonts.FirstOrDefault(item => string.Equals(item.FamilyName, _settings.EditorFontFamily, StringComparison.CurrentCultureIgnoreCase)
+            || _settings.EditorFontFamily == "맑은 고딕" && item.FamilyName == "Malgun Gothic")
+            ?? orderedFonts.FirstOrDefault(item => item.FamilyName == "Malgun Gothic")
+            ?? orderedFonts.FirstOrDefault(item => item.FamilyName == "Consolas")
             ?? orderedFonts.FirstOrDefault()
-            ?? "Consolas";
-        _settings.EditorFontFamily = selected;
-        Application.Current.Resources["EditorFontFamily"] = new FontFamily(selected);
+            ?? new FontChoice("Consolas", "Consolas");
+        _settings.EditorFontFamily = selected.FamilyName;
+        Application.Current.Resources["EditorFontFamily"] = new FontFamily(selected.FamilyName);
     }
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -1082,6 +1256,7 @@ public partial class MainWindow : Window
         ToolbarFontPanel.Visibility = useOverflow ? Visibility.Collapsed : Visibility.Visible;
         ToolbarOverflowPanel.Visibility = useOverflow ? Visibility.Visible : Visibility.Collapsed;
         if (!useOverflow) ToolbarOverflowPopup.IsOpen = false;
+        MarkSettingsDirty();
     }
 
     private void ToolbarOverflowButton_Click(object sender, RoutedEventArgs e) => ToolbarOverflowPopup.IsOpen = !ToolbarOverflowPopup.IsOpen;
@@ -1093,6 +1268,7 @@ public partial class MainWindow : Window
         _settings.RecentFiles.Insert(0, fullPath);
         if (_settings.RecentFiles.Count > 10) _settings.RecentFiles.RemoveRange(10, _settings.RecentFiles.Count - 10);
         BuildRecentFilesMenu();
+        MarkSettingsDirty();
     }
 
     private void BuildRecentFilesMenu()
@@ -1107,8 +1283,64 @@ public partial class MainWindow : Window
         if (RecentFilesMenu.Items.Count == 0) RecentFilesMenu.Items.Add(new MenuItem { Header = "최근 파일 없음", IsEnabled = false });
     }
 
-    private void SaveSettings()
+    private void RestoreWorkState()
     {
+        RestoreSearchState(_settings.SearchState);
+        var state = _settings.TransformState;
+        var selected = TextTools.FirstOrDefault(item => item.Id == state.SelectedToolId && item.OperationIndex is not null);
+        TrimOperationCombo.SelectedIndex = selected?.OperationIndex ?? 0;
+        StartMarkerBox.Text = state.StartMarker; EndMarkerBox.Text = state.EndMarker;
+        KeepStartCheck.IsChecked = state.KeepStartMarker; KeepEndCheck.IsChecked = state.KeepEndMarker;
+        TrimMatchCaseCheck.IsChecked = state.MarkerMatchCase;
+        CharacterCountBox.Text = state.CharacterCount.ToString(); ValueInputBox.Text = state.Value;
+        IncludeBlankLinesCheck.IsChecked = state.IncludeBlankLines; StartNumberBox.Text = state.StartNumber.ToString();
+        LineNumberSeparatorBox.Text = state.LineNumberSeparator; ReplaceFromBox.Text = state.ReplaceFrom; ReplaceToBox.Text = state.ReplaceTo;
+        DeleteContainingBox.Text = state.RemoveLinesContainingText; DeleteContainingMatchCaseCheck.IsChecked = state.RemoveLinesContainingMatchCase;
+    }
+
+    private void CaptureWorkState()
+    {
+        _settings.SearchState = CaptureSearchState();
+        var operationTool = TextTools.First(item => item.OperationIndex == TrimOperationCombo.SelectedIndex);
+        _settings.TransformState = new TransformInputState
+        {
+            SelectedToolId = operationTool.Id, StartMarker = StartMarkerBox.Text, EndMarker = EndMarkerBox.Text,
+            KeepStartMarker = KeepStartCheck.IsChecked == true, KeepEndMarker = KeepEndCheck.IsChecked == true,
+            MarkerMatchCase = TrimMatchCaseCheck.IsChecked == true,
+            CharacterCount = int.TryParse(CharacterCountBox.Text, out var count) ? count : 1,
+            Value = ValueInputBox.Text, IncludeBlankLines = IncludeBlankLinesCheck.IsChecked == true,
+            StartNumber = int.TryParse(StartNumberBox.Text, out var start) ? start : 1,
+            LineNumberSeparator = LineNumberSeparatorBox.Text, ReplaceFrom = ReplaceFromBox.Text, ReplaceTo = ReplaceToBox.Text,
+            RemoveLinesContainingText = DeleteContainingBox.Text,
+            RemoveLinesContainingMatchCase = DeleteContainingMatchCaseCheck.IsChecked == true
+        };
+    }
+
+    private void AttachSettingsTracking()
+    {
+        foreach (var textBox in new[] { StartMarkerBox, EndMarkerBox, CharacterCountBox, ValueInputBox, StartNumberBox,
+                     LineNumberSeparatorBox, ReplaceFromBox, ReplaceToBox, DeleteContainingBox })
+            textBox.TextChanged += (_, _) => MarkSettingsDirty();
+        foreach (var checkBox in new[] { MatchCaseCheck, WholeWordCheck, KeepStartCheck, KeepEndCheck, TrimMatchCaseCheck,
+                     IncludeBlankLinesCheck, DeleteContainingMatchCaseCheck })
+        {
+            checkBox.Checked += (_, _) => MarkSettingsDirty();
+            checkBox.Unchecked += (_, _) => MarkSettingsDirty();
+        }
+        ContextLinesCombo.SelectionChanged += (_, _) => MarkSettingsDirty();
+        TrimOperationCombo.SelectionChanged += (_, _) => MarkSettingsDirty();
+    }
+
+    private void MarkSettingsDirty()
+    {
+        if (!_settingsReady) return;
+        CaptureWorkState();
+        _settingsSaveTimer.Stop(); _settingsSaveTimer.Start();
+    }
+
+    private bool SaveSettings(bool showError = true)
+    {
+        if (_settingsReady) CaptureWorkState();
         _settings.WindowWidth = RestoreBounds.Width;
         _settings.WindowHeight = RestoreBounds.Height;
         _settings.WindowLeft = RestoreBounds.Left;
@@ -1118,10 +1350,13 @@ public partial class MainWindow : Window
         _settings.ResultPanelVisible = ResultPanel.Visibility == Visibility.Visible;
         if (ToolColumn.Width.Value > 0) _settings.ToolPanelWidth = ToolColumn.ActualWidth;
         if (ResultRow.Height.Value > 0) _settings.ResultPanelHeight = ResultRow.ActualHeight;
-        if (JsonSerializer.Serialize(_settings) == _settingsSnapshot) return;
-        try { SettingsService.Save(_settings); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        var serialized = JsonSerializer.Serialize(_settings);
+        if (serialized == _settingsSnapshot) return true;
+        var result = SettingsService.TrySave(_settings);
+        if (result.Succeeded) { _settingsSnapshot = serialized; return true; }
+        StatusMessage.Text = $"설정을 저장하지 못했습니다: {result.Error?.Message}";
+        if (showError) MessageBox.Show(this, StatusMessage.Text, "설정 저장", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return false;
     }
 
     private void RestoreWindowPlacement()
@@ -1181,7 +1416,9 @@ public partial class MainWindow : Window
         foreach (var candidate in comboBox.Items)
         {
             var display = candidate is ComboBoxItem item ? item.Content?.ToString() : candidate?.ToString();
-            if (string.Equals(display, value, StringComparison.OrdinalIgnoreCase)) { comboBox.SelectedItem = candidate; return; }
+            var family = (candidate as FontChoice)?.FamilyName;
+            if (string.Equals(display, value, StringComparison.OrdinalIgnoreCase) || string.Equals(family, value, StringComparison.OrdinalIgnoreCase)
+                || value == "맑은 고딕" && family == "Malgun Gothic") { comboBox.SelectedItem = candidate; return; }
         }
     }
 

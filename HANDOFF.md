@@ -1,6 +1,20 @@
 # MyTextEditor 작업 인수인계
 
-최종 갱신: 2026-09-08 (Asia/Seoul)
+최종 갱신: 2026-09-09 (Asia/Seoul)
+
+## v1.3 인수인계 상태
+
+사무실 사용 피드백에 따라 `1.3.0`에서 특정 문장 포함 줄 삭제, 상단 수동 즐겨찾기, 검색 조건 전체 최근 이력, 다크 테마 보완, 맑은 고딕 한글 표시, 작업 UI 자동 저장을 구현했다.
+
+- `TextTransformService.RemoveLinesContaining`은 부분 일치·대소문자 무시를 기본으로 전체 줄을 삭제하고 기존 미리보기·단일 Undo 흐름을 사용한다.
+- 상단 즐겨찾기는 안정적인 `TextToolIds`를 저장하며 모든 텍스트 정리 기능을 사용자가 직접 고정한다. 입력형 도구는 해당 입력칸으로 이동하고 빠른 정리는 즉시 미리보기를 연다.
+- `SavedSearch`는 간편/고급 모드, 중첩 AND·OR·포함·제외 조건, 옵션, 요약, 시각을 보존한다. 동일 조건은 최신으로 이동하며 최대 20개다.
+- `UserSettings`는 현재 검색과 정리 입력도 보존한다. `MarkSettingsDirty`가 변경을 모아 500ms 후 원자 저장하며 실패는 상태바 또는 종료 대화상자에 표시한다.
+- 글꼴은 `FontChoice`로 표시명과 실제 family를 분리해 `맑은 고딕 (Malgun Gothic)`을 보여주고 Scintilla에는 `Malgun Gothic`을 전달한다.
+- WPF 기본 밝은 chrome을 ComboBox, 메뉴, 탭, 스크롤바, 목록, DataGrid, 상태바, ToolTip, CheckBox에서 동적 테마 스타일로 교체했다. Scintilla 줄번호·비활성 선택·host 배경도 함께 적용한다.
+- Core 테스트는 20개이며 성능 실행기는 설정 조건 왕복과 최근 검색 제한도 검증한다.
+
+독립 Reviewer 결과 BLOCKER/P1은 없었다. Release 빌드 경고 0·오류 0, Core 20/20, 설정 조건 왕복, 최근 검색 제한, Scintilla Undo/NUL, GUI 시작을 통과했고 30MB 로그 중앙값은 0.255초였다. 자체 포함 EXE FileVersion은 1.3.0.0이며 단독 시작을 확인했다. 남은 작업은 `main`·`v1.3` 태그·GitHub Release 게시뿐이다. 실제 모니터별 100%·125%·150% DPI 육안 비교는 자동 환경에서 수행하지 못했다. 검색 결과 탭과 문서는 재실행 시 복원하지 않는 기존 정책을 유지한다.
 
 ## v1.2 인수인계 상태
 

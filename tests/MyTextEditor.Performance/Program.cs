@@ -4,6 +4,8 @@ using System.Text;
 using System.Windows;
 using MyTextEditor.Controls;
 using MyTextEditor.Core;
+using MyTextEditor.Core.Models;
+using MyTextEditor.Models;
 using Application = System.Windows.Application;
 
 internal static class Program
@@ -17,6 +19,7 @@ internal static class Program
         EnsureFixture(path);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         VerifyEditorRoundTrip();
+        VerifySettingsModels();
         var times = new List<double>();
         for (var run = 1; run <= 3; run++)
         {
@@ -61,6 +64,38 @@ internal static class Program
             throw new InvalidOperationException("Scintilla Redo가 변경 내용을 복원하지 않았습니다.");
         window.Close();
         Console.WriteLine("PASS Scintilla UTF-8/NUL round-trip and single-step Undo/Redo");
+    }
+
+    private static void VerifySettingsModels()
+    {
+        var condition = new ConditionGroup(ConditionOperator.All,
+        [
+            new TextCondition(TextConditionKind.Contains, "AAA"),
+            new ConditionGroup(ConditionOperator.Any,
+            [
+                new TextCondition(TextConditionKind.Contains, "BBB"),
+                new TextCondition(TextConditionKind.DoesNotContain, "CC")
+            ])
+        ]);
+        var savedCondition = SavedConditionMapper.FromCore(condition);
+        var restored = SavedConditionMapper.ToCore(savedCondition);
+        var leftState = new SearchInputState { Mode = SavedSearchMode.Advanced, Condition = savedCondition };
+        var rightState = new SearchInputState { Mode = SavedSearchMode.Advanced, Condition = SavedConditionMapper.FromCore(restored) };
+        if (!SavedSearchHistory.HasSameCriteria(leftState, rightState)) throw new InvalidOperationException("저장 검색 조건이 손실 없이 왕복되지 않았습니다.");
+
+        var history = new List<SavedSearch>();
+        for (var index = 0; index < 25; index++)
+        {
+            SavedSearchHistory.AddOrMoveToFront(history, new SavedSearch
+            {
+                Summary = $"검색 {index}",
+                Search = new SearchInputState { SimpleAllTerms = [$"value-{index}"], Condition = SavedConditionMapper.FromCore(new TextCondition(TextConditionKind.Contains, $"value-{index}")) }
+            });
+        }
+        if (history.Count != 20 || history[0].Summary != "검색 24") throw new InvalidOperationException("최근 검색 20개 제한이 올바르지 않습니다.");
+        SavedSearchHistory.AddOrMoveToFront(history, history[^1]);
+        if (history.Count != 20 || history[0].Summary != "검색 5") throw new InvalidOperationException("최근 검색 중복 이동이 올바르지 않습니다.");
+        Console.WriteLine("PASS saved condition round-trip and recent search history");
     }
 
     private static void EnsureFixture(string path)
