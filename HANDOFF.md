@@ -24,7 +24,7 @@ MyTextEditor는 복잡한 정규식 없이 줄 검색·추출·삭제·가공을
 
 ## 현재 구현/수정 중인 작업
 
-v1.6 기능 구현과 로컬 검증이 완료된 상태다. `main` 커밋, `v1.6` 태그와 GitHub Release 게시가 이 문서 갱신 뒤 이어진다. Release에는 자체 포함 `MyTextEditor.exe`와 `MyTextEditor-win-x64.zip`을 첨부한다.
+v1.6 구현, 독립 리뷰, 로컬 검증과 배포가 완료됐다. 구현 커밋은 `90f520b`, 태그는 `v1.6`이며 GitHub Release는 `https://github.com/pubill13/MyTextEditor/releases/tag/v1.6`이다. Release에 자체 포함 `MyTextEditor.exe`와 문서가 포함된 `MyTextEditor-win-x64.zip`을 첨부했다. 현재 진행 중인 코드 수정은 없다.
 
 ## 주요 설계 결정과 이유
 
@@ -78,7 +78,12 @@ v1.6 기능 구현과 로컬 검증이 완료된 상태다. `main` 커밋, `v1.6
 - Scintilla 단축키 전달, 탭형 Diff 비교·단일 Undo, 빈 탭 재사용, 빈 파일 readiness, 두 파일 드롭, 도움말 검색 실행 검증: 통과
 - 30,000,044바이트 로그 3회 로딩 중앙값: 약 0.236초, 2초 기준 통과
 - 30MB Scintilla 해제: 약 0.021~0.057초, 1.5초 기준 통과
-- 자체 포함 EXE 시작·종료는 Release 게시 전에 다시 검증한다.
+- 자체 포함 EXE FileVersion: `1.6.0.0`; ProductVersion: `1.6.0+90f520b17eb33fa54edd9aa56abcaea4144b9296`
+- 배포 EXE 실제 시작·clean close: 약 61ms
+- EXE 크기: 79,979,029바이트; SHA-256: `5CA492C1079118218DF27F65C41F769A8657C1661B083E2EB591BE01D0BBAE95`
+- ZIP 크기: 74,458,724바이트; SHA-256: `C5AF44972FE3BF8D13B17249F1D10D7C1017CCB027BC045782C0E5D211F2A64F`
+- ZIP 내부 EXE와 독립 EXE SHA-256 일치
+- GitHub 공개 Release와 `MyTextEditor.exe`, `MyTextEditor-win-x64.zip` 자산 조회 확인
 
 ## 알려진 문제/미해결 이슈
 

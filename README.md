@@ -122,6 +122,8 @@ Diff 작업 공간에서는 `Ctrl+W`로 현재 Merge 탭을 닫고 `Ctrl+Tab`·`
 
 ## 배포
 
+최신 설치 불필요 배포본은 [GitHub Releases](https://github.com/pubill13/MyTextEditor/releases/latest)에서 `MyTextEditor.exe` 또는 `MyTextEditor-win-x64.zip`을 내려받을 수 있습니다.
+
 ```powershell
 dotnet publish src/MyTextEditor/MyTextEditor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts/win-x64
 ```
