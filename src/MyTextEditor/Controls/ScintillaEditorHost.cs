@@ -24,6 +24,7 @@ public enum EditorShortcut
     PreviousDocument,
     FindNext,
     FindPrevious,
+    Help,
     DiffPrevious,
     DiffNext,
     MergeLeft,
@@ -507,6 +508,11 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         if (modifiers == Forms.Keys.None && key == Forms.Keys.F3)
         {
             shortcut = EditorShortcut.FindNext;
+            return true;
+        }
+        if (modifiers == Forms.Keys.None && key == Forms.Keys.F1)
+        {
+            shortcut = EditorShortcut.Help;
             return true;
         }
         if (modifiers == Forms.Keys.Shift && key == Forms.Keys.F3)

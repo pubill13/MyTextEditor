@@ -375,7 +375,7 @@ public partial class MainWindow : Window
             StatusMessage.Text = "진행 중인 문서 저장 또는 닫기가 끝난 뒤 다시 시도하세요.";
             return;
         }
-        if (_diffWindows.Count == 0 && !Documents.Any(document => document.IsModified))
+        if (_diffWorkspaceWindow is null && !Documents.Any(document => document.IsModified))
         {
             _closingInProgress = true;
             CompleteShutdown();
@@ -404,8 +404,11 @@ public partial class MainWindow : Window
     private void CompleteShutdown()
     {
         _settingsSaveTimer.Stop();
-        foreach (var diffWindow in _diffWindows.ToArray()) diffWindow.Close();
         Hide();
+        _diffWorkspaceWindow?.Hide();
+        _helpWindow?.Hide();
+        _diffWorkspaceWindow?.Close();
+        _helpWindow?.Close();
         if (!SaveSettings(false))
         {
             Show();
@@ -469,6 +472,7 @@ public partial class MainWindow : Window
         }
         if (modifiers == ModifierKeys.None && key == Key.F3) { shortcut = EditorShortcut.FindNext; return true; }
         if (modifiers == ModifierKeys.Shift && key == Key.F3) { shortcut = EditorShortcut.FindPrevious; return true; }
+        if (modifiers == ModifierKeys.None && key == Key.F1) { shortcut = EditorShortcut.Help; return true; }
         return false;
     }
 
@@ -496,6 +500,7 @@ public partial class MainWindow : Window
             case EditorShortcut.PreviousDocument: SelectRelativeDocument(-1); break;
             case EditorShortcut.FindNext: MoveToSearchResult(1); break;
             case EditorShortcut.FindPrevious: MoveToSearchResult(-1); break;
+            case EditorShortcut.Help: ShowHelpWindow(); break;
         }
     }
 
@@ -1442,9 +1447,7 @@ public partial class MainWindow : Window
         ResultPanel.Visibility = _settings.ResultPanelVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void Help_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "조건 검색\n  모두 포함·하나라도 포함·제외 검색어를 입력하세요.\n\n텍스트 정리\n  미리보기로 확인하거나 바로 적용할 수 있습니다. 로그 정리는 표시 제어 코드와 불필요한 공백을 정리합니다.\n\n단축키\n  Ctrl+N 새 문서 · Ctrl+O 열기 · Ctrl+S 저장 · Ctrl+W 탭 닫기\n  Ctrl+Tab 탭 이동 · Ctrl+F 찾기 · Ctrl+H 바꾸기 · F3 다음 결과",
-        "나만의 텍스트 편집기", MessageBoxButton.OK, MessageBoxImage.Information);
+    private void Help_Click(object sender, RoutedEventArgs e) => ShowHelpWindow();
 
     private static int SelectedNumber(ComboBox comboBox) => int.TryParse((comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out var result) ? result : 0;
 

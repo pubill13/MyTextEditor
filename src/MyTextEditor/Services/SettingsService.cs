@@ -80,6 +80,7 @@ public static class SettingsService
         settings.SearchState ??= new SearchInputState();
         settings.TransformState ??= new TransformInputState();
         settings.Diff ??= new DiffUserSettings();
+        settings.Help ??= new HelpUserSettings();
 
         settings.RecentFiles.RemoveAll(item => item is null);
         settings.FavoriteToolIds.RemoveAll(item => string.IsNullOrWhiteSpace(item));
@@ -94,6 +95,7 @@ public static class SettingsService
         settings.SearchState = MigrateActiveSearch(settings.SearchState);
         NormalizeTransform(settings.TransformState);
         NormalizeDiff(settings.Diff);
+        NormalizeHelp(settings.Help);
         for (var index = settings.RecentSearches.Count - 1; index >= 0; index--)
         {
             var savedSearch = settings.RecentSearches[index];
@@ -185,6 +187,14 @@ public static class SettingsService
         diff.WindowHeight = double.IsFinite(diff.WindowHeight) ? Math.Max(680, diff.WindowHeight) : 860;
         if (diff.WindowLeft is not null && !double.IsFinite(diff.WindowLeft.Value)) diff.WindowLeft = null;
         if (diff.WindowTop is not null && !double.IsFinite(diff.WindowTop.Value)) diff.WindowTop = null;
+    }
+
+    private static void NormalizeHelp(HelpUserSettings help)
+    {
+        help.WindowWidth = double.IsFinite(help.WindowWidth) ? Math.Max(760, help.WindowWidth) : 1000;
+        help.WindowHeight = double.IsFinite(help.WindowHeight) ? Math.Max(520, help.WindowHeight) : 720;
+        if (help.WindowLeft is not null && !double.IsFinite(help.WindowLeft.Value)) help.WindowLeft = null;
+        if (help.WindowTop is not null && !double.IsFinite(help.WindowTop.Value)) help.WindowTop = null;
     }
 
     private static void RemoveDuplicates(List<string> values)

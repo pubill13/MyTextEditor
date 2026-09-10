@@ -24,6 +24,7 @@ public sealed class UserSettings
     public SearchInputState SearchState { get; set; } = new();
     public TransformInputState TransformState { get; set; } = new();
     public DiffUserSettings Diff { get; set; } = new();
+    public HelpUserSettings Help { get; set; } = new();
 }
 
 public sealed class DiffUserSettings
@@ -34,6 +35,14 @@ public sealed class DiffUserSettings
     public bool ScrollSync { get; set; } = true;
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 860;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+}
+
+public sealed class HelpUserSettings
+{
+    public double WindowWidth { get; set; } = 1000;
+    public double WindowHeight { get; set; } = 720;
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }
 }

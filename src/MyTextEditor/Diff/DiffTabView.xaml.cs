@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -15,11 +14,12 @@ using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 using WpfButton = System.Windows.Controls.Button;
 using WpfOrientation = System.Windows.Controls.Orientation;
 using WpfSaveFileDialog = Microsoft.Win32.SaveFileDialog;
+using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WpfStackPanel = System.Windows.Controls.StackPanel;
 
 namespace MyTextEditor.Diff;
 
-public partial class DiffWindow : Window
+public partial class DiffTabView : System.Windows.Controls.UserControl
 {
     private readonly TextDiffEngine _diffEngine = new();
     private readonly TextMergeService _mergeService = new();
@@ -37,12 +37,11 @@ public partial class DiffWindow : Window
     private bool _updatingEditors;
     private bool _syncingScroll;
     private bool _resourcesReleased;
-    private bool _closingApproved;
-    private bool _closePromptRunning;
+    private bool _initialized;
     private bool _leftDirty;
     private bool _rightDirty;
 
-    public DiffWindow(DiffEndpoint left, DiffEndpoint right, DiffWindowOptions options,
+    public DiffTabView(DiffEndpoint left, DiffEndpoint right, DiffWindowOptions options,
         DiffWindowCallbacks callbacks, DiffAppearance appearance)
     {
         InitializeComponent();
@@ -50,14 +49,6 @@ public partial class DiffWindow : Window
         _right = right;
         _callbacks = callbacks;
         _appearance = appearance;
-        Width = Math.Max(MinWidth, options.Width);
-        Height = Math.Max(MinHeight, options.Height);
-        if (options.Left is { } x && options.Top is { } y)
-        {
-            WindowStartupLocation = WindowStartupLocation.Manual;
-            Left = x;
-            Top = y;
-        }
         IgnoreWhitespaceCheck.IsChecked = options.IgnoreWhitespace;
         IgnoreCaseCheck.IsChecked = options.IgnoreCase;
         IgnoreEmptyLinesCheck.IsChecked = options.IgnoreEmptyLines;
@@ -67,11 +58,26 @@ public partial class DiffWindow : Window
     }
 
     public event EventHandler? ResourcesReleased;
+    public event EventHandler? StateChanged;
+    public event EventHandler? OptionsChanged;
+    public event EventHandler<DiffTabRequestedEventArgs>? NewComparisonRequested;
+    public event EventHandler<DiffFilesDroppedEventArgs>? FilesDropped;
+    public event EventHandler? CloseRequested;
+    public event EventHandler<DiffTabCycleRequestedEventArgs>? CycleTabRequested;
     public bool HasUnsavedChanges => _leftDirty || _rightDirty;
-
-    public void CancelPreparedClose()
+    public bool IsCompletelyEmpty => !_left.IsReady && !_right.IsReady && !HasUnsavedChanges;
+    public bool LeftIsReady => _left.IsReady;
+    public bool RightIsReady => _right.IsReady;
+    public bool IsReady => _left.IsReady && _right.IsReady;
+    public int DifferenceCount => _result?.Blocks.Count ?? 0;
+    public string TabTitle
     {
-        if (!_resourcesReleased) _closingApproved = false;
+        get
+        {
+            var name = IsCompletelyEmpty ? "새 비교" : $"{_left.DisplayName} ↔ {_right.DisplayName}";
+            var count = IsReady && _result is not null ? $" ({DifferenceCount})" : string.Empty;
+            return name + count + (HasUnsavedChanges ? " •" : string.Empty);
+        }
     }
 
     public void RefreshSourceState()
@@ -90,6 +96,8 @@ public partial class DiffWindow : Window
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
+        if (_initialized) return;
+        _initialized = true;
         _leftEditor = CreateEditor(_left);
         _rightEditor = CreateEditor(_right);
         LeftEditorContainer.Content = _leftEditor;
@@ -103,7 +111,10 @@ public partial class DiffWindow : Window
         _leftEditor.ShortcutRequested += Editor_ShortcutRequested;
         _rightEditor.ShortcutRequested += Editor_ShortcutRequested;
         RefreshEndpointHeaders();
-        _ = CompareNowAsync();
+        _leftEditor.FilesDropped += LeftEditor_FilesDropped;
+        _rightEditor.FilesDropped += RightEditor_FilesDropped;
+        RefreshReadyState();
+        if (IsReady) _ = CompareNowAsync();
     }
 
     private ScintillaEditorHost CreateEditor(DiffEndpoint endpoint)
@@ -149,7 +160,7 @@ public partial class DiffWindow : Window
 
     private async Task CompareNowAsync()
     {
-        if (_resourcesReleased) return;
+        if (_resourcesReleased || !IsReady) { InvalidateDisplayedResult(); RefreshReadyState(); return; }
         var generation = ++_generation;
         var left = _leftEditor.GetText();
         var right = _rightEditor.GetText();
@@ -227,7 +238,9 @@ public partial class DiffWindow : Window
         PositionText.Text = count == 0 ? "0 / 0" : $"{_currentBlockIndex + 1} / {count}";
         StatisticsText.Text = _result is null ? string.Empty : $"추가 {_result.AddedLines}  삭제 {_result.DeletedLines}  수정 {_result.ModifiedLines}";
         StatusText.Text = count == 0 ? "두 내용이 같습니다." : $"차이 {count}개";
+        RefreshReadyState();
         RebuildMergeGutter();
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void Previous_Click(object sender, RoutedEventArgs e) => NavigateDifference(-1);
@@ -342,11 +355,11 @@ public partial class DiffWindow : Window
     private void Option_Changed(object sender, RoutedEventArgs e)
     {
         if (!IsLoaded) return;
-        SaveOptions();
+        NotifyOptionsChanged();
         _ = CompareNowAsync();
     }
 
-    private void ScrollSync_Changed(object sender, RoutedEventArgs e) { if (IsLoaded) SaveOptions(); }
+    private void ScrollSync_Changed(object sender, RoutedEventArgs e) { if (IsLoaded) NotifyOptionsChanged(); }
 
     private void ReadOnly_Changed(object sender, RoutedEventArgs e)
     {
@@ -355,6 +368,7 @@ public partial class DiffWindow : Window
         _rightEditor.IsReadOnly = RightReadOnlyCheck.IsChecked == true;
         _left.IsReadOnly = _leftEditor.IsReadOnly;
         _right.IsReadOnly = _rightEditor.IsReadOnly;
+        RefreshReadyState();
         RebuildMergeGutter();
     }
 
@@ -368,11 +382,13 @@ public partial class DiffWindow : Window
         RightReadOnlyCheck.IsChecked = _right.IsReadOnly;
         ApplyLeftSourceButton.Visibility = _left.SourceDocumentId.HasValue ? Visibility.Visible : Visibility.Collapsed;
         ApplyRightSourceButton.Visibility = _right.SourceDocumentId.HasValue ? Visibility.Visible : Visibility.Collapsed;
-        Title = $"{_left.DisplayName} ↔ {_right.DisplayName} — Diff / Merge";
+        RefreshReadyState();
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private static string DescribeEndpoint(DiffEndpoint endpoint) => endpoint.Kind switch
     {
+        DiffEndpointKind.Empty => "소스를 선택하거나 파일을 놓으세요",
         DiffEndpointKind.OpenDocument => endpoint.FilePath ?? "열린 문서",
         DiffEndpointKind.File => endpoint.FilePath ?? "파일",
         DiffEndpointKind.Clipboard => "클립보드 스냅샷 · 읽기 전용",
@@ -384,16 +400,23 @@ public partial class DiffWindow : Window
         _left.Text = _leftEditor.GetText(); _right.Text = _rightEditor.GetText();
         (_left, _right) = (_right, _left);
         (_leftDirty, _rightDirty) = (_rightDirty, _leftDirty);
-        _updatingEditors = true;
-        try
-        {
-            _leftEditor.IsReadOnly = false; _rightEditor.IsReadOnly = false;
-            _leftEditor.LoadUtf8(Encoding.UTF8.GetBytes(_left.Text));
-            _rightEditor.LoadUtf8(Encoding.UTF8.GetBytes(_right.Text));
-            _leftEditor.SetNewLine(_left.NewLine); _rightEditor.SetNewLine(_right.NewLine);
-            _leftEditor.IsReadOnly = _left.IsReadOnly; _rightEditor.IsReadOnly = _right.IsReadOnly;
-        }
-        finally { _updatingEditors = false; }
+        _leftEditor.RevisionChanged -= LeftEditor_RevisionChanged;
+        _rightEditor.RevisionChanged -= RightEditor_RevisionChanged;
+        _leftEditor.VerticalScrolled -= LeftEditor_VerticalScrolled;
+        _rightEditor.VerticalScrolled -= RightEditor_VerticalScrolled;
+        _leftEditor.FilesDropped -= LeftEditor_FilesDropped;
+        _rightEditor.FilesDropped -= RightEditor_FilesDropped;
+        LeftEditorContainer.Content = null;
+        RightEditorContainer.Content = null;
+        (_leftEditor, _rightEditor) = (_rightEditor, _leftEditor);
+        LeftEditorContainer.Content = _leftEditor;
+        RightEditorContainer.Content = _rightEditor;
+        _leftEditor.RevisionChanged += LeftEditor_RevisionChanged;
+        _rightEditor.RevisionChanged += RightEditor_RevisionChanged;
+        _leftEditor.VerticalScrolled += LeftEditor_VerticalScrolled;
+        _rightEditor.VerticalScrolled += RightEditor_VerticalScrolled;
+        _leftEditor.FilesDropped += LeftEditor_FilesDropped;
+        _rightEditor.FilesDropped += RightEditor_FilesDropped;
         RefreshEndpointHeaders();
         _ = CompareNowAsync();
     }
@@ -429,10 +452,7 @@ public partial class DiffWindow : Window
         }
         var leftSelection = new DiffEndpoint { Kind = DiffEndpointKind.Selection, DisplayName = $"{_left.DisplayName} 선택", Text = _leftEditor.SelectedText, IsReadOnly = true, NewLine = _left.NewLine };
         var rightSelection = new DiffEndpoint { Kind = DiffEndpointKind.Selection, DisplayName = $"{_right.DisplayName} 선택", Text = _rightEditor.SelectedText, IsReadOnly = true, NewLine = _right.NewLine };
-        if (_callbacks.OpenChildWindow is { } openChild) { openChild(leftSelection, rightSelection); return; }
-        var child = new DiffWindow(leftSelection, rightSelection,
-            CurrentWindowOptions() with { Left = null, Top = null }, _callbacks, _appearance) { Owner = this };
-        child.Show();
+        NewComparisonRequested?.Invoke(this, new DiffTabRequestedEventArgs(leftSelection, rightSelection));
     }
 
     private void CheckStaleSources()
@@ -476,7 +496,7 @@ public partial class DiffWindow : Window
     private bool ReloadSource(bool left, Guid documentId)
     {
         var dirty = left ? _leftDirty : _rightDirty;
-        if (dirty && WpfMessageBox.Show(this, "이쪽 Diff 버퍼의 변경을 버리고 최신 원본을 불러올까요?", "원본 다시 불러오기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (dirty && WpfMessageBox.Show(Window.GetWindow(this), "이쪽 Diff 버퍼의 변경을 버리고 최신 원본을 불러올까요?", "원본 다시 불러오기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
             return false;
         var snapshot = _callbacks.GetSourceSnapshot(documentId);
         if (snapshot is null) { StatusText.Text = "원본 문서가 이미 닫혀 다시 불러올 수 없습니다."; return false; }
@@ -500,7 +520,7 @@ public partial class DiffWindow : Window
 
     private async void ForceApplyStale_Click(object sender, RoutedEventArgs e)
     {
-        if (WpfMessageBox.Show(this, "원본 탭의 최신 내용을 현재 Diff 내용으로 교체할까요?", "원본 강제 교체", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (WpfMessageBox.Show(Window.GetWindow(this), "원본 탭의 최신 내용을 현재 Diff 내용으로 교체할까요?", "원본 강제 교체", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         if (_left.SourceDocumentId is { } leftId && _callbacks.GetSourceRevision(leftId) != _left.SourceRevision) await ApplyToSourceAsync(true, true);
         if (_right.SourceDocumentId is { } rightId && _callbacks.GetSourceRevision(rightId) != _right.SourceRevision) await ApplyToSourceAsync(false, true);
     }
@@ -522,14 +542,14 @@ public partial class DiffWindow : Window
         var destination = endpoint.FilePath;
         if (endpoint.Kind == DiffEndpointKind.File && destination is not null && HasExternalChange(endpoint))
         {
-            var choice = WpfMessageBox.Show(this, "파일이 외부에서 변경되었습니다.\n\n예: 덮어쓰기   아니요: 다른 이름으로 저장", "외부 변경 감지", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+            var choice = WpfMessageBox.Show(Window.GetWindow(this), "파일이 외부에서 변경되었습니다.\n\n예: 덮어쓰기   아니요: 다른 이름으로 저장", "외부 변경 감지", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
             if (choice == MessageBoxResult.Cancel) return false;
             if (choice == MessageBoxResult.No) destination = null;
         }
         if (destination is null)
         {
             var dialog = new WpfSaveFileDialog { FileName = endpoint.DisplayName, Filter = "텍스트 파일|*.txt|모든 파일|*.*" };
-            if (dialog.ShowDialog(this) != true) return false;
+            if (dialog.ShowDialog(Window.GetWindow(this)) != true) return false;
             destination = dialog.FileName;
         }
         var state = new DocumentState
@@ -550,7 +570,7 @@ public partial class DiffWindow : Window
         }
         catch (Exception exception)
         {
-            WpfMessageBox.Show(this, exception.Message, "저장 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            WpfMessageBox.Show(Window.GetWindow(this), exception.Message, "저장 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }
@@ -571,6 +591,10 @@ public partial class DiffWindow : Window
             case EditorShortcut.MergeLeft: MergeCurrent(DiffSide.Right); e.Handled = true; break;
             case EditorShortcut.MergeRight: MergeCurrent(DiffSide.Left); e.Handled = true; break;
             case EditorShortcut.SaveDocument: _ = SaveEndpointAsync(ReferenceEquals(sender, _leftEditor)); e.Handled = true; break;
+            case EditorShortcut.CloseDocument: CloseRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; break;
+            case EditorShortcut.NextDocument: CycleTabRequested?.Invoke(this, new(1)); e.Handled = true; break;
+            case EditorShortcut.PreviousDocument: CycleTabRequested?.Invoke(this, new(-1)); e.Handled = true; break;
+            case EditorShortcut.Help: _callbacks.ShowHelp?.Invoke(); e.Handled = true; break;
         }
     }
 
@@ -583,36 +607,26 @@ public partial class DiffWindow : Window
         else if (e.Key == Key.Right) { MergeCurrent(DiffSide.Left); e.Handled = true; }
     }
 
-    private async void Window_Closing(object? sender, CancelEventArgs e)
-    {
-        if (_closingApproved) { ReleaseResources(); return; }
-        if (_closePromptRunning) { e.Cancel = true; return; }
-        if (!HasUnsavedChanges) { ReleaseResources(); return; }
-        e.Cancel = true;
-        _closePromptRunning = true;
-        try
-        {
-            if (await RequestCloseAsync()) Close();
-        }
-        finally { _closePromptRunning = false; }
-    }
+    public DiffWindowOptions GetOptions() => new(
+        IgnoreWhitespaceCheck.IsChecked == true, IgnoreCaseCheck.IsChecked == true,
+        IgnoreEmptyLinesCheck.IsChecked == true, ScrollSyncCheck.IsChecked == true);
 
     public async Task<bool> RequestCloseAsync()
     {
-        if (_closingApproved) return true;
-        if (!HasUnsavedChanges) { _closingApproved = true; return true; }
-        var choice = WpfMessageBox.Show(this, "Diff 창에서 수정한 내용을 저장할까요?\n\n예: 수정된 양쪽 저장   아니요: 버리기", "Diff / Merge 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        if (!HasUnsavedChanges) return true;
+        var choice = WpfMessageBox.Show(Window.GetWindow(this),
+            $"'{TabTitle}'에서 수정한 내용을 저장할까요?\n\n예: 수정된 양쪽 저장   아니요: 버리기",
+            "비교 탭 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (choice == MessageBoxResult.Cancel) return false;
         if (choice == MessageBoxResult.Yes)
         {
             if (_leftDirty && !await SaveEndpointAsync(true)) return false;
             if (_rightDirty && !await SaveEndpointAsync(false)) return false;
         }
-        _closingApproved = true;
         return true;
     }
 
-    private void ReleaseResources()
+    public void ReleaseResources()
     {
         if (_resourcesReleased) return;
         _resourcesReleased = true;
@@ -625,13 +639,161 @@ public partial class DiffWindow : Window
         ResourcesReleased = null;
     }
 
-    private void Window_PlacementChanged(object? sender, EventArgs e) { if (IsLoaded) SaveOptions(); }
+    public async Task<bool> SetEndpointAsync(bool left, DiffEndpoint endpoint, bool confirmReplacement = true)
+    {
+        if (_resourcesReleased) return false;
+        var dirty = left ? _leftDirty : _rightDirty;
+        if (confirmReplacement && dirty)
+        {
+            var choice = WpfMessageBox.Show(Window.GetWindow(this),
+                "이쪽 비교 버퍼에 저장하지 않은 변경이 있습니다. 저장한 뒤 소스를 바꿀까요?\n\n예: 저장   아니요: 버리기",
+                "비교 소스 바꾸기", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+            if (choice == MessageBoxResult.Cancel) return false;
+            if (choice == MessageBoxResult.Yes && !await SaveEndpointAsync(left)) return false;
+        }
 
-    private DiffWindowOptions CurrentWindowOptions() => new(
-        IgnoreWhitespaceCheck.IsChecked == true, IgnoreCaseCheck.IsChecked == true,
-        IgnoreEmptyLinesCheck.IsChecked == true, ScrollSyncCheck.IsChecked == true,
-        ActualWidth, ActualHeight, WindowState == WindowState.Normal ? Left : RestoreBounds.Left,
-        WindowState == WindowState.Normal ? Top : RestoreBounds.Top);
+        if (left) _left = endpoint; else _right = endpoint;
+        if (IsLoaded)
+        {
+            var editor = left ? _leftEditor : _rightEditor;
+            _updatingEditors = true;
+            try
+            {
+                editor.IsReadOnly = false;
+                editor.LoadUtf8(Encoding.UTF8.GetBytes(endpoint.Text));
+                editor.SetNewLine(endpoint.NewLine);
+                editor.IsReadOnly = endpoint.IsReadOnly;
+                editor.MarkSaved();
+            }
+            finally { _updatingEditors = false; }
+        }
+        if (left) _leftDirty = false; else _rightDirty = false;
+        _generation++;
+        InvalidateDisplayedResult();
+        RefreshEndpointHeaders();
+        if (IsReady) await CompareNowAsync();
+        return true;
+    }
 
-    private void SaveOptions() => _callbacks.SettingsChanged(CurrentWindowOptions());
+    public static async Task<DiffEndpoint> LoadFileEndpointAsync(string path)
+    {
+        var state = await new DocumentFileService().LoadAsync(path);
+        var info = new FileInfo(path);
+        return new DiffEndpoint
+        {
+            Kind = DiffEndpointKind.File, DisplayName = info.Name, Text = state.Text,
+            FilePath = info.FullName, Encoding = state.Encoding, HasByteOrderMark = state.HasByteOrderMark,
+            NewLine = state.NewLine, SourceFileLength = info.Length, SourceFileLastWriteUtc = info.LastWriteTimeUtc
+        };
+    }
+
+    private void RefreshReadyState()
+    {
+        if (LeftDropZone is null || RightDropZone is null) return;
+        LeftDropZone.Visibility = _left.IsReady ? Visibility.Collapsed : Visibility.Visible;
+        RightDropZone.Visibility = _right.IsReady ? Visibility.Collapsed : Visibility.Visible;
+        PreviousButton.IsEnabled = NextButton.IsEnabled = SwapButton.IsEnabled = IsReady;
+        CompareSelectionsButton.IsEnabled = IsReady;
+        CopyAllLeftButton.IsEnabled = IsReady && !_leftEditor.IsReadOnly;
+        CopyAllRightButton.IsEnabled = IsReady && !_rightEditor.IsReadOnly;
+        CopyDifferenceButton.IsEnabled = IsReady && _result is not null && _result.Blocks.Count > 0;
+        if (!IsReady) { StatusText.Text = "좌우 비교 소스를 선택하세요."; BusyProgress.Visibility = Visibility.Collapsed; }
+    }
+
+    private void NotifyOptionsChanged() => OptionsChanged?.Invoke(this, EventArgs.Empty);
+
+    private static bool TryGetDroppedFiles(System.Windows.DragEventArgs e, out IReadOnlyList<string> paths)
+    {
+        paths = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) && e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] items
+            ? items : Array.Empty<string>();
+        return paths.Count > 0;
+    }
+
+    private void Root_DragOver(object sender, System.Windows.DragEventArgs e) { e.Effects = TryGetDroppedFiles(e, out _) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None; e.Handled = true; }
+    private void Root_Drop(object sender, System.Windows.DragEventArgs e) { if (TryGetDroppedFiles(e, out var paths)) FilesDropped?.Invoke(this, new(paths)); e.Handled = true; }
+    private void Left_DragOver(object sender, System.Windows.DragEventArgs e) => Root_DragOver(sender, e);
+    private void Right_DragOver(object sender, System.Windows.DragEventArgs e) => Root_DragOver(sender, e);
+    private async void Left_Drop(object sender, System.Windows.DragEventArgs e) { if (TryGetDroppedFiles(e, out var paths)) await LoadDroppedSideAsync(true, paths); e.Handled = true; }
+    private async void Right_Drop(object sender, System.Windows.DragEventArgs e) { if (TryGetDroppedFiles(e, out var paths)) await LoadDroppedSideAsync(false, paths); e.Handled = true; }
+
+    private async Task LoadDroppedSideAsync(bool left, IReadOnlyList<string> paths)
+    {
+        if (paths.Count != 1) { FilesDropped?.Invoke(this, new(paths)); return; }
+        if (Directory.Exists(paths[0])) { StatusText.Text = "폴더는 비교 소스로 열 수 없습니다."; return; }
+        BusyProgress.Visibility = Visibility.Visible;
+        StatusText.Text = $"{(left ? "왼쪽" : "오른쪽")} 파일을 불러오는 중…";
+        try { await SetEndpointAsync(left, await LoadFileEndpointAsync(paths[0])); }
+        catch (Exception exception) { StatusText.Text = $"파일을 열지 못했습니다: {exception.Message}"; }
+        finally { BusyProgress.Visibility = Visibility.Collapsed; }
+    }
+
+    private async Task ChooseFileAsync(bool left)
+    {
+        var dialog = new WpfOpenFileDialog { Filter = "텍스트 파일|*.txt;*.log;*.csv;*.json;*.xml|모든 파일|*.*" };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+        BusyProgress.Visibility = Visibility.Visible;
+        StatusText.Text = $"{(left ? "왼쪽" : "오른쪽")} 파일을 불러오는 중…";
+        try { await SetEndpointAsync(left, await LoadFileEndpointAsync(dialog.FileName)); }
+        catch (Exception exception) { StatusText.Text = $"파일을 열지 못했습니다: {exception.Message}"; }
+        finally { BusyProgress.Visibility = Visibility.Collapsed; }
+    }
+
+    private void LeftEditor_FilesDropped(IReadOnlyList<string> paths) => _ = LoadDroppedSideAsync(true, paths);
+    private void RightEditor_FilesDropped(IReadOnlyList<string> paths) => _ = LoadDroppedSideAsync(false, paths);
+
+    private void ChooseDocument(bool left, FrameworkElement anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor };
+        foreach (var snapshot in _callbacks.GetOpenDocuments?.Invoke() ?? [])
+        {
+            var item = new MenuItem { Header = snapshot.DisplayName, Tag = snapshot };
+            item.Click += async (_, _) => await SetEndpointAsync(left, SnapshotToEndpoint((DiffSourceSnapshot)item.Tag));
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Header = "열린 문서가 없습니다", IsEnabled = false });
+        menu.IsOpen = true;
+    }
+
+    private static DiffEndpoint SnapshotToEndpoint(DiffSourceSnapshot value) => new()
+    {
+        Kind = DiffEndpointKind.OpenDocument, DisplayName = value.DisplayName, Text = value.Text,
+        FilePath = value.FilePath, Encoding = value.Encoding, HasByteOrderMark = value.HasByteOrderMark,
+        NewLine = value.NewLine, SourceDocumentId = value.SourceDocumentId, SourceRevision = value.Revision
+    };
+
+    private Task UseClipboardAsync(bool left)
+    {
+        if (!WpfClipboard.ContainsText()) { StatusText.Text = "클립보드에 텍스트가 없습니다."; return Task.CompletedTask; }
+        return SetEndpointAsync(left, new DiffEndpoint { Kind = DiffEndpointKind.Clipboard, DisplayName = "클립보드", Text = WpfClipboard.GetText(), IsReadOnly = true });
+    }
+
+    private async void ChooseLeftFile_Click(object sender, RoutedEventArgs e) => await ChooseFileAsync(true);
+    private async void ChooseRightFile_Click(object sender, RoutedEventArgs e) => await ChooseFileAsync(false);
+    private void ChooseLeftDocument_Click(object sender, RoutedEventArgs e) => ChooseDocument(true, (FrameworkElement)sender);
+    private void ChooseRightDocument_Click(object sender, RoutedEventArgs e) => ChooseDocument(false, (FrameworkElement)sender);
+    private async void UseLeftClipboard_Click(object sender, RoutedEventArgs e) => await UseClipboardAsync(true);
+    private async void UseRightClipboard_Click(object sender, RoutedEventArgs e) => await UseClipboardAsync(false);
+
+    private void LeftSourceMenu_Click(object sender, RoutedEventArgs e) => ShowSourceMenu(true, (FrameworkElement)sender);
+    private void RightSourceMenu_Click(object sender, RoutedEventArgs e) => ShowSourceMenu(false, (FrameworkElement)sender);
+
+    private void ShowSourceMenu(bool left, FrameworkElement anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor };
+        var file = new MenuItem { Header = "파일 선택…" };
+        file.Click += async (_, _) => await ChooseFileAsync(left);
+        var document = new MenuItem { Header = "열린 문서" };
+        document.Click += (_, _) => ChooseDocument(left, document);
+        var clipboard = new MenuItem { Header = "클립보드" };
+        clipboard.Click += async (_, _) => await UseClipboardAsync(left);
+        var clear = new MenuItem { Header = "비우기" };
+        clear.Click += async (_, _) => await SetEndpointAsync(left, DiffEndpoint.Empty(left ? "왼쪽" : "오른쪽"));
+        menu.Items.Add(file); menu.Items.Add(document); menu.Items.Add(clipboard);
+        menu.Items.Add(new Separator()); menu.Items.Add(clear);
+        menu.IsOpen = true;
+    }
 }
+
+
+
+

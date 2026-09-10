@@ -7,6 +7,7 @@ using MyTextEditor.Controls;
 using MyTextEditor.Core;
 using MyTextEditor.Core.Models;
 using MyTextEditor.Diff;
+using MyTextEditor.Help;
 using MyTextEditor.Models;
 using Application = System.Windows.Application;
 using Forms = System.Windows.Forms;
@@ -23,7 +24,9 @@ internal static class Program
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         VerifyEditorShortcutsAndRelease();
         VerifyEditorRoundTrip();
-        VerifyDiffWindowAndMergeUndo();
+        VerifyDiffTabAndMergeUndo();
+        VerifyDiffWorkspaceTabsAndDrop();
+        VerifyHelpCatalog();
         VerifySettingsModels();
         var times = new List<double>();
         for (var run = 1; run <= 3; run++)
@@ -112,6 +115,7 @@ internal static class Program
             (Forms.Keys.Control | Forms.Keys.PageDown, EditorShortcut.NextDocument),
             (Forms.Keys.F3, EditorShortcut.FindNext),
             (Forms.Keys.Shift | Forms.Keys.F3, EditorShortcut.FindPrevious),
+            (Forms.Keys.F1, EditorShortcut.Help),
             (Forms.Keys.Alt | Forms.Keys.Up, EditorShortcut.PreviousDifference),
             (Forms.Keys.Alt | Forms.Keys.Down, EditorShortcut.NextDifference),
             (Forms.Keys.Alt | Forms.Keys.Left, EditorShortcut.MergeRightToLeft),
@@ -143,7 +147,7 @@ internal static class Program
         Console.WriteLine($"PASS editor shortcut forwarding and idempotent resource release ({releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms)");
     }
 
-    private static void VerifyDiffWindowAndMergeUndo()
+    private static void VerifyDiffTabAndMergeUndo()
     {
         var callbacks = new DiffWindowCallbacks
         {
@@ -154,31 +158,133 @@ internal static class Program
             CreateDocumentAsync = (_, _) => Task.CompletedTask,
             SettingsChanged = _ => { }
         };
-        var window = new DiffWindow(
+        var view = new DiffTabView(
             new DiffEndpoint { Kind = DiffEndpointKind.Clipboard, DisplayName = "left", Text = "a\nold", IsReadOnly = false, NewLine = "\n" },
             new DiffEndpoint { Kind = DiffEndpointKind.Clipboard, DisplayName = "right", Text = "a\nnew", IsReadOnly = false, NewLine = "\n" },
-            new DiffWindowOptions(), callbacks, new DiffAppearance("Consolas", 12, false))
+            new DiffWindowOptions(), callbacks, new DiffAppearance("Consolas", 12, false));
+        var window = new Window
         {
+            Content = view,
+            Width = 1000,
+            Height = 600,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.ToolWindow
         };
         window.Show();
 
-        var resultField = typeof(DiffWindow).GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        PumpDispatcherUntil(() => resultField.GetValue(window) is TextDiffResult, TimeSpan.FromSeconds(3));
-        var merge = typeof(DiffWindow).GetMethod("MergeCurrent", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        merge.Invoke(window, [DiffSide.Left]);
-        var rightEditor = (ScintillaEditorHost)typeof(DiffWindow)
-            .GetField("_rightEditor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        var resultField = typeof(DiffTabView).GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        PumpDispatcherUntil(() => resultField.GetValue(view) is TextDiffResult, TimeSpan.FromSeconds(3));
+        var copyDifferenceButton = (System.Windows.Controls.Button)typeof(DiffTabView)
+            .GetField("CopyDifferenceButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+        if (!copyDifferenceButton.IsEnabled)
+            throw new InvalidOperationException("최초 비교 뒤 차이 복사 버튼이 활성화되지 않았습니다.");
+        var merge = typeof(DiffTabView).GetMethod("MergeCurrent", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        merge.Invoke(view, [DiffSide.Left]);
+        var rightEditor = (ScintillaEditorHost)typeof(DiffTabView)
+            .GetField("_rightEditor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
         if (rightEditor.GetText() != "a\nold")
             throw new InvalidOperationException("Diff 블록 병합 결과가 올바르지 않습니다.");
         rightEditor.Undo();
         if (rightEditor.GetText() != "a\nnew")
             throw new InvalidOperationException("Diff 블록 병합이 한 번의 Undo로 복원되지 않았습니다.");
+        var rightReadOnly = (System.Windows.Controls.CheckBox)typeof(DiffTabView)
+            .GetField("RightReadOnlyCheck", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+        var copyAllRight = (System.Windows.Controls.Button)typeof(DiffTabView)
+            .GetField("CopyAllRightButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+        rightReadOnly.IsChecked = true;
+        if (copyAllRight.IsEnabled)
+            throw new InvalidOperationException("읽기 전용 대상의 전체 병합 버튼이 활성화되어 있습니다.");
+        rightReadOnly.IsChecked = false;
+        PumpDispatcherUntil(() => resultField.GetValue(view) is TextDiffResult, TimeSpan.FromSeconds(3));
+        merge.Invoke(view, [DiffSide.Left]);
+        var swap = typeof(DiffTabView).GetMethod("Swap_Click", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        swap.Invoke(view, [view, new RoutedEventArgs()]);
+        var swappedLeftEditor = (ScintillaEditorHost)typeof(DiffTabView)
+            .GetField("_leftEditor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+        if (!swappedLeftEditor.CanUndo)
+            throw new InvalidOperationException("좌우 교환이 편집기의 Undo 기록을 잃었습니다.");
+        swappedLeftEditor.Undo();
+        if (swappedLeftEditor.GetText() != "a\nnew")
+            throw new InvalidOperationException("좌우 교환 뒤 기존 Undo 기록을 적용하지 못했습니다.");
 
-        typeof(DiffWindow).GetField("_closingApproved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, true);
+        view.ReleaseResources();
+        window.Content = null;
         window.Close();
-        Console.WriteLine("PASS modeless Diff window compare, merge, and single-step Undo");
+        Console.WriteLine("PASS tabbed Diff compare, merge, and single-step Undo");
+    }
+
+    private static void VerifyHelpCatalog()
+    {
+        if (HelpCatalog.Topics.Count < 15)
+            throw new InvalidOperationException("도움말의 필수 주제가 누락되었습니다.");
+        if (!HelpCatalog.Search(HelpCatalog.Topics, "병합").Any(topic => topic.Title.Contains("병합")))
+            throw new InvalidOperationException("도움말 제목 검색이 동작하지 않습니다.");
+        if (HelpCatalog.Search(HelpCatalog.Topics, "Ctrl+Shift+Tab").Count == 0)
+            throw new InvalidOperationException("도움말 본문·단축키 검색이 동작하지 않습니다.");
+        if (HelpCatalog.Search(HelpCatalog.Topics, "존재하지-않는-도움말-검색어").Count != 0)
+            throw new InvalidOperationException("도움말 결과 없음 처리가 올바르지 않습니다.");
+        Console.WriteLine("PASS searchable Help catalog and complete topic set");
+    }
+
+    private static void VerifyDiffWorkspaceTabsAndDrop()
+    {
+        var callbacks = new DiffWindowCallbacks
+        {
+            GetSourceRevision = _ => -1,
+            GetSourceSnapshot = _ => null,
+            GetOpenDocuments = () => [],
+            ApplyToSourceAsync = (_, _, _, _) => Task.FromResult(false),
+            SaveSourceAsync = _ => Task.FromResult(false),
+            CreateDocumentAsync = (_, _) => Task.CompletedTask,
+            SettingsChanged = _ => { }
+        };
+        var workspace = new DiffWorkspaceWindow(
+            new DiffWindowOptions(), callbacks, new DiffAppearance("Consolas", 12, false))
+        {
+            ShowInTaskbar = false,
+            WindowStyle = WindowStyle.ToolWindow
+        };
+        workspace.Show();
+        var initial = workspace.OpenEmptyTab();
+        if (!ReferenceEquals(initial, workspace.OpenEmptyTab()) || workspace.ComparisonCount != 1)
+            throw new InvalidOperationException("비교 버튼이 완전히 빈 탭을 재사용하지 않습니다.");
+
+        var directory = Path.Combine(Path.GetTempPath(), $"MyTextEditor-diff-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var leftPath = Path.Combine(directory, "left.txt");
+            var rightPath = Path.Combine(directory, "right.txt");
+            var ignoredPath = Path.Combine(directory, "ignored.txt");
+            File.WriteAllText(leftPath, string.Empty);
+            File.WriteAllText(rightPath, "right\n");
+            File.WriteAllText(ignoredPath, "ignored\n");
+            var failedDrop = workspace.OpenDroppedFilesAsync([leftPath, Path.Combine(directory, "missing.txt")]);
+            PumpDispatcherUntil(() => failedDrop.IsCompleted, TimeSpan.FromSeconds(3));
+            failedDrop.GetAwaiter().GetResult();
+            if (workspace.ComparisonCount != 1 || initial.IsReady)
+                throw new InvalidOperationException("두 파일 중 하나가 실패했는데 빈 비교 탭이 변경되었습니다.");
+            var firstDrop = workspace.OpenDroppedFilesAsync([leftPath, rightPath, ignoredPath]);
+            PumpDispatcherUntil(() => firstDrop.IsCompleted, TimeSpan.FromSeconds(3));
+            firstDrop.GetAwaiter().GetResult();
+            if (workspace.ComparisonCount != 1 || !initial.IsReady)
+                throw new InvalidOperationException("두 파일 드롭이 빈 탭을 재사용하거나 빈 파일을 준비된 소스로 처리하지 못했습니다.");
+
+            var secondDrop = workspace.OpenDroppedFilesAsync([leftPath, rightPath]);
+            PumpDispatcherUntil(() => secondDrop.IsCompleted, TimeSpan.FromSeconds(3));
+            secondDrop.GetAwaiter().GetResult();
+            if (workspace.ComparisonCount != 2)
+                throw new InvalidOperationException("내용이 있는 비교에서 두 파일 드롭이 새 Merge 탭을 만들지 않았습니다.");
+            workspace.OpenEmptyTab(false);
+            if (workspace.ComparisonCount != 3)
+                throw new InvalidOperationException("Merge 탭 추가가 독립 탭을 만들지 않았습니다.");
+        }
+        finally
+        {
+            workspace.Close();
+            Directory.Delete(directory, true);
+        }
+        Console.WriteLine("PASS Diff workspace blank-tab reuse, empty file readiness, and two-file drop");
     }
 
     private static void PumpDispatcherUntil(Func<bool> condition, TimeSpan timeout)

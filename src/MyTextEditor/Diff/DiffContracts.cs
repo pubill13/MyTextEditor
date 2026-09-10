@@ -5,6 +5,7 @@ namespace MyTextEditor.Diff;
 
 public enum DiffEndpointKind
 {
+    Empty,
     OpenDocument,
     File,
     Clipboard,
@@ -25,6 +26,15 @@ public sealed class DiffEndpoint
     public long SourceRevision { get; set; }
     public long? SourceFileLength { get; set; }
     public DateTime? SourceFileLastWriteUtc { get; set; }
+
+    public bool IsReady => Kind != DiffEndpointKind.Empty;
+
+    public static DiffEndpoint Empty(string displayName) => new()
+    {
+        Kind = DiffEndpointKind.Empty,
+        DisplayName = displayName,
+        Text = string.Empty
+    };
 }
 
 public sealed record DiffWindowOptions(
@@ -40,7 +50,7 @@ public sealed record DiffWindowOptions(
 public sealed record DiffAppearance(string FontFamily, float FontSize, bool DarkTheme, float DpiScale = 1f);
 
 public sealed record DiffSourceSnapshot(string DisplayName, string Text, string? FilePath,
-    Encoding Encoding, bool HasByteOrderMark, string NewLine, long Revision);
+    Encoding Encoding, bool HasByteOrderMark, string NewLine, long Revision, Guid? SourceDocumentId = null);
 
 public sealed class DiffWindowCallbacks
 {
@@ -50,7 +60,22 @@ public sealed class DiffWindowCallbacks
     public required Func<Guid, Task<bool>> SaveSourceAsync { get; init; }
     public required Func<string, string, Task> CreateDocumentAsync { get; init; }
     public required Action<DiffWindowOptions> SettingsChanged { get; init; }
-    public Action<DiffEndpoint, DiffEndpoint>? OpenChildWindow { get; init; }
+    public Func<IReadOnlyList<DiffSourceSnapshot>>? GetOpenDocuments { get; init; }
+    public Action? ShowHelp { get; init; }
 }
 
-public sealed record DiffSourceSelection(DiffEndpointKind Kind, Guid? DocumentId = null, string? FilePath = null);
+public sealed class DiffTabRequestedEventArgs(DiffEndpoint left, DiffEndpoint right) : EventArgs
+{
+    public DiffEndpoint Left { get; } = left;
+    public DiffEndpoint Right { get; } = right;
+}
+
+public sealed class DiffFilesDroppedEventArgs(IReadOnlyList<string> paths) : EventArgs
+{
+    public IReadOnlyList<string> Paths { get; } = paths;
+}
+
+public sealed class DiffTabCycleRequestedEventArgs(int direction) : EventArgs
+{
+    public int Direction { get; } = direction;
+}

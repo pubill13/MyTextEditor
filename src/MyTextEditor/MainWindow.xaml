@@ -62,7 +62,7 @@
                 <MenuItem Header="라이트 테마" Click="LightTheme_Click" />
                 <MenuItem Header="다크 테마" Click="DarkTheme_Click" />
             </MenuItem>
-            <MenuItem Header="도움말(_H)" Click="Help_Click" />
+            <MenuItem Header="도움말(_H)" InputGestureText="F1" Click="Help_Click" />
         </Menu>
 
         <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
