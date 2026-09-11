@@ -33,7 +33,14 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Diff 줄바꿈과 끝 개행", TestDiffNewLinesAndTerminalNewLine),
     ("Diff 블록 양방향 병합", TestDiffBlockMerge),
     ("Diff 전체 및 연속 병합", TestDiffApplyAllAndSequentialMerge),
-    ("Diff 5만 줄 성능", TestDiffPerformance)
+    ("Diff 5만 줄 성능", TestDiffPerformance),
+    ("매크로 순서와 검색 대상 추적", MacroTests.SequenceAndTracking),
+    ("매크로 분할 합치기와 대상 유지", MacroTests.SplitJoinTracking),
+    ("매크로 삭제 중복과 연속 번호", MacroTests.DeleteDedupAndNumbers),
+    ("매크로 빈 결과와 검색 재평가", MacroTests.EmptyResultsAndSearch),
+    ("매크로 Unicode 줄바꿈과 로그", MacroTests.UnicodeAndNewlines),
+    ("매크로 검증 취소와 단계 통계", MacroTests.ValidationAndCancellation),
+    ("매크로 JSON 왕복과 잘못된 입력", MacroTests.JsonRoundtrip)
 };
 
 var failed = 0;

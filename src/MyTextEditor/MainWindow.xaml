@@ -55,6 +55,7 @@
                 <MenuItem Header="현재 문서와 클립보드 비교" Click="CompareClipboard_Click" />
                 <MenuItem Header="선택 영역과 클립보드 비교" Click="CompareSelectionClipboard_Click" />
             </MenuItem>
+            <MenuItem Header="매크로(_M)" Click="OpenMacro_Click" />
             <MenuItem Header="보기(_V)">
                 <MenuItem x:Name="ToolsMenuItem" Header="도구 패널" IsCheckable="True" IsChecked="True" Click="ToggleTools_Click" />
                 <MenuItem x:Name="ResultsMenuItem" Header="결과 패널" IsCheckable="True" IsChecked="False" Click="ToggleResults_Click" />
@@ -84,6 +85,7 @@
                     <Button Content="열기" ToolTip="파일 열기 (Ctrl+O)" Click="Open_Click" />
                     <Button Content="저장" ToolTip="저장 (Ctrl+S)" Click="Save_Click" />
                     <Button Content="비교/병합" ToolTip="파일·문서·클립보드 비교" Click="OpenDiff_Click" />
+                    <Button Content="매크로" ToolTip="검색·정리 단계를 조립하고 저장" Click="OpenMacro_Click" />
                     <Border Width="1" Margin="8,3" Background="{DynamicResource BorderBrush}" />
                     <Button Style="{StaticResource IconButton}" Content="↶" ToolTip="실행 취소 (Ctrl+Z)" Click="Undo_Click" />
                     <Button Style="{StaticResource IconButton}" Content="↷" ToolTip="다시 실행 (Ctrl+Y)" Click="Redo_Click" />

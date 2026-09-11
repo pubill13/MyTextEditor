@@ -9,6 +9,8 @@ using MyTextEditor.Core.Models;
 using MyTextEditor.Diff;
 using MyTextEditor.Help;
 using MyTextEditor.Models;
+using MyTextEditor.Macros;
+using MyTextEditor.Core.Macros;
 using Application = System.Windows.Application;
 using Forms = System.Windows.Forms;
 
@@ -17,8 +19,23 @@ internal static class Program
     private const int TargetCharacters = 30_000_000;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (args.Contains("--macros"))
+        {
+            var macroApplication = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            macroApplication.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("/MyTextEditor;component/Themes/Light.xaml", UriKind.Relative)
+            });
+            macroApplication.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("/MyTextEditor;component/Themes/Controls.xaml", UriKind.Relative)
+            });
+            VerifyMacroIntegration();
+            macroApplication.Shutdown();
+            return 0;
+        }
         var path = Path.Combine(Path.GetTempPath(), "MyTextEditor-30m-utf8.log");
         EnsureFixture(path);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -28,6 +45,7 @@ internal static class Program
         VerifyDiffWorkspaceTabsAndDrop();
         VerifyHelpCatalog();
         VerifySettingsModels();
+        VerifyMacroIntegration();
         var times = new List<double>();
         for (var run = 1; run <= 3; run++)
         {
@@ -379,6 +397,59 @@ internal static class Program
             throw new InvalidOperationException("간편 검색 중복 비교가 legacy 조건 DTO에 의존합니다.");
 
         Console.WriteLine("PASS saved condition round-trip, v1.4 legacy migration, and recent search history");
+    }
+
+    private static void VerifyMacroIntegration()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "MyTextEditor-macros-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var store = new MacroStore(Path.Combine(directory, "macros.json"));
+        var macro = new MacroDefinition
+        {
+            Name = "검색 후 가공",
+            Steps =
+            [
+                new() { Operation = MacroOperation.Search, AllTerms = ["AAA"] },
+                new() { Operation = MacroOperation.Replace, Target = MacroTarget.MatchedLines, Value = "old", Replacement = "new" },
+                new() { Operation = MacroOperation.AddPrefix, Target = MacroTarget.MatchedLines, Value = "> " }
+            ]
+        };
+        var host = new ScintillaEditorHost();
+        var original = "AAA old\r\n다른 줄 😀\r\n";
+        host.LoadUtf8(Encoding.UTF8.GetBytes(original));
+        try
+        {
+            store.Save([macro]);
+            var restored = store.Load().Single();
+            if (restored.Id != macro.Id || restored.Steps.Count != 3)
+                throw new InvalidOperationException("매크로 저장과 복원이 설정을 보존하지 못했습니다.");
+            var result = new TextMacroRunner().Run(original, "\r\n", restored);
+            host.ReplaceAll(result.Text);
+            if (host.GetText() != "> AAA new\r\n다른 줄 😀\r\n")
+                throw new InvalidOperationException("매크로 통합 결과가 올바르지 않습니다.");
+            host.Undo();
+            if (host.GetText() != original) throw new InvalidOperationException("매크로 단일 Undo 실패");
+            host.Redo();
+            if (host.GetText() != result.Text) throw new InvalidOperationException("매크로 Redo 실패");
+            var window = new MacroWindow(new MacroWindowCallbacks
+            {
+                GetCurrentDocument = () => new MacroDocumentSnapshot(Guid.Empty, 0, original, "\r\n", "test"),
+                ApplyResult = (_, _, _) => false
+            }, store) { ShowInTaskbar = false };
+            window.Show();
+            window.UpdateLayout();
+            if (!window.PrepareClose()) throw new InvalidOperationException("변경하지 않은 매크로 창 종료 실패");
+            window.Close();
+            File.WriteAllText(Path.Combine(directory, "macros.json"), "{broken-json");
+            try { store.Load(); throw new InvalidOperationException("손상된 매크로 파일이 허용되었습니다."); }
+            catch (System.Text.Json.JsonException) { }
+            Console.WriteLine("PASS macro store, window lifecycle, and multi-step single Undo/Redo");
+        }
+        finally
+        {
+            host.ReleaseResources();
+            Directory.Delete(directory, true);
+        }
     }
 
     private static void EnsureFixture(string path)

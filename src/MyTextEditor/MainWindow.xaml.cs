@@ -369,10 +369,16 @@ public partial class MainWindow : Window
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) return;
+        if (_closingInProgress) { e.Cancel = true; return; }
         if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0)
         {
             e.Cancel = true;
             StatusMessage.Text = "진행 중인 문서 저장 또는 닫기가 끝난 뒤 다시 시도하세요.";
+            return;
+        }
+        if (_macroWindow is not null && !_macroWindow.PrepareClose())
+        {
+            e.Cancel = true;
             return;
         }
         if (_diffWorkspaceWindow is null && !Documents.Any(document => document.IsModified))
@@ -386,12 +392,14 @@ public partial class MainWindow : Window
         _closingInProgress = true;
         if (!await ConfirmCloseDiffWindowsAsync())
         {
+            _macroWindow?.CancelPreparedClose();
             _closingInProgress = false;
             return;
         }
         if (!await ConfirmCloseAllAsync())
         {
             ResetDiffCloseApprovals();
+            _macroWindow?.CancelPreparedClose();
             _closingInProgress = false;
             return;
         }
@@ -407,6 +415,8 @@ public partial class MainWindow : Window
         Hide();
         _diffWorkspaceWindow?.Hide();
         _helpWindow?.Hide();
+        _macroWindow?.Hide();
+        _macroWindow?.Close();
         _diffWorkspaceWindow?.Close();
         _helpWindow?.Close();
         if (!SaveSettings(false))
