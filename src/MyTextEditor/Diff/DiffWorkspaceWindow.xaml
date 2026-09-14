@@ -13,11 +13,15 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="다른 비교 닫기" Click="CloseOthers_Click"/>
                     <Button Margin="6,0,0,0" Content="모든 비교 닫기" Click="CloseAll_Click"/>
+                    <Button Margin="6,0,0,0" Content="도움말" Click="Help_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <Button Width="30" Height="28" Padding="0" Content="＋" ToolTip="새 비교 탭" Click="AddTab_Click"/>
-                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"
-                               Text="파일 두 개를 함께 놓으면 좌우에 자동으로 배치됩니다."/>
+                    <TextBlock Margin="10,0,6,0" VerticalAlignment="Center" Text="비교 글자 크기"/>
+                    <ComboBox x:Name="DiffFontSizeCombo" Width="64" Height="28" Padding="4,2" IsEditable="True"
+                              ToolTip="6~72pt · Ctrl+휠로 조절 · Ctrl+0은 11pt"
+                              SelectionChanged="DiffFontSize_SelectionChanged" LostKeyboardFocus="DiffFontSize_LostKeyboardFocus"
+                              PreviewKeyDown="DiffFontSize_PreviewKeyDown"/>
                 </StackPanel>
             </DockPanel>
         </Border>

@@ -7,6 +7,15 @@ public partial class MainWindow
 {
     private HelpWindow? _helpWindow;
 
+    private void ShowHelpTopic(string topic)
+    {
+        ShowHelpWindow();
+        _helpWindow?.NavigateToTopic(topic);
+    }
+
+    private void SearchHelp_Click(object sender, RoutedEventArgs e) => ShowHelpTopic("search");
+    private void TransformHelp_Click(object sender, RoutedEventArgs e) => ShowHelpTopic("trim");
+
     private void ShowHelpWindow()
     {
         if (_helpWindow is not null)

@@ -95,8 +95,7 @@ public partial class MainWindow : Window
         LoadInstalledFonts();
         SelectComboItem(FontFamilyCombo, _settings.EditorFontFamily);
         SelectComboItem(OverflowFontFamilyCombo, _settings.EditorFontFamily);
-        SelectComboItem(FontSizeCombo, _settings.EditorFontSize.ToString("0"));
-        SelectComboItem(OverflowFontSizeCombo, _settings.EditorFontSize.ToString("0"));
+        SyncFontSizeInputs();
         RestorePanelVisibility();
         BuildRecentFilesMenu();
 
@@ -446,6 +445,8 @@ public partial class MainWindow : Window
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (!TryMapShortcut(e.Key, Keyboard.Modifiers, out var shortcut)) return;
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase &&
+            shortcut is EditorShortcut.ZoomIn or EditorShortcut.ZoomOut or EditorShortcut.ZoomReset or EditorShortcut.GoToLine) return;
         e.Handled = true;
         ExecuteShortcut(shortcut);
     }
@@ -463,11 +464,15 @@ public partial class MainWindow : Window
                 Key.W or Key.F4 => EditorShortcut.CloseDocument,
                 Key.F => EditorShortcut.Find,
                 Key.H => EditorShortcut.Replace,
+                Key.G => EditorShortcut.GoToLine,
+                Key.Add or Key.OemPlus => EditorShortcut.ZoomIn,
+                Key.Subtract or Key.OemMinus => EditorShortcut.ZoomOut,
+                Key.D0 or Key.NumPad0 => EditorShortcut.ZoomReset,
                 Key.Tab or Key.PageDown => EditorShortcut.NextDocument,
                 Key.PageUp => EditorShortcut.PreviousDocument,
                 _ => default
             };
-            return key is Key.N or Key.O or Key.S or Key.W or Key.F4 or Key.F or Key.H or Key.Tab or Key.PageDown or Key.PageUp;
+            return key is Key.N or Key.O or Key.S or Key.W or Key.F4 or Key.F or Key.H or Key.G or Key.Add or Key.OemPlus or Key.Subtract or Key.OemMinus or Key.D0 or Key.NumPad0 or Key.Tab or Key.PageDown or Key.PageUp;
         }
         if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
@@ -476,9 +481,10 @@ public partial class MainWindow : Window
                 Key.S => EditorShortcut.SaveDocumentAs,
                 Key.W => EditorShortcut.CloseAllDocuments,
                 Key.Tab => EditorShortcut.PreviousDocument,
+                Key.OemPlus => EditorShortcut.ZoomIn,
                 _ => default
             };
-            return key is Key.S or Key.W or Key.Tab;
+            return key is Key.S or Key.W or Key.Tab or Key.OemPlus;
         }
         if (modifiers == ModifierKeys.None && key == Key.F3) { shortcut = EditorShortcut.FindNext; return true; }
         if (modifiers == ModifierKeys.Shift && key == Key.F3) { shortcut = EditorShortcut.FindPrevious; return true; }
@@ -506,6 +512,10 @@ public partial class MainWindow : Window
             case EditorShortcut.CloseAllDocuments: _ = CloseAllDocumentsAsync(); break;
             case EditorShortcut.Find: ShowSearchInput(); break;
             case EditorShortcut.Replace: ShowReplaceInput(); break;
+            case EditorShortcut.GoToLine: CurrentEditor?.ShowGoToLineDialog(); break;
+            case EditorShortcut.ZoomIn: ApplyEditorFontSize(_settings.EditorFontSize + 1, OverflowFontSizeCombo); break;
+            case EditorShortcut.ZoomOut: ApplyEditorFontSize(_settings.EditorFontSize - 1, OverflowFontSizeCombo); break;
+            case EditorShortcut.ZoomReset: ApplyEditorFontSize(15, OverflowFontSizeCombo); break;
             case EditorShortcut.NextDocument: SelectRelativeDocument(1); break;
             case EditorShortcut.PreviousDocument: SelectRelativeDocument(-1); break;
             case EditorShortcut.FindNext: MoveToSearchResult(1); break;
@@ -596,6 +606,9 @@ public partial class MainWindow : Window
         editor.RevisionChanged += Editor_RevisionChanged;
         editor.DirtyChanged += Editor_DirtyChanged;
         editor.ShortcutRequested += Editor_ShortcutRequested;
+        editor.HighlightColor = _settings.HighlightColor;
+        editor.HighlightColorChanged += SaveHighlightColor;
+        editor.HighlightFailed += message => StatusMessage.Text = message;
         editor.FilesDropped += paths => _ = Dispatcher.InvokeAsync(async () => await OpenFilesAsync(paths));
         ApplyEditorAppearance(editor);
     }
@@ -1197,13 +1210,25 @@ public partial class MainWindow : Window
 
     private void LightTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme("Light");
     private void DarkTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme("Dark");
-    private void ToggleTheme_Click(object sender, RoutedEventArgs e) => ApplyTheme(_settings.Theme == "Dark" ? "Light" : "Dark");
+    private void ToggleTheme_Click(object sender, RoutedEventArgs e)
+    {
+        int index = ThemePalette.All.ToList().FindIndex(p => p.Id == _settings.Theme);
+        ApplyTheme(ThemePalette.All[(index + 1) % ThemePalette.All.Count].Id);
+    }
 
     private void ApplyTheme(string theme)
     {
-        _settings.Theme = theme == "Dark" ? "Dark" : "Light";
+        var palette = ThemePalette.Get(theme);
+        _settings.Theme = palette.Id;
         var dictionaries = Application.Current.Resources.MergedDictionaries;
-        dictionaries[0] = new ResourceDictionary { Source = new Uri($"Themes/{_settings.Theme}.xaml", UriKind.Relative) };
+        dictionaries[0] = palette.CreateResources();
+        ThemeMenu.Items.Clear();
+        foreach (var choice in ThemePalette.All)
+        {
+            var item = new MenuItem { Header = choice.Name, IsCheckable = true, IsChecked = choice.Id == palette.Id };
+            item.Click += (_, _) => ApplyTheme(choice.Id);
+            ThemeMenu.Items.Add(item);
+        }
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
         ApplyDiffAppearanceToWindows();
         MarkSettingsDirty();
@@ -1211,21 +1236,22 @@ public partial class MainWindow : Window
 
     private void FontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsLoaded || FontSizeCombo.SelectedItem is not ComboBoxItem item || !double.TryParse(item.Content?.ToString(), out var size)) return;
+        if (_syncingFontSize || !IsLoaded || FontSizeCombo.SelectedItem is not ComboBoxItem item || !double.TryParse(item.Content?.ToString(), out var size)) return;
         ApplyEditorFontSize(size, OverflowFontSizeCombo);
     }
 
     private void OverflowFontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsLoaded || OverflowFontSizeCombo.SelectedItem is not ComboBoxItem item || !double.TryParse(item.Content?.ToString(), out var size)) return;
+        if (_syncingFontSize || !IsLoaded || OverflowFontSizeCombo.SelectedItem is not ComboBoxItem item || !double.TryParse(item.Content?.ToString(), out var size)) return;
         ApplyEditorFontSize(size, FontSizeCombo);
     }
 
     private void ApplyEditorFontSize(double size, ComboBox counterpart)
     {
+        size = Math.Clamp(Math.Round(size), 6, 72);
         _settings.EditorFontSize = size;
         Application.Current.Resources["EditorFontSize"] = size;
-        SelectComboItem(counterpart, size.ToString("0"));
+        SyncFontSizeInputs();
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
         ApplyDiffAppearanceToWindows();
         MarkSettingsDirty();
@@ -1267,12 +1293,12 @@ public partial class MainWindow : Window
     private void ApplyEditorAppearance(ScintillaEditorHost editor)
     {
         var dpiScale = IsLoaded ? (float)VisualTreeHelper.GetDpi(this).DpiScaleX : 1f;
-        editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, _settings.Theme == "Dark", dpiScale);
+        editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, ThemePalette.Get(_settings.Theme), dpiScale);
     }
 
     private void Window_DpiChanged(object sender, DpiChangedEventArgs e)
     {
-        foreach (var document in Documents) document.Editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, _settings.Theme == "Dark", (float)e.NewDpi.DpiScaleX);
+        foreach (var document in Documents) document.Editor.ApplyAppearance(_settings.EditorFontFamily, (float)_settings.EditorFontSize, ThemePalette.Get(_settings.Theme), (float)e.NewDpi.DpiScaleX);
         ApplyDiffAppearanceToWindows();
     }
 

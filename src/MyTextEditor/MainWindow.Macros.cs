@@ -31,7 +31,7 @@ public partial class MainWindow
                 return true;
             },
             ReportStatus = message => StatusMessage.Text = message,
-            ShowHelp = ShowHelpWindow
+            ShowHelp = () => ShowHelpTopic("macros")
         }) { Owner = this };
         window.Closed += (_, _) => { if (ReferenceEquals(_macroWindow, window)) _macroWindow = null; };
         _macroWindow = window;

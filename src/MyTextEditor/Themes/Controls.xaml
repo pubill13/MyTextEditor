@@ -209,7 +209,7 @@
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="{TemplateBinding Background}" /></ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType="ScrollBar" BasedOn="{StaticResource BaseControlStyle}">
-        <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+        <Setter Property="Background" Value="{DynamicResource ScrollTrackBrush}" />
         <Setter Property="Width" Value="12" />
         <Setter Property="Height" Value="Auto" />
         <Setter Property="Template">
@@ -218,7 +218,7 @@
                     <Grid Background="{TemplateBinding Background}">
                         <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="True">
                             <Track.DecreaseRepeatButton><RepeatButton x:Name="DecreaseButton" Style="{StaticResource ScrollRepeatButtonStyle}" Command="ScrollBar.PageUpCommand" /></Track.DecreaseRepeatButton>
-                            <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="ThumbBorder" Margin="2" Background="{DynamicResource MutedBrush}" CornerRadius="5" /><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource AccentBrush}" /></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                            <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="ThumbBorder" Margin="2" Background="{DynamicResource ScrollThumbBrush}" CornerRadius="5" /><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource ScrollHoverBrush}" /></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
                             <Track.IncreaseRepeatButton><RepeatButton x:Name="IncreaseButton" Style="{StaticResource ScrollRepeatButtonStyle}" Command="ScrollBar.PageDownCommand" /></Track.IncreaseRepeatButton>
                         </Track>
                     </Grid>

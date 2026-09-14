@@ -8,6 +8,9 @@ public sealed record HelpTopic(
     IReadOnlyList<string> Keywords,
     IReadOnlyList<HelpSection> Sections)
 {
+    public string Category { get; init; } = "시작하기";
+    public string Id { get; init; } = Title;
+
     public bool Matches(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -17,7 +20,7 @@ public sealed record HelpTopic(
     }
 
     private string SearchableText => string.Join('\n',
-        new[] { Title, Summary }
+        new[] { Category, Title, Summary }
             .Concat(Keywords)
             .Concat(Sections.SelectMany(section => new[] { section.Heading, section.Body, section.Example ?? string.Empty })));
 }

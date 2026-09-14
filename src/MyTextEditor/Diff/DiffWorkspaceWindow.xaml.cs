@@ -15,13 +15,18 @@ public partial class DiffWorkspaceWindow : Window
     private bool _closingApproved;
     private bool _closePromptRunning;
     private bool _resourcesReleased;
+    private bool _updatingFontSize;
+    private string _highlightColor;
 
     public DiffWorkspaceWindow(DiffWindowOptions options, DiffWindowCallbacks callbacks, DiffAppearance appearance)
     {
         InitializeComponent();
         _defaults = options;
         _callbacks = callbacks;
+        _highlightColor = callbacks.HighlightColor;
         _appearance = appearance;
+        DiffFontSizeCombo.ItemsSource = new[] { 6, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 60, 72 };
+        RefreshFontSize();
         Width = Math.Max(MinWidth, options.Width);
         Height = Math.Max(MinHeight, options.Height);
         if (options.Left is { } left && options.Top is { } top)
@@ -57,11 +62,18 @@ public partial class DiffWorkspaceWindow : Window
         var dpiScale = IsLoaded ? (float)VisualTreeHelper.GetDpi(this).DpiScaleX : appearance.DpiScale;
         _appearance = appearance with { DpiScale = dpiScale };
         foreach (var view in Views) view.ApplyAppearance(_appearance);
+        RefreshFontSize();
     }
 
     public void RefreshSourceStates()
     {
         foreach (var view in Views) view.RefreshSourceState();
+    }
+
+    public void SetHighlightColor(string color)
+    {
+        _highlightColor = color;
+        foreach (var view in Views) view.SetHighlightColor(color);
     }
 
     public void CancelPreparedClose()
@@ -82,6 +94,7 @@ public partial class DiffWorkspaceWindow : Window
     private DiffTabView AddTab(DiffEndpoint left, DiffEndpoint right)
     {
         var view = new DiffTabView(left, right, _defaults, _callbacks, _appearance);
+        view.SetHighlightColor(_highlightColor);
         var headerText = new TextBlock { Text = view.TabTitle, MaxWidth = 260, TextTrimming = TextTrimming.CharacterEllipsis };
         var close = new System.Windows.Controls.Button { Content = "×", Width = 23, Height = 23, Padding = new Thickness(0), Margin = new Thickness(7, 0, 0, 0), ToolTip = "비교 탭 닫기" };
         var header = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
@@ -94,6 +107,7 @@ public partial class DiffWorkspaceWindow : Window
         view.FilesDropped += async (_, e) => await LoadDroppedFilesAsync(e.Paths);
         view.CloseRequested += async (_, _) => await CloseTabAsync(item);
         view.CycleTabRequested += (_, e) => CycleTab(e.Direction);
+        view.FontSizeRequested += ChangeFontSize;
         ComparisonTabs.Items.Add(item);
         ComparisonTabs.SelectedItem = item;
         StatusText.Text = view.IsReady ? "비교 탭을 열었습니다." : "좌우에 파일을 놓거나 소스를 선택하세요.";
@@ -191,8 +205,44 @@ public partial class DiffWorkspaceWindow : Window
 
     private void ComparisonTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!ReferenceEquals(e.Source, ComparisonTabs)) return;
+        foreach (var item in Views) item.SetActive(ReferenceEquals(item, CurrentView));
         if (CurrentView is { } view) StatusText.Text = view.IsReady ? view.TabTitle : "좌우에 파일을 놓거나 소스를 선택하세요.";
     }
+
+    private void RefreshFontSize()
+    {
+        _updatingFontSize = true;
+        DiffFontSizeCombo.Text = _appearance.FontSize.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+        _updatingFontSize = false;
+    }
+
+    private void ChangeFontSize(double size)
+    {
+        var value = (float)Math.Clamp(Math.Round(size), 6, 72);
+        ApplyAppearance(_appearance with { FontSize = value });
+        _callbacks.FontSizeChanged?.Invoke(value);
+    }
+
+    private void CommitFontSize()
+    {
+        if (int.TryParse(DiffFontSizeCombo.Text, out var size) && size is >= 6 and <= 72)
+            ChangeFontSize(size);
+        else { RefreshFontSize(); StatusText.Text = "글자 크기는 6~72 사이의 정수로 입력하세요."; }
+    }
+
+    private void DiffFontSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_updatingFontSize && IsLoaded && DiffFontSizeCombo.SelectedItem is int size) ChangeFontSize(size);
+    }
+    private void DiffFontSize_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => CommitFontSize();
+    private void DiffFontSize_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        CommitFontSize();
+        e.Handled = true;
+    }
+    private void Help_Click(object sender, RoutedEventArgs e) => _callbacks.ShowHelp?.Invoke();
 
     private static bool TryGetFiles(System.Windows.DragEventArgs e, out IReadOnlyList<string> paths)
     {

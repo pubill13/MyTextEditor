@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Windows.Media;
+using MyTextEditor.Models;
 using Microsoft.Win32;
 using MyTextEditor.Controls;
 using MyTextEditor.Core;
@@ -40,6 +42,12 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private bool _initialized;
     private bool _leftDirty;
     private bool _rightDirty;
+    private bool _isActive;
+    private bool _gutterScheduled;
+    private bool _highlightsPending;
+    private string _highlightColor;
+    private readonly List<WpfStackPanel> _gutterPool = [];
+    private readonly SortedSet<int> _visibleBlocks = [];
 
     public DiffTabView(DiffEndpoint left, DiffEndpoint right, DiffWindowOptions options,
         DiffWindowCallbacks callbacks, DiffAppearance appearance)
@@ -48,6 +56,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _left = left;
         _right = right;
         _callbacks = callbacks;
+        _highlightColor = callbacks.HighlightColor;
         _appearance = appearance;
         IgnoreWhitespaceCheck.IsChecked = options.IgnoreWhitespace;
         IgnoreCaseCheck.IsChecked = options.IgnoreCase;
@@ -64,6 +73,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     public event EventHandler<DiffFilesDroppedEventArgs>? FilesDropped;
     public event EventHandler? CloseRequested;
     public event EventHandler<DiffTabCycleRequestedEventArgs>? CycleTabRequested;
+    public event Action<double>? FontSizeRequested;
     public bool HasUnsavedChanges => _leftDirty || _rightDirty;
     public bool IsCompletelyEmpty => !_left.IsReady && !_right.IsReady && !HasUnsavedChanges;
     public bool LeftIsReady => _left.IsReady;
@@ -88,10 +98,32 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     public void ApplyAppearance(DiffAppearance appearance)
     {
         _appearance = appearance;
-        if (!IsLoaded || _resourcesReleased) return;
-        _leftEditor.ApplyAppearance(appearance.FontFamily, appearance.FontSize, appearance.DarkTheme, appearance.DpiScale);
-        _rightEditor.ApplyAppearance(appearance.FontFamily, appearance.FontSize, appearance.DarkTheme, appearance.DpiScale);
-        if (_result is not null) ApplyHighlights(_leftEditor.GetText(), _rightEditor.GetText(), _result);
+        if (!_initialized || !_isActive || _resourcesReleased) return;
+        var palette = appearance.Palette ?? ThemePalette.Get(appearance.DarkTheme ? "Dark" : "Light");
+        _leftEditor.ApplyAppearance(appearance.FontFamily, appearance.FontSize, palette, appearance.DpiScale);
+        _rightEditor.ApplyAppearance(appearance.FontFamily, appearance.FontSize, palette, appearance.DpiScale);
+        RebuildMergeGutter();
+    }
+
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+        if (!active) { CancelGutterUpdate(); return; }
+        ApplyAppearance(_appearance);
+        if (_initialized && _highlightsPending && _result is not null)
+        {
+            ApplyHighlights(_result);
+            _highlightsPending = false;
+        }
+        RebuildMergeGutter();
+    }
+
+    public void SetHighlightColor(string color)
+    {
+        _highlightColor = color;
+        if (!_initialized || _resourcesReleased) return;
+        _leftEditor.HighlightColor = color;
+        _rightEditor.HighlightColor = color;
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -123,7 +155,11 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         editor.LoadUtf8(Encoding.UTF8.GetBytes(endpoint.Text));
         editor.SetNewLine(endpoint.NewLine);
         editor.IsReadOnly = endpoint.IsReadOnly;
-        editor.ApplyAppearance(_appearance.FontFamily, _appearance.FontSize, _appearance.DarkTheme, _appearance.DpiScale);
+        editor.HighlightColor = _highlightColor;
+        editor.HighlightColorChanged += color => _callbacks.HighlightColorChanged?.Invoke(color);
+        editor.HighlightFailed += message => StatusText.Text = message;
+        editor.ApplyAppearance(_appearance.FontFamily, _appearance.FontSize,
+            _appearance.Palette ?? ThemePalette.Get(_appearance.DarkTheme ? "Dark" : "Light"), _appearance.DpiScale);
         return editor;
     }
 
@@ -160,6 +196,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private async Task CompareNowAsync()
     {
+        if (!_initialized) return;
         if (_resourcesReleased || !IsReady) { InvalidateDisplayedResult(); RefreshReadyState(); return; }
         var generation = ++_generation;
         var left = _leftEditor.GetText();
@@ -174,7 +211,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             if (generation != _generation || _resourcesReleased) return;
             _result = result;
             _currentBlockIndex = result.Blocks.Count == 0 ? -1 : Math.Clamp(_currentBlockIndex, 0, result.Blocks.Count - 1);
-            ApplyHighlights(left, right, result);
+            _highlightsPending = !_isActive;
+            if (_isActive) ApplyHighlights(result);
             RefreshResultState();
             CheckStaleSources();
         }
@@ -194,7 +232,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _currentBlockIndex = -1;
         if (_leftEditor is not null) _leftEditor.ClearDiffHighlights();
         if (_rightEditor is not null) _rightEditor.ClearDiffHighlights();
-        MergeGutterCanvas.Children.Clear();
+        foreach (var panel in _gutterPool) panel.Visibility = Visibility.Collapsed;
         PositionText.Text = "0 / 0";
         StatisticsText.Text = string.Empty;
     }
@@ -204,7 +242,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         IgnoreCaseCheck.IsChecked == true,
         IgnoreEmptyLinesCheck.IsChecked == true);
 
-    private void ApplyHighlights(string left, string right, TextDiffResult result)
+    private void ApplyHighlights(TextDiffResult result)
     {
         var leftLines = new List<DiffLineHighlight>();
         var rightLines = new List<DiffLineHighlight>();
@@ -291,24 +329,93 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void RebuildMergeGutter()
     {
-        MergeGutterCanvas.Children.Clear();
-        if (_result is null || _result.Blocks.Count == 0 || !IsLoaded) return;
-        var first = Math.Min(_leftEditor.FirstVisibleLine, _rightEditor.FirstVisibleLine);
-        var visible = Math.Max(_leftEditor.LinesOnScreen, _rightEditor.LinesOnScreen);
-        var height = Math.Max(1, MergeGutterCanvas.ActualHeight - 100);
-        foreach (var block in _result.Blocks.Where(item => !item.IsTerminalNewLineChange))
+        if (!_isActive || !_initialized || _resourcesReleased || _gutterScheduled) return;
+        _gutterScheduled = true;
+        CompositionTarget.Rendering += RenderMergeGutter;
+    }
+
+    private void CancelGutterUpdate()
+    {
+        CompositionTarget.Rendering -= RenderMergeGutter;
+        _gutterScheduled = false;
+    }
+
+    private void RenderMergeGutter(object? sender, EventArgs e)
+    {
+        CancelGutterUpdate();
+        if (!_isActive || _resourcesReleased || _result is null || !IsVisible) return;
+        _visibleBlocks.Clear();
+        CollectVisibleBlocks(_leftEditor, true);
+        CollectVisibleBlocks(_rightEditor, false);
+        var used = 0;
+        foreach (var index in _visibleBlocks)
         {
-            var anchor = Math.Min(block.LeftStartLine, block.RightStartLine) - 1;
-            if (anchor < first - 1 || anchor > first + visible + 1) continue;
-            var top = Math.Clamp((anchor - first) / (double)Math.Max(1, visible) * height, 2, Math.Max(2, height - 28));
-            var panel = new WpfStackPanel { Orientation = WpfOrientation.Horizontal, Tag = block.Index };
-            var left = new WpfButton { Content = "←", Width = 31, Height = 25, Padding = new Thickness(0), IsEnabled = !_leftEditor.IsReadOnly, Tag = block.Index };
-            var right = new WpfButton { Content = "→", Width = 31, Height = 25, Margin = new Thickness(4, 0, 0, 0), Padding = new Thickness(0), IsEnabled = !_rightEditor.IsReadOnly, Tag = block.Index };
-            left.Click += MergeBlockToLeft_Click;
-            right.Click += MergeBlockToRight_Click;
-            panel.Children.Add(left); panel.Children.Add(right);
-            Canvas.SetTop(panel, top); Canvas.SetLeft(panel, 1);
-            MergeGutterCanvas.Children.Add(panel);
+            var block = _result.Blocks[index];
+            if (block.IsTerminalNewLineChange) continue;
+            var leftVisible = BlockVisible(block, _leftEditor, true);
+            var editor = leftVisible ? _leftEditor : _rightEditor;
+            var line = (leftVisible ? block.LeftStartLine : block.RightStartLine) - 1;
+            var offset = editor.TranslatePoint(new System.Windows.Point(0, 0), MergeGutterCanvas).Y;
+            var top = offset + editor.GetLineY(Math.Clamp(line, editor.FirstVisibleLine, Math.Max(0, editor.LineCount - 1)));
+            if (top < 0 || top > MergeGutterCanvas.ActualHeight - 28) continue;
+            if (used == _gutterPool.Count) _gutterPool.Add(CreateGutterButtons());
+            var panel = _gutterPool[used++];
+            panel.Visibility = Visibility.Visible;
+            var left = (WpfButton)panel.Children[0];
+            var right = (WpfButton)panel.Children[1];
+            var firstLine = Math.Min(editor.FirstVisibleLine, Math.Max(0, editor.LineCount - 2));
+            var lineHeight = editor.LineCount > 1 ? Math.Abs(editor.GetLineY(firstLine + 1) - editor.GetLineY(firstLine)) : 25;
+            left.MinHeight = right.MinHeight = 0;
+            left.Height = right.Height = Math.Clamp(lineHeight, 10, 25);
+            left.FontSize = right.FontSize = Math.Clamp(lineHeight - 2, 7, 14);
+            left.Tag = right.Tag = index;
+            left.IsEnabled = !_leftEditor.IsReadOnly;
+            right.IsEnabled = !_rightEditor.IsReadOnly;
+            Canvas.SetTop(panel, top);
+        }
+        for (var index = used; index < _gutterPool.Count; index++) _gutterPool[index].Visibility = Visibility.Collapsed;
+    }
+
+    private WpfStackPanel CreateGutterButtons()
+    {
+        var panel = new WpfStackPanel { Orientation = WpfOrientation.Horizontal };
+        var left = new WpfButton { Content = "←", Width = 31, Height = 25, Padding = new Thickness(0), ToolTip = "오른쪽 블록을 왼쪽으로 병합" };
+        var right = new WpfButton { Content = "→", Width = 31, Height = 25, Margin = new Thickness(4, 0, 0, 0), Padding = new Thickness(0), ToolTip = "왼쪽 블록을 오른쪽으로 병합" };
+        left.Click += MergeBlockToLeft_Click;
+        right.Click += MergeBlockToRight_Click;
+        panel.Children.Add(left); panel.Children.Add(right);
+        Canvas.SetLeft(panel, 1);
+        MergeGutterCanvas.Children.Add(panel);
+        return panel;
+    }
+
+    private static bool BlockVisible(DiffBlock block, ScintillaEditorHost editor, bool left)
+    {
+        var first = editor.FirstVisibleLine + 1;
+        var start = left ? block.LeftStartLine : block.RightStartLine;
+        var count = left ? block.LeftLineCount : block.RightLineCount;
+        return start <= first + editor.LinesOnScreen && start + Math.Max(1, count) > first;
+    }
+
+    private void CollectVisibleBlocks(ScintillaEditorHost editor, bool left)
+    {
+        var blocks = _result!.Blocks;
+        var first = editor.FirstVisibleLine + 1;
+        var last = first + editor.LinesOnScreen;
+        var low = 0;
+        var high = blocks.Count;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            var block = blocks[middle];
+            var end = left ? block.LeftStartLine + Math.Max(1, block.LeftLineCount) : block.RightStartLine + Math.Max(1, block.RightLineCount);
+            if (end <= first) low = middle + 1; else high = middle;
+        }
+        for (var index = low; index < blocks.Count; index++)
+        {
+            var block = blocks[index];
+            if ((left ? block.LeftStartLine : block.RightStartLine) > last) break;
+            _visibleBlocks.Add(index);
         }
     }
 
@@ -319,12 +426,26 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void Editor_CaretChanged(object? sender, EventArgs e)
     {
-        if (_result is null) return;
-        var line = ReferenceEquals(sender, _leftEditor) ? _leftEditor.CurrentLine + 1 : _rightEditor.CurrentLine + 1;
-        var candidate = _result.Blocks.FirstOrDefault(block => ReferenceEquals(sender, _leftEditor)
-            ? line >= block.LeftStartLine && line < block.LeftStartLine + Math.Max(1, block.LeftLineCount)
-            : line >= block.RightStartLine && line < block.RightStartLine + Math.Max(1, block.RightLineCount));
-        if (candidate is not null) { _currentBlockIndex = candidate.Index; PositionText.Text = $"{candidate.Index + 1} / {_result.Blocks.Count}"; }
+        if (!_isActive || _result is null) return;
+        var left = ReferenceEquals(sender, _leftEditor);
+        var line = left ? _leftEditor.CurrentLine + 1 : _rightEditor.CurrentLine + 1;
+        var blocks = _result.Blocks;
+        var low = 0;
+        var high = blocks.Count;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if ((left ? blocks[middle].LeftStartLine : blocks[middle].RightStartLine) <= line) low = middle + 1;
+            else high = middle;
+        }
+        if (low == 0) return;
+        var candidate = blocks[low - 1];
+        var end = left ? candidate.LeftStartLine + Math.Max(1, candidate.LeftLineCount) : candidate.RightStartLine + Math.Max(1, candidate.RightLineCount);
+        if (line < end && _currentBlockIndex != candidate.Index)
+        {
+            _currentBlockIndex = candidate.Index;
+            PositionText.Text = $"{candidate.Index + 1} / {blocks.Count}";
+        }
     }
 
     private void LeftEditor_VerticalScrolled(object? sender, EventArgs e) => SyncScroll(_leftEditor, _rightEditor, true);
@@ -332,10 +453,14 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void SyncScroll(ScintillaEditorHost source, ScintillaEditorHost target, bool leftToRight)
     {
+        if (!_isActive || _resourcesReleased || _syncingScroll) return;
         RebuildMergeGutter();
-        if (ScrollSyncCheck.IsChecked != true || _syncingScroll || _result is null) return;
+        if (ScrollSyncCheck.IsChecked != true || _result is null) return;
+        var targetLine = Math.Clamp(MapScrollLine(source.FirstVisibleLine + 1, leftToRight) - 1, 0,
+            Math.Max(0, target.LineCount - target.LinesOnScreen));
+        if (target.FirstVisibleLine == targetLine) return;
         _syncingScroll = true;
-        try { target.ScrollToLine(MapScrollLine(source.FirstVisibleLine + 1, leftToRight) - 1); }
+        try { target.ScrollToLine(targetLine); }
         finally { _syncingScroll = false; }
     }
 
@@ -345,8 +470,15 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (anchors is null || anchors.Count == 0) return sourceLine;
         int From(DiffLineAnchor item) => leftToRight ? item.LeftLineNumber : item.RightLineNumber;
         int To(DiffLineAnchor item) => leftToRight ? item.RightLineNumber : item.LeftLineNumber;
-        var before = anchors.LastOrDefault(item => From(item) <= sourceLine) ?? anchors[0];
-        var after = anchors.FirstOrDefault(item => From(item) >= sourceLine) ?? anchors[^1];
+        var low = 0;
+        var high = anchors.Count;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (From(anchors[middle]) <= sourceLine) low = middle + 1; else high = middle;
+        }
+        var before = anchors[Math.Max(0, low - 1)];
+        var after = anchors[Math.Min(anchors.Count - 1, low)];
         if (From(after) == From(before)) return To(before);
         var ratio = (sourceLine - From(before)) / (double)(From(after) - From(before));
         return Math.Max(1, (int)Math.Round(To(before) + ratio * (To(after) - To(before))));
@@ -595,11 +727,26 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             case EditorShortcut.NextDocument: CycleTabRequested?.Invoke(this, new(1)); e.Handled = true; break;
             case EditorShortcut.PreviousDocument: CycleTabRequested?.Invoke(this, new(-1)); e.Handled = true; break;
             case EditorShortcut.Help: _callbacks.ShowHelp?.Invoke(); e.Handled = true; break;
+            case EditorShortcut.ZoomIn: FontSizeRequested?.Invoke(_appearance.FontSize + 1); e.Handled = true; break;
+            case EditorShortcut.ZoomOut: FontSizeRequested?.Invoke(_appearance.FontSize - 1); e.Handled = true; break;
+            case EditorShortcut.ZoomReset: FontSizeRequested?.Invoke(11); e.Handled = true; break;
+            case EditorShortcut.GoToLine: ((ScintillaEditorHost)sender!).ShowGoToLineDialog(); e.Handled = true; break;
         }
     }
 
     private void Window_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        var focused = _leftEditor?.IsEditorFocused == true ? _leftEditor : _rightEditor?.IsEditorFocused == true ? _rightEditor : null;
+        if (focused is not null && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            switch (e.Key)
+            {
+                case Key.OemPlus: case Key.Add: FontSizeRequested?.Invoke(_appearance.FontSize + 1); e.Handled = true; return;
+                case Key.OemMinus: case Key.Subtract: FontSizeRequested?.Invoke(_appearance.FontSize - 1); e.Handled = true; return;
+                case Key.D0: case Key.NumPad0: FontSizeRequested?.Invoke(11); e.Handled = true; return;
+                case Key.G: focused.ShowGoToLineDialog(); e.Handled = true; return;
+            }
+        }
         if ((Keyboard.Modifiers & ModifierKeys.Alt) == 0) return;
         if (e.Key == Key.Up) { NavigateDifference(-1); e.Handled = true; }
         else if (e.Key == Key.Down) { NavigateDifference(1); e.Handled = true; }
@@ -630,6 +777,9 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (_resourcesReleased) return;
         _resourcesReleased = true;
+        CancelGutterUpdate();
+        _gutterPool.Clear();
+        MergeGutterCanvas.Children.Clear();
         _generation++;
         _recompareTimer.Stop();
         _recompareTimer.Tick -= RecompareTimer_Tick;
@@ -653,7 +803,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         }
 
         if (left) _left = endpoint; else _right = endpoint;
-        if (IsLoaded)
+        if (_initialized)
         {
             var editor = left ? _leftEditor : _rightEditor;
             _updatingEditors = true;
@@ -694,8 +844,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         RightDropZone.Visibility = _right.IsReady ? Visibility.Collapsed : Visibility.Visible;
         PreviousButton.IsEnabled = NextButton.IsEnabled = SwapButton.IsEnabled = IsReady;
         CompareSelectionsButton.IsEnabled = IsReady;
-        CopyAllLeftButton.IsEnabled = IsReady && !_leftEditor.IsReadOnly;
-        CopyAllRightButton.IsEnabled = IsReady && !_rightEditor.IsReadOnly;
+        CopyAllLeftButton.IsEnabled = IsReady && _initialized && !_leftEditor.IsReadOnly;
+        CopyAllRightButton.IsEnabled = IsReady && _initialized && !_rightEditor.IsReadOnly;
         CopyDifferenceButton.IsEnabled = IsReady && _result is not null && _result.Blocks.Count > 0;
         if (!IsReady) { StatusText.Text = "좌우 비교 소스를 선택하세요."; BusyProgress.Visibility = Visibility.Collapsed; }
     }

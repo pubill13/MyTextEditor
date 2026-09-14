@@ -64,9 +64,12 @@ public static class SettingsService
 
     private static SettingsNormalizationResult Normalize(UserSettings settings)
     {
-        settings.Theme = string.Equals(settings.Theme, "Dark", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
+        settings.Theme = ThemePalette.Get(settings.Theme).Id;
         settings.EditorFontFamily = string.IsNullOrWhiteSpace(settings.EditorFontFamily) ? "Cascadia Mono" : settings.EditorFontFamily;
-        settings.EditorFontSize = double.IsFinite(settings.EditorFontSize) ? Math.Clamp(settings.EditorFontSize, 7, 72) : 15;
+        settings.EditorFontSize = double.IsFinite(settings.EditorFontSize) ? Math.Clamp(Math.Round(settings.EditorFontSize), 6, 72) : 15;
+        if (settings.HighlightColor is not { Length: 7 } color || color[0] != '#' ||
+            !int.TryParse(color.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out _))
+            settings.HighlightColor = "#F2CC60";
         settings.WindowWidth = double.IsFinite(settings.WindowWidth) ? Math.Max(1040, settings.WindowWidth) : 1380;
         settings.WindowHeight = double.IsFinite(settings.WindowHeight) ? Math.Max(680, settings.WindowHeight) : 860;
         settings.ToolPanelWidth = double.IsFinite(settings.ToolPanelWidth) ? Math.Max(280, settings.ToolPanelWidth) : 360;
@@ -80,6 +83,7 @@ public static class SettingsService
         settings.SearchState ??= new SearchInputState();
         settings.TransformState ??= new TransformInputState();
         settings.Diff ??= new DiffUserSettings();
+        settings.Diff.FontSize = double.IsFinite(settings.Diff.FontSize) ? Math.Clamp(Math.Round(settings.Diff.FontSize), 6, 72) : 11;
         settings.Help ??= new HelpUserSettings();
 
         settings.RecentFiles.RemoveAll(item => item is null);

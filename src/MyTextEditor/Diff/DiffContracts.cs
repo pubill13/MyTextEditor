@@ -1,5 +1,6 @@
 using System.Text;
 using MyTextEditor.Core.Models;
+using MyTextEditor.Models;
 
 namespace MyTextEditor.Diff;
 
@@ -47,7 +48,10 @@ public sealed record DiffWindowOptions(
     double? Left = null,
     double? Top = null);
 
-public sealed record DiffAppearance(string FontFamily, float FontSize, bool DarkTheme, float DpiScale = 1f);
+public sealed record DiffAppearance(string FontFamily, float FontSize, bool DarkTheme, float DpiScale = 1f)
+{
+    public ThemePalette? Palette { get; init; }
+}
 
 public sealed record DiffSourceSnapshot(string DisplayName, string Text, string? FilePath,
     Encoding Encoding, bool HasByteOrderMark, string NewLine, long Revision, Guid? SourceDocumentId = null);
@@ -62,6 +66,9 @@ public sealed class DiffWindowCallbacks
     public required Action<DiffWindowOptions> SettingsChanged { get; init; }
     public Func<IReadOnlyList<DiffSourceSnapshot>>? GetOpenDocuments { get; init; }
     public Action? ShowHelp { get; init; }
+    public Action<double>? FontSizeChanged { get; init; }
+    public Action<string>? HighlightColorChanged { get; init; }
+    public string HighlightColor { get; init; } = "#FFD166";
 }
 
 public sealed class DiffTabRequestedEventArgs(DiffEndpoint left, DiffEndpoint right) : EventArgs

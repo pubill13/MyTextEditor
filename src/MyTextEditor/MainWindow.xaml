@@ -49,6 +49,7 @@
                 <MenuItem Header="바꾸기" InputGestureText="Ctrl+H" Click="Replace_Click" />
                 <MenuItem Header="다음 검색 결과" InputGestureText="F3" Click="FindNext_Click" />
                 <MenuItem Header="이전 검색 결과" InputGestureText="Shift+F3" Click="FindPrevious_Click" />
+                <MenuItem Header="줄 번호로 이동…" InputGestureText="Ctrl+G" Click="GoToLine_Click" />
             </MenuItem>
             <MenuItem Header="비교(_C)">
                 <MenuItem Header="비교/병합 열기…" Click="OpenDiff_Click" />
@@ -60,8 +61,10 @@
                 <MenuItem x:Name="ToolsMenuItem" Header="도구 패널" IsCheckable="True" IsChecked="True" Click="ToggleTools_Click" />
                 <MenuItem x:Name="ResultsMenuItem" Header="결과 패널" IsCheckable="True" IsChecked="False" Click="ToggleResults_Click" />
                 <Separator />
-                <MenuItem Header="라이트 테마" Click="LightTheme_Click" />
-                <MenuItem Header="다크 테마" Click="DarkTheme_Click" />
+                <MenuItem x:Name="ThemeMenu" Header="색상 테마" />
+                <MenuItem Header="글자 확대" InputGestureText="Ctrl++" Click="ZoomIn_Click" />
+                <MenuItem Header="글자 축소" InputGestureText="Ctrl+-" Click="ZoomOut_Click" />
+                <MenuItem Header="글자 크기 초기화 (15pt)" InputGestureText="Ctrl+0" Click="ZoomReset_Click" />
             </MenuItem>
             <MenuItem Header="도움말(_H)" InputGestureText="F1" Click="Help_Click" />
         </Menu>
@@ -101,14 +104,14 @@
                     <ComboBox x:Name="FontFamilyCombo" Width="150" Height="28" IsEditable="True" IsTextSearchEnabled="True"
                               ToolTip="설치된 글꼴 검색" SelectionChanged="FontFamilyCombo_SelectionChanged" LostKeyboardFocus="FontFamilyCombo_LostKeyboardFocus" />
                     <TextBlock Text="크기" Margin="8,0,5,0" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}" />
-                    <ComboBox x:Name="FontSizeCombo" Width="64" Height="28" SelectionChanged="FontSizeCombo_SelectionChanged">
-                        <ComboBoxItem Content="12"/><ComboBoxItem Content="14"/><ComboBoxItem Content="15" IsSelected="True"/><ComboBoxItem Content="16"/><ComboBoxItem Content="18"/><ComboBoxItem Content="20"/>
+                    <ComboBox x:Name="FontSizeCombo" Width="64" Height="28" IsEditable="True" ToolTip="6~72pt 정수 입력" LostKeyboardFocus="FontSize_LostFocus" PreviewKeyDown="FontSize_KeyDown" SelectionChanged="FontSizeCombo_SelectionChanged">
+                        <ComboBoxItem Content="6"/><ComboBoxItem Content="8"/><ComboBoxItem Content="9"/><ComboBoxItem Content="10"/><ComboBoxItem Content="11"/><ComboBoxItem Content="12"/><ComboBoxItem Content="14"/><ComboBoxItem Content="15"/><ComboBoxItem Content="16"/><ComboBoxItem Content="18"/><ComboBoxItem Content="20"/><ComboBoxItem Content="24"/><ComboBoxItem Content="28"/><ComboBoxItem Content="36"/><ComboBoxItem Content="48"/><ComboBoxItem Content="60"/><ComboBoxItem Content="72"/>
                     </ComboBox>
-                    <Button Content="◐" ToolTip="라이트/다크 테마 전환" Click="ToggleTheme_Click" />
+                    <Button Content="◐" ToolTip="다음 색상 테마" Click="ToggleTheme_Click" />
                 </StackPanel>
                 <StackPanel x:Name="ToolbarOverflowPanel" DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" Visibility="Collapsed">
                     <Button x:Name="ToolbarOverflowButton" Content="글꼴 · 크기 ⋯" Height="28" ToolTip="글꼴과 크기 설정" Click="ToolbarOverflowButton_Click" />
-                    <Button Content="◐" Height="28" ToolTip="라이트/다크 테마 전환" Click="ToggleTheme_Click" />
+                    <Button Content="◐" Height="28" ToolTip="다음 색상 테마" Click="ToggleTheme_Click" />
                     <Popup x:Name="ToolbarOverflowPopup" PlacementTarget="{Binding ElementName=ToolbarOverflowButton}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                         <Border Padding="10" Margin="0,4,0,0" CornerRadius="6" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                             <StackPanel Width="230">
@@ -116,8 +119,8 @@
                                 <ComboBox x:Name="OverflowFontFamilyCombo" Height="28" IsEditable="True" IsTextSearchEnabled="True"
                                           ToolTip="설치된 글꼴 검색" SelectionChanged="OverflowFontFamilyCombo_SelectionChanged" LostKeyboardFocus="OverflowFontFamilyCombo_LostKeyboardFocus" />
                                 <TextBlock Text="크기" Margin="0,8,0,4" Foreground="{DynamicResource MutedBrush}" />
-                                <ComboBox x:Name="OverflowFontSizeCombo" Height="28" SelectionChanged="OverflowFontSizeCombo_SelectionChanged">
-                                    <ComboBoxItem Content="12"/><ComboBoxItem Content="14"/><ComboBoxItem Content="15" IsSelected="True"/><ComboBoxItem Content="16"/><ComboBoxItem Content="18"/><ComboBoxItem Content="20"/>
+                                <ComboBox x:Name="OverflowFontSizeCombo" Height="28" IsEditable="True" ToolTip="6~72pt 정수 입력" LostKeyboardFocus="FontSize_LostFocus" PreviewKeyDown="FontSize_KeyDown" SelectionChanged="OverflowFontSizeCombo_SelectionChanged">
+                                    <ComboBoxItem Content="6"/><ComboBoxItem Content="8"/><ComboBoxItem Content="9"/><ComboBoxItem Content="10"/><ComboBoxItem Content="11"/><ComboBoxItem Content="12"/><ComboBoxItem Content="14"/><ComboBoxItem Content="15"/><ComboBoxItem Content="16"/><ComboBoxItem Content="18"/><ComboBoxItem Content="20"/><ComboBoxItem Content="24"/><ComboBoxItem Content="28"/><ComboBoxItem Content="36"/><ComboBoxItem Content="48"/><ComboBoxItem Content="60"/><ComboBoxItem Content="72"/>
                                 </ComboBox>
                             </StackPanel>
                         </Border>
@@ -185,7 +188,7 @@
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,8">
-                                            <TextBlock Text="검색 조건" FontSize="17" FontWeight="SemiBold" />
+                                            <DockPanel><Button DockPanel.Dock="Right" Content="?" ToolTip="검색 도움말" Click="SearchHelp_Click"/><TextBlock Text="검색 조건" FontSize="17" FontWeight="SemiBold" /></DockPanel>
                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                                 <Button Content="최근 검색 ▾" MinHeight="36" Click="RecentSearches_Click" />
                                             </StackPanel>
@@ -228,7 +231,7 @@
                             <StackPanel>
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
-                                        <TextBlock Text="유용한 기능" FontSize="17" FontWeight="SemiBold" />
+                                        <DockPanel><Button DockPanel.Dock="Right" Content="?" ToolTip="텍스트 정리 도움말" Click="TransformHelp_Click"/><TextBlock Text="유용한 기능" FontSize="17" FontWeight="SemiBold" /></DockPanel>
                                         <TextBlock Text="각 줄을 기준으로 자르기·꾸미기·분할 작업을 적용합니다." Margin="0,5,0,10" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
                                         <ComboBox x:Name="TrimOperationCombo" SelectionChanged="TrimOperationCombo_SelectionChanged">
                                             <ComboBoxItem Content="머리 자르기 · 기준 앞 제거" IsSelected="True" />

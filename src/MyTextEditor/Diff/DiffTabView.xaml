@@ -70,8 +70,9 @@
 
             <Border Grid.Column="1" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
                 <Grid>
+                    <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <Canvas x:Name="MergeGutterCanvas" Margin="5,0" SizeChanged="MergeGutter_SizeChanged"/>
-                    <StackPanel VerticalAlignment="Bottom" Margin="5,0,5,10">
+                    <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="5,0,5,10">
                         <Button x:Name="CopyAllLeftButton" Content="← 전체" ToolTip="오른쪽 전체를 왼쪽으로 복사" Click="CopyAllToLeft_Click"/>
                         <Button x:Name="CopyAllRightButton" Margin="0,5,0,0" Content="전체 →" ToolTip="왼쪽 전체를 오른쪽으로 복사" Click="CopyAllToRight_Click"/>
                         <Separator Margin="0,7"/>

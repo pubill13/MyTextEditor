@@ -139,9 +139,9 @@ public partial class MainWindow
 
     private DiffAppearance GetDiffAppearance() => new(
         _settings.EditorFontFamily,
-        (float)_settings.EditorFontSize,
-        _settings.Theme == "Dark",
-        IsLoaded ? (float)VisualTreeHelper.GetDpi(this).DpiScaleX : 1f);
+        (float)_settings.Diff.FontSize,
+        ThemePalette.Get(_settings.Theme).IsDark,
+        IsLoaded ? (float)VisualTreeHelper.GetDpi(this).DpiScaleX : 1f) { Palette = ThemePalette.Get(_settings.Theme) };
 
     private DiffWindowCallbacks CreateDiffCallbacks() => new()
     {
@@ -152,7 +152,10 @@ public partial class MainWindow
         SaveSourceAsync = SaveDiffSourceAsync,
         CreateDocumentAsync = CreateDiffDocumentAsync,
         SettingsChanged = SaveDiffOptions,
-        ShowHelp = ShowHelpWindow
+        ShowHelp = () => ShowHelpTopic("diff"),
+        FontSizeChanged = size => { _settings.Diff.FontSize = size; MarkSettingsDirty(); },
+        HighlightColor = _settings.HighlightColor,
+        HighlightColorChanged = SaveHighlightColor
     };
 
     private DocumentViewModel? FindDocument(Guid id) => Documents.FirstOrDefault(document => document.Id == id);

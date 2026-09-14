@@ -21,6 +21,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--v18")) return V18Verification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))
@@ -121,6 +122,10 @@ internal static class Program
         var expected = new (Forms.Keys Keys, EditorShortcut Shortcut)[]
         {
             (Forms.Keys.Control | Forms.Keys.N, EditorShortcut.NewDocument),
+            (Forms.Keys.Control | Forms.Keys.G, EditorShortcut.GoToLine),
+            (Forms.Keys.Control | Forms.Keys.Add, EditorShortcut.ZoomIn),
+            (Forms.Keys.Control | Forms.Keys.Subtract, EditorShortcut.ZoomOut),
+            (Forms.Keys.Control | Forms.Keys.D0, EditorShortcut.ZoomReset),
             (Forms.Keys.Control | Forms.Keys.O, EditorShortcut.OpenDocument),
             (Forms.Keys.Control | Forms.Keys.S, EditorShortcut.SaveDocument),
             (Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.S, EditorShortcut.SaveDocumentAs),

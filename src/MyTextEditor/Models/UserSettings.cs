@@ -5,6 +5,7 @@ public sealed class UserSettings
     public string Theme { get; set; } = "Light";
     public string EditorFontFamily { get; set; } = "Cascadia Mono";
     public double EditorFontSize { get; set; } = 15;
+    public string HighlightColor { get; set; } = "#F2CC60";
     public double WindowWidth { get; set; } = 1380;
     public double WindowHeight { get; set; } = 860;
     public double ToolPanelWidth { get; set; } = 360;
@@ -29,6 +30,7 @@ public sealed class UserSettings
 
 public sealed class DiffUserSettings
 {
+    public double FontSize { get; set; } = 11;
     public bool IgnoreWhitespace { get; set; }
     public bool IgnoreCase { get; set; }
     public bool IgnoreEmptyLines { get; set; }

@@ -3,6 +3,7 @@ using System.Reflection;
 using System.IO;
 using System.Windows.Forms.Integration;
 using ScintillaNET;
+using MyTextEditor.Models;
 using DrawingColor = System.Drawing.Color;
 using Forms = System.Windows.Forms;
 using MediaColor = System.Windows.Media.Color;
@@ -29,6 +30,10 @@ public enum EditorShortcut
     DiffNext,
     MergeLeft,
     MergeRight,
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    GoToLine,
     PreviousDifference = DiffPrevious,
     NextDifference = DiffNext,
     MergeRightToLeft = MergeLeft,
@@ -57,7 +62,7 @@ public readonly record struct DiffLineHighlight(int StartLine, int LineCount, Di
 
 public readonly record struct DiffInlineHighlight(int Start, int Length, DiffHighlightKind Kind);
 
-public sealed class ScintillaEditorHost : WindowsFormsHost
+public sealed partial class ScintillaEditorHost : WindowsFormsHost
 {
     private const int SciAddText = 2001;
     private const int SciClearAll = 2004;
@@ -71,6 +76,10 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     private const int AddedIndicator = 20;
     private const int DeletedIndicator = 21;
     private const int ModifiedIndicator = 22;
+    private const int CurrentLineMarker = 24;
+    private int _markedCurrentLine = -1;
+    private int _lastNotifiedFirstVisibleLine = -1;
+    private MarkerHandle? _currentLineMarkerHandle;
 
     private readonly ShortcutScintilla _editor;
     private bool _loading;
@@ -89,13 +98,17 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         _editor.SetShortcutProcessor(ProcessShortcut);
         _editor.Margins[0].Type = MarginType.Number;
         _editor.Margins[0].Width = 44;
+        _editor.Margins[1].Type = MarginType.Symbol;
+        _editor.Margins[1].Mask = 1 << CurrentLineMarker;
+        _editor.Margins[1].Width = 3;
+        _editor.Markers[CurrentLineMarker].Symbol = MarkerSymbol.FullRect;
         _editor.TextChanged += Editor_TextChanged;
         _editor.UpdateUI += Editor_UpdateUI;
         _editor.SavePointLeft += Editor_SavePointChanged;
         _editor.SavePointReached += Editor_SavePointChanged;
         _editor.DragEnter += Editor_DragEnter;
         _editor.DragDrop += Editor_DragDrop;
-        Child = _editor;
+        InitializeExtras();
     }
 
     private static void EnsureNativeLibraries()
@@ -135,6 +148,7 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         set => _editor.ReadOnly = value;
     }
     public bool HasSelection => _editor.SelectionStart != _editor.SelectionEnd;
+    public bool IsEditorFocused => _editor.ContainsFocus;
     public string SelectedText => _editor.SelectedText;
     public EditorTextRange SelectionRange
     {
@@ -169,8 +183,9 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         _editor.SavePointReached -= Editor_SavePointChanged;
         _editor.DragEnter -= Editor_DragEnter;
         _editor.DragDrop -= Editor_DragDrop;
+        ReleaseExtras();
         Child = null;
-        _editor.Dispose();
+        _surface.Dispose();
         CaretChanged = null;
         RevisionChanged = null;
         DirtyChanged = null;
@@ -183,6 +198,10 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     public unsafe void LoadUtf8(ReadOnlyMemory<byte> utf8)
     {
         _editor.CreateControl();
+        ClearUserHighlights();
+        _markedCurrentLine = -1;
+        _lastNotifiedFirstVisibleLine = -1;
+        _currentLineMarkerHandle = null;
         _loading = true;
         try
         {
@@ -292,7 +311,9 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     public void SetFirstVisibleLine(int zeroBasedLine)
     {
         if (_editor.Lines.Count == 0) return;
-        _editor.FirstVisibleLine = Math.Clamp(zeroBasedLine, 0, _editor.Lines.Count - 1);
+        var target = Math.Clamp(zeroBasedLine, 0, _editor.Lines.Count - 1);
+        if (_editor.FirstVisibleLine != target) _editor.FirstVisibleLine = target;
+        NotifyVerticalScroll();
     }
 
     public void ScrollToLine(int zeroBasedLine) => SetFirstVisibleLine(zeroBasedLine);
@@ -364,7 +385,10 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         _ => Eol.CrLf
     };
 
-    public void ApplyAppearance(string fontFamily, float fontSize, bool darkTheme, float dpiScale = 1f)
+    public void ApplyAppearance(string fontFamily, float fontSize, bool darkTheme, float dpiScale = 1f) =>
+        ApplyAppearance(fontFamily, fontSize, ThemePalette.Get(darkTheme ? "Dark" : "Light"), dpiScale);
+
+    private void ApplyFontAppearance(string fontFamily, float fontSize, bool darkTheme, float dpiScale)
     {
         var editorBack = darkTheme ? DrawingColor.FromArgb(25, 31, 41) : DrawingColor.White;
         var editorFore = darkTheme ? DrawingColor.FromArgb(236, 240, 246) : DrawingColor.FromArgb(32, 38, 49);
@@ -374,7 +398,7 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         var inactiveSelectionBack = darkTheme ? DrawingColor.FromArgb(48, 58, 74) : DrawingColor.FromArgb(226, 230, 237);
         var style = _editor.Styles[ScintillaNET.Style.Default];
         style.Font = fontFamily;
-        style.SizeF = Math.Max(7f, fontSize);
+        style.SizeF = Math.Clamp(fontSize, 6f, 72f);
         style.ForeColor = editorFore;
         style.BackColor = editorBack;
         _editor.StyleClearAll();
@@ -393,6 +417,43 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
         _editor.Margins[0].Width = Math.Max(36, (int)Math.Round(44 * Math.Max(1f, dpiScale)));
         ConfigureDiffMarkers(darkTheme);
         Background = new MediaBrush(MediaColor.FromRgb(editorBack.R, editorBack.G, editorBack.B));
+    }
+
+    public void ApplyAppearance(string fontFamily, float fontSize, ThemePalette palette, float dpiScale = 1f)
+    {
+        ApplyFontAppearance(fontFamily, fontSize, palette.IsDark, dpiScale);
+        _editor.Styles[ScintillaNET.Style.Default].ForeColor = palette.EditorForeground;
+        _editor.Styles[ScintillaNET.Style.Default].BackColor = palette.EditorBackground;
+        _editor.StyleClearAll();
+        _editor.BackColor = palette.EditorBackground;
+        _editor.ForeColor = palette.EditorForeground;
+        _editor.CaretForeColor = palette.EditorForeground;
+        _editor.CaretLineBackColor = palette.CurrentLine;
+        _editor.CaretLineLayer = Layer.Base;
+        _editor.CaretLineVisibleAlways = true;
+        _editor.SelectionBackColor = palette.SelectionBackground;
+        _editor.SelectionTextColor = palette.SelectionForeground;
+        _editor.SelectionAdditionalBackColor = palette.SelectionBackground;
+        _editor.SelectionAdditionalTextColor = palette.SelectionForeground;
+        _editor.SelectionInactiveBackColor = palette.InactiveSelection;
+        _editor.SelectionInactiveTextColor = palette.InactiveSelectionForeground;
+        _editor.SelectionInactiveAdditionalBackColor = palette.InactiveSelection;
+        _editor.SelectionInactiveAdditionalTextColor = palette.InactiveSelectionForeground;
+        _editor.Markers[CurrentLineMarker].SetBackColor(palette.Accent);
+        _editor.Margins[1].Width = Math.Max(3, (int)(3 * dpiScale));
+        _editor.Margins[0].BackColor = palette.MarginBackground;
+        _editor.Styles[ScintillaNET.Style.LineNumber].BackColor = palette.MarginBackground;
+        _editor.Styles[ScintillaNET.Style.LineNumber].ForeColor = palette.MarginForeground;
+        _surface.BackColor = palette.EditorBackground;
+        _verticalBar.Width = Math.Max(14, (int)(14 * dpiScale));
+        _horizontalBar.Height = Math.Max(14, (int)(14 * dpiScale));
+        _verticalBar.ApplyPalette(palette);
+        _horizontalBar.ApplyPalette(palette);
+        _contextMenu.BackColor = palette.MarginBackground;
+        _contextMenu.ForeColor = palette.EditorForeground;
+        _contextMenu.Renderer = new Forms.ToolStripProfessionalRenderer(new EditorMenuColors(palette));
+        Background = new MediaBrush(MediaColor.FromRgb(palette.EditorBackground.R, palette.EditorBackground.G, palette.EditorBackground.B));
+        UpdateScrollBars();
     }
 
     private void ConfigureDiffMarkers(bool darkTheme)
@@ -450,17 +511,36 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
     {
         if (_loading) return;
         ContentRevision++;
+        ScheduleHighlightRefresh();
         RevisionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void Editor_UpdateUI(object? sender, UpdateUIEventArgs e)
     {
         CaretChanged?.Invoke(this, EventArgs.Empty);
+        if (_markedCurrentLine != CurrentLine)
+        {
+            if (_currentLineMarkerHandle is { } handle) _editor.MarkerDeleteHandle(handle);
+            _currentLineMarkerHandle = _editor.Lines[CurrentLine].MarkerAdd(CurrentLineMarker);
+            _markedCurrentLine = CurrentLine;
+        }
+        UpdateScrollBars();
         if ((e.Change & UpdateChange.VScroll) != 0)
         {
-            ViewportChanged?.Invoke(this, EventArgs.Empty);
-            VerticalScrolled?.Invoke(this, EventArgs.Empty);
+            NotifyVerticalScroll();
         }
+    }
+
+    private void NotifyVerticalScroll()
+    {
+        if (_loading || _resourcesReleased) return;
+        var actual = _editor.FirstVisibleLine;
+        if (_lastNotifiedFirstVisibleLine == actual) return;
+        // Cache before notifying: the opposite Diff pane can synchronously scroll in its handler.
+        _lastNotifiedFirstVisibleLine = actual;
+        UpdateScrollBars();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        VerticalScrolled?.Invoke(this, EventArgs.Empty);
     }
 
     private void Editor_SavePointChanged(object? sender, EventArgs e) => DirtyChanged?.Invoke(this, EventArgs.Empty);
@@ -488,11 +568,15 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
                 Forms.Keys.W or Forms.Keys.F4 => EditorShortcut.CloseDocument,
                 Forms.Keys.F => EditorShortcut.Find,
                 Forms.Keys.H => EditorShortcut.Replace,
+                Forms.Keys.G => EditorShortcut.GoToLine,
+                Forms.Keys.Oemplus or Forms.Keys.Add => EditorShortcut.ZoomIn,
+                Forms.Keys.OemMinus or Forms.Keys.Subtract => EditorShortcut.ZoomOut,
+                Forms.Keys.D0 or Forms.Keys.NumPad0 => EditorShortcut.ZoomReset,
                 Forms.Keys.Tab or Forms.Keys.PageDown => EditorShortcut.NextDocument,
                 Forms.Keys.PageUp => EditorShortcut.PreviousDocument,
                 _ => default
             };
-            return key is Forms.Keys.N or Forms.Keys.O or Forms.Keys.S or Forms.Keys.W or Forms.Keys.F4 or Forms.Keys.F or Forms.Keys.H or Forms.Keys.Tab or Forms.Keys.PageDown or Forms.Keys.PageUp;
+            return key is Forms.Keys.N or Forms.Keys.O or Forms.Keys.S or Forms.Keys.W or Forms.Keys.F4 or Forms.Keys.F or Forms.Keys.H or Forms.Keys.G or Forms.Keys.Oemplus or Forms.Keys.Add or Forms.Keys.OemMinus or Forms.Keys.Subtract or Forms.Keys.D0 or Forms.Keys.NumPad0 or Forms.Keys.Tab or Forms.Keys.PageDown or Forms.Keys.PageUp;
         }
         if (modifiers == (Forms.Keys.Control | Forms.Keys.Shift))
         {
@@ -501,9 +585,10 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
                 Forms.Keys.S => EditorShortcut.SaveDocumentAs,
                 Forms.Keys.W => EditorShortcut.CloseAllDocuments,
                 Forms.Keys.Tab => EditorShortcut.PreviousDocument,
+                Forms.Keys.Oemplus => EditorShortcut.ZoomIn,
                 _ => default
             };
-            return key is Forms.Keys.S or Forms.Keys.W or Forms.Keys.Tab;
+            return key is Forms.Keys.S or Forms.Keys.W or Forms.Keys.Tab or Forms.Keys.Oemplus;
         }
         if (modifiers == Forms.Keys.None && key == Forms.Keys.F3)
         {
@@ -554,5 +639,17 @@ public sealed class ScintillaEditorHost : WindowsFormsHost
 
         protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData) =>
             _shortcutProcessor?.Invoke(keyData) == true || base.ProcessCmdKey(ref msg, keyData);
+
+        protected override void WndProc(ref Forms.Message message)
+        {
+            const int mouseWheel = 0x020A;
+            if (message.Msg == mouseWheel && (Forms.Control.ModifierKeys & Forms.Keys.Control) != 0)
+            {
+                var delta = unchecked((short)((long)message.WParam >> 16));
+                _shortcutProcessor?.Invoke(Forms.Keys.Control | (delta > 0 ? Forms.Keys.Add : Forms.Keys.Subtract));
+                return;
+            }
+            base.WndProc(ref message);
+        }
     }
 }

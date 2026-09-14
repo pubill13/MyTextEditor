@@ -1,6 +1,20 @@
 # MyTextEditor 작업 인수인계
 
-최종 갱신: 2026-09-14 (Asia/Seoul)
+최종 갱신: 2026-09-15 (Asia/Seoul)
+
+## v1.8 표시·테마·Merge 개선 (최신)
+
+목표는 선택 표시를 명확하게 하고 하이라이트·5개 테마·6~72pt 크기·Merge 스크롤·섹션별 도움말을 완성하는 것이다. 현재 기능 구현과 독립 리뷰를 완료했으며 배포 상태는 아래에 갱신한다.
+
+- ScintillaEditorHost의 Controls partial 파일에서 사용자 하이라이트(indicator23), 현재 줄 margin24, 테마별 선택색, 테마 WinForms 가로/세로 스크롤바를 관리한다. 기존 Diff indicator20~22와 분리했다. 팔레트는 Models/ThemePalette.cs가 WPF 리소스와 native 색상을 함께 제공한다.
+- 하이라이트는 탭/endpoint 수명 동안 유지한다. 선택 영역의 앞쪽 편집은 위치를 이동하고 내부 편집은 표시를 지운다. 같은 문구 전체는 문자 그대로 대소문자 구분 검색이며 수정 후 300ms debounce로 재계산한다. bounded channel(4×512)과 취소/revision 검사로 UI 적용을 나누고, 겹치거나 인접한 결과는 합친다. 최근 색만 설정에 저장한다. 표시 자체는 dirty·Undo·파일 내용에 영향을 주지 않는다.
+- Merge는 활성 탭의 화면에 보이는 gutter 버튼을 재사용하며 렌더 프레임당 한 번 갱신한다. anchor/caret 검색은 이진 탐색이다. host가 프로그램 스크롤 직후 이벤트를 보내고 같은 위치의 늦은 UpdateUI 이벤트를 제거해 좌우 재진입을 방지한다. 스크롤 중 텍스트 추출·Diff 재계산은 하지 않는다.
+- 일반 크기는 기존 설정 유지, Merge는 Diff.FontSize로 따로 저장(default11). 크기는 정수6~72pt, Ctrl+휠/+/−와 Ctrl+0(일반15/Merge11), Ctrl+G를 지원한다. WPF 입력칸에는 새 편집기 명령을 강제로 적용하지 않는다. 구버전 Light/Dark·크기 설정을 호환한다.
+- 도움말은 7개 category/18개 topic과 ID로 이동한다. HelpWindow.NavigateToTopic으로 검색·정리·매크로·Diff의 문맥 도움말을 연결했다. 외부 라이브러리 추가는 없으며 팔레트 MIT 출처는 THIRD_PARTY_NOTICES에 기록했다.
+- 검증: Core39/39, Release빌드 경고/오류0, 기존 GUI 및30MB 로딩 중앙값0.262초. 신규 --v18에서 Unicode 범위 추적·겹침 우선순위·대소문자·readonly/Undo분리·5개 테마·설정왕복/범위·도움말·Sync OFF/비활성 탭 검증 통과. 5만 줄에서100개 변경 p95 0.06ms, 5000개 변경 p95 0.12ms(스크롤+gutter 처리, 전체 OS 입력 지연 수치는 아님).
+- 대용량 회귀: 100MiB 로드0.729초/매크로0.182초, 300MiB 로드2.321초/매크로0.488초. 적용/Undo/Redo와 기존 결과 hash 일치. 300MiB의 결과 적용은2.198초로 대용량 전체 교체 지연은 아직 남아 있다.
+- 시각검증 한계: 현재 환경의 실제 DPI96(100%)만 확인했다. PrintWindow 캡처는 artifacts/v1.8/visual에 있다. 실제125/150% 전환·다중 모니터 검증은 미완료다. 레이아웃 크기 모사를 실제 DPI 검증으로 보고하지 않는다.
+- 다음 우선순위: 실제125/150% 배율에서 native/WPF 좌표·스크롤 thumb·팝업 검증, 실사용 피드백, 기존 대용량 전체 결과 적용 지연 개선. 이름 변경/북마크/공백표시는 이번 범위 밖이다. 사용자 기존 .gitignore 변경·테스트파일은 보존한다.
 
 ## v1.7.1 대용량 매크로 개선 (현재)
 

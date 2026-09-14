@@ -10,6 +10,9 @@
     <Color x:Key="AccentHoverColor">#79A2F2</Color>
     <Color x:Key="SelectionColor">#294677</Color>
     <Color x:Key="DangerColor">#FF6B78</Color>
+    <SolidColorBrush x:Key="ScrollTrackBrush" Color="#202734" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#526078" />
+    <SolidColorBrush x:Key="ScrollHoverBrush" Color="#79A2F2" />
     <SolidColorBrush x:Key="WindowBrush" Color="{StaticResource WindowColor}" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
     <SolidColorBrush x:Key="SurfaceAltBrush" Color="{StaticResource SurfaceAltColor}" />
