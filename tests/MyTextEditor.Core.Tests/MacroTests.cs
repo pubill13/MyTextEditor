@@ -134,6 +134,75 @@ internal static class MacroTests
         try { action(); } catch (T) { return; }
         throw new InvalidOperationException($"Expected {typeof(T).Name}");
     }
+
+    public static Task RangeProcessing()
+    {
+        var service = new MyTextEditor.Core.TextTransformService();
+        foreach (var operation in new[] { MacroOperation.RemoveBefore, MacroOperation.RemoveAfter, MacroOperation.RemoveBetween, MacroOperation.KeepBetween })
+        foreach (var keepStart in new[] { false, true })
+        foreach (var keepEnd in new[] { false, true })
+        foreach (var text in new[] { "before[한글😀]after", "[]", "missing", "[missing", "before[one]middle[two]after" })
+        {
+            var step = Step(operation, "["); step.EndMarker = "]"; step.KeepStart = keepStart; step.KeepEnd = keepEnd;
+            var trim = operation switch
+            {
+                MacroOperation.RemoveBefore => MyTextEditor.Core.Models.TrimOperation.RemoveBefore,
+                MacroOperation.RemoveAfter => MyTextEditor.Core.Models.TrimOperation.RemoveAfter,
+                MacroOperation.RemoveBetween => MyTextEditor.Core.Models.TrimOperation.RemoveBetween,
+                _ => MyTextEditor.Core.Models.TrimOperation.KeepBetween
+            };
+            var expected = service.Trim(text, new(trim, "[", "]", keepStart, keepEnd), "\n");
+            var actual = Run(text, step);
+            Assert.Equal(expected.Text, actual.Text);
+            Assert.Equal(expected.Summary.SkippedLines, actual.Steps[0].SkippedLines);
+        }
+        var search = Search("한글"); search.WholeWord = true; search.AnyTerms = ["AAA", "BBB"]; search.ExcludeTerms = ["CC"];
+        Assert.Equal("한글 aaa\n!한글! BBB", Run("한글 aaa\n앞한글 AAA\n한글_ BBB\n한글 BBB CC\n!한글! BBB", search,
+            Step(MacroOperation.KeepTargetLines, target: MacroTarget.MatchedLines)).Text);
+        search.MatchCase = true;
+        Assert.Equal("한글 AAA", Run("한글 aaa\n한글 AAA", search,
+            Step(MacroOperation.KeepTargetLines, target: MacroTarget.MatchedLines)).Text);
+        Assert.Equal("AAA\nkeep", Run("AAA\nkeep\naaa", Search("AAA"),
+            Step(MacroOperation.RemoveDuplicateLines, target: MacroTarget.MatchedLines)).Text);
+        Assert.Equal("x\na\nx\nb\n", Run("a\nb\n", Step(MacroOperation.AddPrefix, "x\n")).Text);
+        Assert.Equal("a\n\nb\n", Run("a|\nb|", Step(MacroOperation.SplitByDelimiter, "|")).Text);
+        var replacement = Step(MacroOperation.Replace, "AA"); replacement.Replacement = "x\ny";
+        Assert.Equal("x\nyA", Run("AAA", replacement).Text);
+        Assert.Equal("x\ny", Run("-12: x\n2: y", Step(MacroOperation.RemoveLineNumbers, ": ")).Text);
+        return Task.CompletedTask;
+    }
+
+    public static Task AllocationBudget()
+    {
+        const int lineCount = 50_000;
+        var line = "AAA BBB 한글😀 " + new string('x', 280) + "\n";
+        var text = string.Concat(Enumerable.Repeat(line, lineCount));
+        var runner = new TextMacroRunner();
+        var search = Search("AAA"); search.AllTerms.Add("BBB"); search.ExcludeTerms.Add("CC");
+        var definition = Macro(search);
+        runner.Run("AAA BBB", "\n", definition);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var result = runner.Run(text, "\n", definition);
+        var searchAllocation = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(ReferenceEquals(text, result.Text));
+        Assert.Equal(lineCount, result.Steps[0].MatchedLines);
+        // Range metadata may scale with line count; search must not duplicate the character buffer.
+        Assert.True(searchAllocation < 8 * 1024 * 1024);
+
+        definition.Steps.Add(Step(MacroOperation.AddPrefix, "> ", MacroTarget.MatchedLines));
+        runner.Run("AAA BBB", "\n", definition);
+        before = GC.GetAllocatedBytesForCurrentThread();
+        result = runner.Run(text, "\n", definition);
+        var transformAllocation = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(text.Length + 2 * lineCount, result.Text.Length);
+        Assert.Equal(lineCount, result.Steps[1].ChangedLines);
+        Assert.True(result.Text.StartsWith("> AAA BBB 한글😀 ", StringComparison.Ordinal));
+        Assert.True(result.Text.EndsWith("\n", StringComparison.Ordinal));
+        // One changed-line buffer and one final UTF-16 buffer, with room for metadata and objects.
+        Assert.True(transformAllocation < (long)text.Length * 5 + 8 * 1024 * 1024);
+        Console.WriteLine($"  Macro allocations: search {searchAllocation / 1048576d:F1} MiB, search+prefix {transformAllocation / 1048576d:F1} MiB");
+        return Task.CompletedTask;
+    }
     private sealed class InlineProgress(Action<MacroStepResult> callback) : IProgress<MacroStepResult>
     {
         public void Report(MacroStepResult value) => callback(value);

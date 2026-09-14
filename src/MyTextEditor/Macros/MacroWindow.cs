@@ -31,6 +31,7 @@ public sealed class MacroWindow : Window
     private readonly Button _apply = new() { Content = "최종 결과 적용", IsEnabled = false };
     private readonly Button _preview = new() { Content = "미리보기" }, _run = new() { Content = "바로 실행" }, _cancel = new() { Content = "실행 취소", IsEnabled = false };
     private CancellationTokenSource? _execution, _detailCancellation;
+    private readonly SemaphoreSlim _calculationGate = new(1, 1);
     private MacroDocumentSnapshot? _snapshot;
     private MacroDefinition? _executed;
     private string? _result;
@@ -99,7 +100,7 @@ public sealed class MacroWindow : Window
         _statistics.SelectionChanged += async (_, _) => await ShowDetailAsync();
         try { _saved = _store.Load(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException or InvalidOperationException or NotSupportedException) { _loadFailed = true; SetStatus("매크로 파일을 읽지 못했습니다. 기존 파일 보호를 위해 저장을 중단합니다: " + ex.Message); }
         LoadDraft(_saved.FirstOrDefault() ?? _draft); RefreshLibrary();
-        Closing += OnClosing; Closed += (_, _) => { _closed = true; _execution?.Cancel(); };
+        Closing += OnClosing; Closed += (_, _) => { _closed = true; _execution?.Cancel(); ClearExecutionResult(); };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { _callbacks.ShowHelp?.Invoke(); e.Handled = true; } };
     }
 
@@ -108,7 +109,19 @@ public sealed class MacroWindow : Window
     private static MacroDefinition Clone(MacroDefinition macro) => System.Text.Json.JsonSerializer.Deserialize<MacroDefinition>(System.Text.Json.JsonSerializer.Serialize(macro))!;
     private void SetStatus(string value) { _status.Text = value; _callbacks.ReportStatus?.Invoke(value); }
     private void RefreshLibrary() { _binding = true; _library.ItemsSource = null; _library.ItemsSource = _saved; _library.SelectedItem = _saved.FirstOrDefault(m => m.Id == _draft.Id); _binding = false; }
-    private void LoadDraft(MacroDefinition macro) { _execution?.Cancel(); _apply.IsEnabled = false; _result = null; _statistics.ItemsSource = null; _before.Clear(); _after.Clear(); ++_detailGeneration; _detailCancellation?.Cancel(); _draft = Clone(macro); _baseline = MacroJsonCodec.Serialize(_draft); _binding = true; _name.Text = _draft.Name; _binding = false; RefreshSteps(_draft.Steps.Count > 0 ? 0 : -1); }
+    private void ClearExecutionResult()
+    {
+        ++_detailGeneration;
+        _detailCancellation?.Cancel();
+        _snapshot = null;
+        _executed = null;
+        _result = null;
+        _apply.IsEnabled = false;
+        _statistics.ItemsSource = null;
+        _before.Clear();
+        _after.Clear();
+    }
+    private void LoadDraft(MacroDefinition macro) { _execution?.Cancel(); ClearExecutionResult(); _draft = Clone(macro); _baseline = MacroJsonCodec.Serialize(_draft); _binding = true; _name.Text = _draft.Name; _binding = false; RefreshSteps(_draft.Steps.Count > 0 ? 0 : -1); }
     private static string StepTitle(MacroStep s, int index)
     {
         string value = s.Operation == MacroOperation.Search ? string.Join(" / ", s.AllTerms.Concat(s.AnyTerms).Concat(s.ExcludeTerms)) : s.Value;
@@ -185,12 +198,18 @@ public sealed class MacroWindow : Window
         MacroDefinition macro;
         try { macro = Clone(_draft); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Text.Json.JsonException) { SetStatus(ex.Message); return; }
         var errors = new TextMacroRunner().Validate(macro); if (errors.Count > 0) { SetStatus(string.Join("\n",errors)); return; }
+        ClearExecutionResult();
         var snapshot = _callbacks.GetCurrentDocument(); if (snapshot == null) { SetStatus("실행할 문서를 먼저 여세요."); return; }
         _execution = new CancellationTokenSource(); var cancellation = _execution; _apply.IsEnabled = false; _preview.IsEnabled = _run.IsEnabled = false; _cancel.IsEnabled = true; _result = null; _statistics.ItemsSource = null; _before.Clear(); _after.Clear(); ++_detailGeneration; _detailCancellation?.Cancel();
         try
         {
             var progress = new Progress<MacroStepResult>(s => { if (!_closed) SetStatus($"{snapshot.DisplayName} · {s.StepIndex + 1}/{macro.Steps.Count} 단계 완료"); });
-            var result = await Task.Run(() => new TextMacroRunner().Run(snapshot.Text,snapshot.NewLine,macro,cancellation.Token,progress),cancellation.Token);
+            var result = await Task.Run(async () =>
+            {
+                await _calculationGate.WaitAsync(cancellation.Token);
+                try { return new TextMacroRunner().Run(snapshot.Text,snapshot.NewLine,macro,cancellation.Token,progress); }
+                finally { _calculationGate.Release(); }
+            }, cancellation.Token);
             if (_closed || cancellation.IsCancellationRequested) return;
             _snapshot = snapshot; _executed = macro; _result = result.Text;
             _statistics.ItemsSource = result.Steps.Select(s=>new StageItem(s.StepIndex,$"{s.StepIndex+1}. {Names[s.Operation]}\n처리 {s.ProcessedLines} · 변경 {s.ChangedLines}\n일치 {s.MatchedLines} · 건너뜀 {s.SkippedLines}")).ToList(); _statistics.DisplayMemberPath = "Label";
@@ -207,6 +226,7 @@ public sealed class MacroWindow : Window
     {
         if (_snapshot == null || _result == null || !_apply.IsEnabled) return;
         bool success = _callbacks.ApplyResult(_snapshot.DocumentId,_snapshot.Revision,_result); _apply.IsEnabled = false;
+        _result = null;
         SetStatus(success ? "매크로를 적용했습니다. Ctrl+Z 한 번으로 복원할 수 있습니다." : "원본이 수정되었거나 닫혀 적용할 수 없습니다. 다시 실행하세요.");
     }
     private async Task ShowDetailAsync()
@@ -215,11 +235,16 @@ public sealed class MacroWindow : Window
         int generation = ++_detailGeneration; _detailCancellation?.Cancel(); var detailCancellation = new CancellationTokenSource(); _detailCancellation = detailCancellation; var snapshot = _snapshot; var macro = _executed;
         try
         {
-            var detail = await Task.Run(() => {
+            var detail = await Task.Run(async () => {
+                await _calculationGate.WaitAsync(detailCancellation.Token);
+                try
+                {
                 var runner = new TextMacroRunner();
-                string before = stage.Index == 0 ? snapshot.Text : runner.Run(snapshot.Text,snapshot.NewLine,macro,cancellationToken:detailCancellation.Token,stopAfterStep:stage.Index-1).Text;
-                string after = runner.Run(snapshot.Text,snapshot.NewLine,macro,cancellationToken:detailCancellation.Token,stopAfterStep:stage.Index).Text;
-                return (Before:PreviewText(before),After:PreviewText(after));
+                string before = PreviewText(stage.Index == 0 ? snapshot.Text : runner.Run(snapshot.Text,snapshot.NewLine,macro,cancellationToken:detailCancellation.Token,stopAfterStep:stage.Index-1).Text);
+                string after = PreviewText(runner.Run(snapshot.Text,snapshot.NewLine,macro,cancellationToken:detailCancellation.Token,stopAfterStep:stage.Index).Text);
+                return (Before:before,After:after);
+                }
+                finally { _calculationGate.Release(); }
             });
             if (!_closed && generation == _detailGeneration) { _before.Text = detail.Before; _after.Text = detail.After; }
         }

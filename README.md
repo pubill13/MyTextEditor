@@ -134,6 +134,8 @@ Diff 작업 공간에서는 `Ctrl+W`로 현재 Merge 탭을 닫고 `Ctrl+Tab`·`
 
 ## 배포
 
+v1.7.1은 대용량 매크로에서 원문 줄 복사와 임시 객체를 줄였습니다. 로컬 300MiB 혼합 로그의 검색·접두사 매크로는 1.75초에서 0.51초로, 계산 직후 메모리는 약 5.0GiB에서 2.8GiB로 감소했습니다. 파일 내용·단계에 따라 달라지며, 전체 결과 적용과 Undo에는 추가 메모리와 시간이 필요합니다. 수백 MB에서 모든 작업이 끊김 없이 수행된다는 보장은 아닙니다.
+
 최신 설치 불필요 배포본은 [GitHub Releases](https://github.com/pubill13/MyTextEditor/releases/latest)에서 `MyTextEditor.exe` 또는 `MyTextEditor-win-x64.zip`을 내려받을 수 있습니다.
 
 ```powershell

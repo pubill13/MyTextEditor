@@ -40,7 +40,9 @@ var tests = new (string Name, Func<Task> Run)[]
     ("매크로 빈 결과와 검색 재평가", MacroTests.EmptyResultsAndSearch),
     ("매크로 Unicode 줄바꿈과 로그", MacroTests.UnicodeAndNewlines),
     ("매크로 검증 취소와 단계 통계", MacroTests.ValidationAndCancellation),
-    ("매크로 JSON 왕복과 잘못된 입력", MacroTests.JsonRoundtrip)
+    ("매크로 JSON 왕복과 잘못된 입력", MacroTests.JsonRoundtrip),
+    ("매크로 범위 기반 처리 회귀", MacroTests.RangeProcessing),
+    ("매크로 대용량 할당 한도", MacroTests.AllocationBudget)
 };
 
 var failed = 0;

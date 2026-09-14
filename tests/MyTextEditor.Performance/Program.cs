@@ -21,6 +21,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length >= 2 && args[0] == "--large-file")
+            return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))
         {
             var macroApplication = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -438,6 +440,17 @@ internal static class Program
             }, store) { ShowInTaskbar = false };
             window.Show();
             window.UpdateLayout();
+            var execute = typeof(MacroWindow).GetMethod("ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var execution = (Task)execute.Invoke(window, [false])!;
+            PumpDispatcherUntil(() => execution.IsCompleted, TimeSpan.FromSeconds(10));
+            execution.GetAwaiter().GetResult();
+            var snapshotField = typeof(MacroWindow).GetField("_snapshot", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var resultField = typeof(MacroWindow).GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            if (snapshotField.GetValue(window) == null || (string?)resultField.GetValue(window) != result.Text)
+                throw new InvalidOperationException("매크로 미리보기 실행 실패");
+            typeof(MacroWindow).GetMethod("LoadDraft", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [macro]);
+            if (snapshotField.GetValue(window) != null || resultField.GetValue(window) != null)
+                throw new InvalidOperationException("매크로 전환 후 이전 문서 참조가 남았습니다.");
             if (!window.PrepareClose()) throw new InvalidOperationException("변경하지 않은 매크로 창 종료 실패");
             window.Close();
             File.WriteAllText(Path.Combine(directory, "macros.json"), "{broken-json");
