@@ -235,6 +235,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         foreach (var panel in _gutterPool) panel.Visibility = Visibility.Collapsed;
         PositionText.Text = "0 / 0";
         StatisticsText.Text = string.Empty;
+        PreviousButton.IsEnabled = NextButton.IsEnabled = false;
     }
 
     private DiffOptions CurrentDiffOptions() => new(
@@ -284,9 +285,9 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void Previous_Click(object sender, RoutedEventArgs e) => NavigateDifference(-1);
     private void Next_Click(object sender, RoutedEventArgs e) => NavigateDifference(1);
 
-    private void NavigateDifference(int delta)
+    internal void NavigateDifference(int delta)
     {
-        if (_result is null || _result.Blocks.Count == 0) return;
+        if (!_isActive || _resourcesReleased || _result is null || _result.Blocks.Count == 0) return;
         _currentBlockIndex = _currentBlockIndex < 0 ? 0 : (_currentBlockIndex + delta + _result.Blocks.Count) % _result.Blocks.Count;
         var block = _result.Blocks[_currentBlockIndex];
         _leftEditor.GoToLine(Math.Max(1, block.LeftStartLine));
@@ -716,6 +717,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void Editor_ShortcutRequested(object? sender, EditorShortcutEventArgs e)
     {
+        if (!_isActive || _resourcesReleased || e.Handled) return;
         switch (e.Shortcut)
         {
             case EditorShortcut.DiffPrevious: NavigateDifference(-1); e.Handled = true; break;
@@ -736,6 +738,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void Window_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
+        if (!_isActive || _resourcesReleased || e.Handled) return;
         var focused = _leftEditor?.IsEditorFocused == true ? _leftEditor : _rightEditor?.IsEditorFocused == true ? _rightEditor : null;
         if (focused is not null && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -747,11 +750,12 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
                 case Key.G: focused.ShowGoToLineDialog(); e.Handled = true; return;
             }
         }
-        if ((Keyboard.Modifiers & ModifierKeys.Alt) == 0) return;
-        if (e.Key == Key.Up) { NavigateDifference(-1); e.Handled = true; }
-        else if (e.Key == Key.Down) { NavigateDifference(1); e.Handled = true; }
-        else if (e.Key == Key.Left) { MergeCurrent(DiffSide.Right); e.Handled = true; }
-        else if (e.Key == Key.Right) { MergeCurrent(DiffSide.Left); e.Handled = true; }
+        if (Keyboard.Modifiers != ModifierKeys.Alt) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.Up) { NavigateDifference(-1); e.Handled = true; }
+        else if (key == Key.Down) { NavigateDifference(1); e.Handled = true; }
+        else if (key == Key.Left) { MergeCurrent(DiffSide.Right); e.Handled = true; }
+        else if (key == Key.Right) { MergeCurrent(DiffSide.Left); e.Handled = true; }
     }
 
     public DiffWindowOptions GetOptions() => new(
@@ -842,7 +846,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (LeftDropZone is null || RightDropZone is null) return;
         LeftDropZone.Visibility = _left.IsReady ? Visibility.Collapsed : Visibility.Visible;
         RightDropZone.Visibility = _right.IsReady ? Visibility.Collapsed : Visibility.Visible;
-        PreviousButton.IsEnabled = NextButton.IsEnabled = SwapButton.IsEnabled = IsReady;
+        SwapButton.IsEnabled = IsReady;
+        PreviousButton.IsEnabled = NextButton.IsEnabled = IsReady && _result is { Blocks.Count: > 0 };
         CompareSelectionsButton.IsEnabled = IsReady;
         CopyAllLeftButton.IsEnabled = IsReady && _initialized && !_leftEditor.IsReadOnly;
         CopyAllRightButton.IsEnabled = IsReady && _initialized && !_rightEditor.IsReadOnly;

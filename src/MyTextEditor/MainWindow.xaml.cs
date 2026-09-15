@@ -105,6 +105,7 @@ public partial class MainWindow : Window
         _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); SaveSettings(false); };
         AttachSettingsTracking();
         _settingsReady = true;
+        InitializePanelInteraction();
         LocationChanged += (_, _) => MarkSettingsDirty();
         StateChanged += (_, _) => MarkSettingsDirty();
         NewDocument();
@@ -113,6 +114,7 @@ public partial class MainWindow : Window
         else if (loadResult.NeedsSave)
             Dispatcher.BeginInvoke(() =>
             {
+                if (!_settingsReady) return;
                 var saved = SaveSettings(false);
                 if (saved && loadResult.RemovedLegacySearchCount > 0)
                     StatusMessage.Text = $"새 검색 방식으로 바꿀 수 없는 현재 조건 또는 검색 기록 {loadResult.RemovedLegacySearchCount:N0}개를 정리했습니다.";
@@ -356,7 +358,11 @@ public partial class MainWindow : Window
         UpdateStatus();
     }
 
-    private void Undo_Click(object sender, RoutedEventArgs e) { if (CurrentEditor?.CanUndo == true) CurrentEditor.Undo(); }
+    private void Undo_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentEditor?.CanUndo == true) CurrentEditor.Undo();
+        UpdateStatus();
+    }
     private void Redo_Click(object sender, RoutedEventArgs e) { if (CurrentEditor?.CanRedo == true) CurrentEditor.Redo(); }
     private void SelectAll_Click(object sender, RoutedEventArgs e) => CurrentEditor?.SelectAll();
     private void Find_Click(object sender, RoutedEventArgs e) => ShowSearchInput();
@@ -549,18 +555,13 @@ public partial class MainWindow : Window
 
     private void ShowSearchInput()
     {
-        ToolsMenuItem.IsChecked = true;
-        ToggleTools_Click(ToolsMenuItem, new RoutedEventArgs());
-        ToolTabs.SelectedIndex = 0;
-        SimpleAllBox.Focus();
+        var input = _settings.LastSearchField switch { "Any" => SimpleAnyBox, "Exclude" => SimpleExcludeBox, _ => SimpleAllBox };
+        FocusToolInput(0, input, true);
     }
 
     private void ShowReplaceInput()
     {
-        ToolsMenuItem.IsChecked = true;
-        ToggleTools_Click(ToolsMenuItem, new RoutedEventArgs());
-        ToolTabs.SelectedIndex = 1;
-        ReplaceFromBox.Focus();
+        FocusToolInput(1, ReplaceFromBox, true);
     }
 
     private void Editor_CaretChanged(object? sender, EventArgs e) => UpdateStatus();
@@ -589,6 +590,9 @@ public partial class MainWindow : Window
     {
         var document = CurrentDocument;
         var editor = CurrentEditor;
+        var canUndo = editor?.CanUndo == true;
+        UndoButton.IsEnabled = UndoMenuItem.IsEnabled = ToolsUndoButton.IsEnabled = PreviewUndoButton.IsEnabled = canUndo;
+        _macroWindow?.RefreshDocumentState();
         if (document is null)
         {
             CaretStatus.Text = "줄 -, 열 -"; LineCountStatus.Text = "0줄"; EncodingStatus.Text = "-"; NewLineStatus.Text = "-"; return;
@@ -816,7 +820,20 @@ public partial class MainWindow : Window
     private ListBox? _activeResultsList;
     private SearchResultSession? ActiveSearchSession => SearchResultTabs.SelectedItem as SearchResultSession;
     private bool IsSessionCurrent(SearchResultSession session) => Documents.Contains(session.Snapshot.Source) && session.Snapshot.Source.ContentRevision == session.Snapshot.Revision;
-    private void SearchResultsList_Loaded(object sender, RoutedEventArgs e) { _activeResultsList = (ListBox)sender; }
+    private void SearchResultsList_Loaded(object sender, RoutedEventArgs e) { _activeResultsList = (ListBox)sender; RefreshSearchSessionState(); }
+    private void SearchResultsList_Unloaded(object sender, RoutedEventArgs e) { if (ReferenceEquals(sender, _activeResultsList)) _activeResultsList = null; }
+    private void SearchResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _activeResultsList = (ListBox)sender;
+        RefreshSearchSessionState();
+    }
+    private void SearchResultsList_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        var list = (ListBox)sender;
+        if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(list, source) is ListBoxItem { DataContext: SearchResultRow row })
+            NavigateResult(list, row);
+    }
     private void SearchResultsList_MouseDoubleClick(object sender, MouseButtonEventArgs e) => NavigateSelectedResult((ListBox)sender);
     private void SearchResultsList_KeyDown(object sender, KeyEventArgs e)
     {
@@ -825,19 +842,37 @@ public partial class MainWindow : Window
     }
     private void NavigateSelectedResult(ListBox list)
     {
-        if (ActiveSearchSession is not { } session || list.SelectedItem is not SearchResultRow row || !IsSessionCurrent(session)) return;
+        if (list.SelectedItem is SearchResultRow row) NavigateResult(list, row);
+    }
+    private void NavigateResult(ListBox list, SearchResultRow row)
+    {
+        if (ActiveSearchSession is not { } session) return;
+        if (!IsSessionCurrent(session))
+        {
+            StatusMessage.Text = "원문이 변경되거나 닫혀 이동할 수 없습니다. 복사와 새 문서 추출은 가능합니다.";
+            return;
+        }
         DocumentTabs.SelectedItem = session.Snapshot.Source;
-        session.Snapshot.Source.Editor.GoToLine(row.LineNumber);
+        session.Snapshot.Source.Editor.GoToLine(row.LineNumber, focusEditor: false);
+        list.Focus();
     }
     private void SearchResultTabs_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (e.Source == SearchResultTabs) RefreshSearchSessionState(); }
     private void IncludeLineNumbers_Changed(object sender, RoutedEventArgs e) { if (ActiveSearchSession is { } session) session.IncludeLineNumbers = IncludeLineNumbersCheck.IsChecked == true; }
     private void RefreshSearchSessionState()
     {
-        if (ActiveSearchSession is not { } session) { SearchSessionStatus.Text = "검색 결과 없음"; return; }
+        var session = ActiveSearchSession;
+        var hasMatches = session?.MatchedLineNumbers.Count > 0;
+        var selected = _activeResultsList is { } list && list.DataContext == session ? list.SelectedItems : null;
+        CopyAllResultsButton.IsEnabled = ExtractAllButton.IsEnabled = hasMatches;
+        CopySelectedResultsButton.IsEnabled = selected?.Count > 0;
+        ExtractSelectedButton.IsEnabled = selected?.Cast<SearchResultRow>().Any(row => !row.IsContext) == true;
+        DeleteSelectedButton.IsEnabled = DeleteAllButton.IsEnabled = false;
+        if (session is null) { SearchSessionStatus.Text = "검색 결과 없음"; return; }
         IncludeLineNumbersCheck.IsChecked = session.IncludeLineNumbers;
         var current = IsSessionCurrent(session);
-        SearchSessionStatus.Text = current ? $"{session.Snapshot.Source.DisplayName} · 원문 연결됨" : $"{session.Snapshot.Source.DisplayName} · 원문 변경됨 (복사만 가능)";
-        ExtractSelectedButton.IsEnabled = ExtractAllButton.IsEnabled = DeleteSelectedButton.IsEnabled = DeleteAllButton.IsEnabled = current;
+        SearchSessionStatus.Text = current ? $"{session.Snapshot.Source.DisplayName} · 클릭하면 원문으로 이동" : $"{session.Snapshot.Source.DisplayName} · 원문 변경 또는 닫힘 (복사·새 문서 가능, 이동·삭제 불가)";
+        DeleteSelectedButton.IsEnabled = current && ExtractSelectedButton.IsEnabled;
+        DeleteAllButton.IsEnabled = current && hasMatches;
     }
     private IEnumerable<SearchResultRow> SelectedMatchRows() => _activeResultsList?.SelectedItems.Cast<SearchResultRow>().Where(row => !row.IsContext) ?? [];
     private void CopySelectedResults_Click(object sender, RoutedEventArgs e) => CopyRows(_activeResultsList?.SelectedItems.Cast<SearchResultRow>() ?? []);
@@ -845,7 +880,7 @@ public partial class MainWindow : Window
     private void CopyRows(IEnumerable<SearchResultRow> source)
     {
         if (ActiveSearchSession is not { } session) return;
-        var rows = source.ToArray(); if (rows.Length == 0) return;
+        var rows = source.OrderBy(row => row.LineNumber).ToArray(); if (rows.Length == 0) return;
         Clipboard.SetText(string.Join(session.Snapshot.NewLine, rows.Select(row => session.IncludeLineNumbers ? $"{row.LineNumber}: {row.Text}" : row.Text)));
         StatusMessage.Text = $"{rows.Length:N0}개 결과를 복사했습니다.";
     }
@@ -853,10 +888,17 @@ public partial class MainWindow : Window
     private void ExtractAllResults_Click(object sender, RoutedEventArgs e) => ExtractSessionRows(ActiveSearchSession?.MatchedLineNumbers ?? []);
     private void ExtractSessionRows(IEnumerable<int> lines)
     {
-        if (ActiveSearchSession is not { } session || !IsSessionCurrent(session)) return;
+        if (ActiveSearchSession is not { } session) return;
         var numbers = lines.Distinct().Order().ToArray(); if (numbers.Length == 0) return;
-        var result = _transformService.ExtractLines(session.Snapshot.Source.Text, numbers, 0, session.Snapshot.Source.NewLine);
-        NewDocument(result.Text); StatusMessage.Text = $"{numbers.Length:N0}개 줄을 새 탭으로 추출했습니다.";
+        var result = _transformService.ExtractLines(session.Snapshot.Text, numbers, 0, session.Snapshot.NewLine);
+        NewDocument(result.Text);
+        if (CurrentDocument is { } document)
+        {
+            document.NewLine = session.Snapshot.NewLine;
+            document.Editor.SetNewLine(document.NewLine);
+            UpdateStatus();
+        }
+        StatusMessage.Text = $"{numbers.Length:N0}개 줄을 새 탭으로 추출했습니다.";
     }
     private void DeleteSelectedResults_Click(object sender, RoutedEventArgs e) => DeleteSessionRows(SelectedMatchRows().Select(row => row.LineNumber));
     private void DeleteAllResults_Click(object sender, RoutedEventArgs e) => DeleteSessionRows(ActiveSearchSession?.MatchedLineNumbers ?? []);
@@ -994,6 +1036,7 @@ public partial class MainWindow : Window
             button.Click += FavoriteTool_Click;
             FavoriteToolsPanel.Children.Add(button);
         }
+        UpdateFavoriteOverflow();
     }
 
     private void FavoriteToolsEdit_Click(object sender, RoutedEventArgs e)
@@ -1016,16 +1059,16 @@ public partial class MainWindow : Window
     private void FavoriteTool_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not ToolDescriptor tool) return;
-        ToolsMenuItem.IsChecked = true; ToggleTools_Click(ToolsMenuItem, new RoutedEventArgs()); ToolTabs.SelectedIndex = 1;
+        SetToolsVisible(true); ToolTabs.SelectedIndex = 1;
         if (tool.QuickOperation is not null) { RunQuickTransform(tool.QuickOperation, tool.DisplayName); return; }
         if (tool.OperationIndex is int index)
         {
             TrimOperationCombo.SelectedIndex = index;
-            (index switch { <= 3 => StartMarkerBox, <= 5 => CharacterCountBox, <= 9 => ValueInputBox, 10 => StartNumberBox, _ => LineNumberSeparatorBox }).Focus();
+            FocusToolInput(1, index switch { <= 3 => StartMarkerBox, <= 5 => CharacterCountBox, <= 9 => ValueInputBox, 10 => StartNumberBox, _ => LineNumberSeparatorBox }, false);
             return;
         }
-        if (tool.Id == TextToolIds.RemoveLinesContaining) DeleteContainingBox.Focus();
-        else if (tool.Id == TextToolIds.Replace) ReplaceFromBox.Focus();
+        if (tool.Id == TextToolIds.RemoveLinesContaining) FocusToolInput(1, DeleteContainingBox, false);
+        else if (tool.Id == TextToolIds.Replace) FocusToolInput(1, ReplaceFromBox, false);
     }
 
     private void PreviewDeleteContaining_Click(object sender, RoutedEventArgs e)
@@ -1188,12 +1231,7 @@ public partial class MainWindow : Window
 
     private void ToggleTools_Click(object sender, RoutedEventArgs e)
     {
-        var show = (sender as MenuItem)?.IsChecked == true;
-        ToolColumn.MinWidth = show ? 280 : 0;
-        ToolColumn.Width = show ? new GridLength(Math.Max(280, _settings.ToolPanelWidth)) : new GridLength(0);
-        ToolSplitterColumn.Width = show ? new GridLength(5) : new GridLength(0);
-        ToolPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        MarkSettingsDirty();
+        SetToolsVisible((sender as MenuItem)?.IsChecked == true, true);
     }
 
     private void ToggleResults_Click(object sender, RoutedEventArgs e)
@@ -1348,10 +1386,7 @@ public partial class MainWindow : Window
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        var useOverflow = e.NewSize.Width < 1180;
-        ToolbarFontPanel.Visibility = useOverflow ? Visibility.Collapsed : Visibility.Visible;
-        ToolbarOverflowPanel.Visibility = useOverflow ? Visibility.Visible : Visibility.Collapsed;
-        if (!useOverflow) ToolbarOverflowPopup.IsOpen = false;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdateToolbarLayout));
         MarkSettingsDirty();
     }
 
@@ -1471,6 +1506,8 @@ public partial class MainWindow : Window
     private void RestorePanelVisibility()
     {
         ToolsMenuItem.IsChecked = _settings.ToolPanelVisible;
+        ToolsToggleButton.IsChecked = _settings.ToolPanelVisible;
+        ToolTabs.SelectedIndex = _settings.SelectedToolTab;
         ToolColumn.MinWidth = _settings.ToolPanelVisible ? 280 : 0;
         ToolColumn.Width = _settings.ToolPanelVisible ? new GridLength(Math.Max(280, _settings.ToolPanelWidth)) : new GridLength(0);
         ToolSplitterColumn.Width = _settings.ToolPanelVisible ? new GridLength(5) : new GridLength(0);

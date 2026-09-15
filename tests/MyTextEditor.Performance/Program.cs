@@ -21,6 +21,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
+        if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
         if (args.Contains("--v18")) return V18Verification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
@@ -42,6 +44,7 @@ internal static class Program
         var path = Path.Combine(Path.GetTempPath(), "MyTextEditor-30m-utf8.log");
         EnsureFixture(path);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        MergeKeysVerification.Verify();
         VerifyEditorShortcutsAndRelease();
         VerifyEditorRoundTrip();
         VerifyDiffTabAndMergeUndo();

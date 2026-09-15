@@ -357,14 +357,14 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         }
     }
 
-    public void GoToLine(int oneBasedLineNumber)
+    public void GoToLine(int oneBasedLineNumber, bool focusEditor = true)
     {
         if (_editor.Lines.Count == 0) return;
         var index = Math.Clamp(oneBasedLineNumber - 1, 0, _editor.Lines.Count - 1);
         var line = _editor.Lines[index];
         _editor.SetSelection(line.EndPosition, line.Position);
         _editor.ScrollCaret();
-        _editor.Focus();
+        if (focusEditor) _editor.Focus();
     }
 
     public void Undo() => _editor.Undo();
@@ -598,6 +598,11 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         if (modifiers == Forms.Keys.None && key == Forms.Keys.F1)
         {
             shortcut = EditorShortcut.Help;
+            return true;
+        }
+        if (modifiers == Forms.Keys.None && key is Forms.Keys.F7 or Forms.Keys.F8)
+        {
+            shortcut = key == Forms.Keys.F7 ? EditorShortcut.DiffPrevious : EditorShortcut.DiffNext;
             return true;
         }
         if (modifiers == Forms.Keys.Shift && key == Forms.Keys.F3)

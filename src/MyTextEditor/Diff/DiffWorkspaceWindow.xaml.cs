@@ -255,6 +255,13 @@ public partial class DiffWorkspaceWindow : Window
     private async void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
+        if (e.Handled) return;
+        if (modifiers == ModifierKeys.None && e.Key is Key.F7 or Key.F8)
+        {
+            CurrentView?.NavigateDifference(e.Key == Key.F7 ? -1 : 1);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.F1 && modifiers == ModifierKeys.None) { _callbacks.ShowHelp?.Invoke(); e.Handled = true; return; }
         if (modifiers == ModifierKeys.Control && e.Key is Key.W or Key.F4)
         {

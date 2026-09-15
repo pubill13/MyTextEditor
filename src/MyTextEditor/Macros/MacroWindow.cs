@@ -29,7 +29,9 @@ public sealed class MacroWindow : Window
     private readonly TextBox _before = new() { IsReadOnly = true, AcceptsReturn = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly TextBox _after = new() { IsReadOnly = true, AcceptsReturn = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly Button _apply = new() { Content = "최종 결과 적용", IsEnabled = false };
-    private readonly Button _preview = new() { Content = "미리보기" }, _run = new() { Content = "바로 실행" }, _cancel = new() { Content = "실행 취소", IsEnabled = false };
+    private readonly Button _preview = new() { Content = "미리보기" }, _run = new() { Content = "바로 실행" }, _cancel = new() { Content = "실행 중단", IsEnabled = false };
+    private readonly Button _undo = new() { Content = "편집 실행 취소", IsEnabled = false, ToolTip = "활성 문서의 마지막 편집을 되돌립니다. Ctrl+Z와 같습니다." };
+    private readonly TextBlock _targetDocument = new() { TextWrapping = TextWrapping.Wrap };
     private CancellationTokenSource? _execution, _detailCancellation;
     private readonly SemaphoreSlim _calculationGate = new(1, 1);
     private MacroDocumentSnapshot? _snapshot;
@@ -61,11 +63,18 @@ public sealed class MacroWindow : Window
         header.Children.Add(new TextBlock { Text = "작업 매크로", FontSize = 22, FontWeight = FontWeights.SemiBold });
         header.Children.Add(new TextBlock { Text = "동작을 순서대로 조립하세요. 검색한 줄은 다음 검색 전까지 추적하며, 실행 전체를 Ctrl+Z 한 번으로 되돌릴 수 있습니다.", Margin = new Thickness(0, 6, 0, 10), TextWrapping = TextWrapping.Wrap });
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        footer.Children.Add(_targetDocument);
         var commands = Row(); footer.Children.Add(commands);
-        foreach (var button in new[] { _preview, _run, _apply, _cancel }) { button.Margin = new Thickness(0, 8, 8, 8); commands.Children.Add(button); }
+        foreach (var button in new[] { _preview, _run, _apply, _cancel, _undo }) { button.Margin = new Thickness(0, 8, 8, 8); commands.Children.Add(button); }
         footer.Children.Add(_status);
         _preview.Click += async (_, _) => await ExecuteAsync(false); _run.Click += async (_, _) => await ExecuteAsync(true);
         _apply.Click += (_, _) => Apply(); _cancel.Click += (_, _) => _execution?.Cancel();
+        _undo.Click += (_, _) =>
+        {
+            if (_execution != null || _callbacks.GetCurrentUndoState?.Invoke()?.CanUndo != true) return;
+            _callbacks.UndoCurrentDocument?.Invoke();
+            RefreshDocumentState();
+        };
         var layout = new Grid(); layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) }); layout.ColumnDefinitions.Add(new ColumnDefinition()); root.Children.Add(layout);
         var libraryPanel = new DockPanel { Margin = new Thickness(0, 0, 12, 0) }; layout.Children.Add(libraryPanel);
         var libraryButtons = new WrapPanel(); DockPanel.SetDock(libraryButtons, Dock.Bottom); libraryPanel.Children.Add(libraryButtons);
@@ -102,6 +111,16 @@ public sealed class MacroWindow : Window
         LoadDraft(_saved.FirstOrDefault() ?? _draft); RefreshLibrary();
         Closing += OnClosing; Closed += (_, _) => { _closed = true; _execution?.Cancel(); ClearExecutionResult(); };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { _callbacks.ShowHelp?.Invoke(); e.Handled = true; } };
+        Activated += (_, _) => RefreshDocumentState();
+        RefreshDocumentState();
+    }
+
+    public void RefreshDocumentState()
+    {
+        if (_closed) return;
+        var state = _callbacks.GetCurrentUndoState?.Invoke();
+        _targetDocument.Text = state is null ? "대상 문서: 없음" : $"대상 문서: {state.DisplayName}";
+        _undo.IsEnabled = _execution is null && state?.CanUndo == true && _callbacks.UndoCurrentDocument is not null;
     }
 
     private static StackPanel Row() => new() { Orientation = Orientation.Horizontal };
@@ -201,6 +220,7 @@ public sealed class MacroWindow : Window
         ClearExecutionResult();
         var snapshot = _callbacks.GetCurrentDocument(); if (snapshot == null) { SetStatus("실행할 문서를 먼저 여세요."); return; }
         _execution = new CancellationTokenSource(); var cancellation = _execution; _apply.IsEnabled = false; _preview.IsEnabled = _run.IsEnabled = false; _cancel.IsEnabled = true; _result = null; _statistics.ItemsSource = null; _before.Clear(); _after.Clear(); ++_detailGeneration; _detailCancellation?.Cancel();
+        RefreshDocumentState();
         try
         {
             var progress = new Progress<MacroStepResult>(s => { if (!_closed) SetStatus($"{snapshot.DisplayName} · {s.StepIndex + 1}/{macro.Steps.Count} 단계 완료"); });
@@ -218,9 +238,9 @@ public sealed class MacroWindow : Window
             SetStatus(_apply.IsEnabled ? $"매크로 [{macro.Name}] 실행 완료. 최종 결과를 적용하거나 단계를 선택해 전후를 확인하세요. 표시 내용은 처음 20,000자입니다." : "변경 사항이 없습니다.");
             if (direct && _apply.IsEnabled) Apply();
         }
-        catch (OperationCanceledException) { if (!_closed) SetStatus("실행을 취소했습니다. 원문은 그대로 유지됩니다."); }
+        catch (OperationCanceledException) { if (!_closed) SetStatus("실행을 중단했습니다. 원문은 그대로 유지됩니다."); }
         catch (Exception ex) { if (!_closed) SetStatus("매크로 실행 실패: " + ex.Message); }
-        finally { cancellation.Dispose(); if (ReferenceEquals(_execution,cancellation)) _execution = null; if (!_closed) { _preview.IsEnabled = _run.IsEnabled = true; _cancel.IsEnabled = false; } }
+        finally { cancellation.Dispose(); if (ReferenceEquals(_execution,cancellation)) _execution = null; if (!_closed) { _preview.IsEnabled = _run.IsEnabled = true; _cancel.IsEnabled = false; RefreshDocumentState(); } }
     }
     private void Apply()
     {
@@ -228,6 +248,7 @@ public sealed class MacroWindow : Window
         bool success = _callbacks.ApplyResult(_snapshot.DocumentId,_snapshot.Revision,_result); _apply.IsEnabled = false;
         _result = null;
         SetStatus(success ? "매크로를 적용했습니다. Ctrl+Z 한 번으로 복원할 수 있습니다." : "원본이 수정되었거나 닫혀 적용할 수 없습니다. 다시 실행하세요.");
+        RefreshDocumentState();
     }
     private async Task ShowDetailAsync()
     {

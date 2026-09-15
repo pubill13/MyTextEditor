@@ -10,8 +10,8 @@
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="PreviousButton" Content="↑ 이전" ToolTip="이전 차이 (Alt+↑)" Click="Previous_Click"/>
-                    <Button x:Name="NextButton" Margin="6,0,0,0" Content="↓ 다음" ToolTip="다음 차이 (Alt+↓)" Click="Next_Click"/>
+                    <Button x:Name="PreviousButton" Content="↑ 이전 (F7)" ToolTip="이전 차이 (F7 / Alt+↑)" Click="Previous_Click"/>
+                    <Button x:Name="NextButton" Margin="6,0,0,0" Content="↓ 다음 (F8)" ToolTip="다음 차이 (F8 / Alt+↓)" Click="Next_Click"/>
                     <TextBlock x:Name="PositionText" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="0 / 0"/>
                     <TextBlock x:Name="StatisticsText" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"/>
                 </StackPanel>

@@ -1,6 +1,32 @@
 # MyTextEditor 작업 인수인계
 
-최종 갱신: 2026-09-15 (Asia/Seoul)
+최종 갱신: 2026-09-16 (Asia/Seoul)
+
+## v1.8.1 배포
+
+사용자가 로컬 작업의 GitHub 반영과 EXE·ZIP 배포를 승인했다. 검색 결과·Merge F7/F8·Undo 개선과 오른쪽 패널 UX 개선을 모두 v1.8.1에 포함한다. 아래의 로컬 미배포 안내는 당시 이력이다. 새 버전은 1.8.1, 태그는 v1.8.1이며 기존 v1.8은 변경하지 않는다. Release에는 실제 한글 IME 조합과125/150% OS 배율 검증이 미완료임을 명시한다. 현재 검증은 실제100%에서 Core39/39·GUI 회귀·패널5테마·30MB 중앙값0.236초까지 통과했다.
+
+## 오른쪽 패널·검색 입력 UX 개선 (최신 작업)
+
+사용자 승인 계획의 구현과 로컬 검증을 완료했다. 아래 검색 결과·Merge·Undo 개선을 포함한 변경은 아직 작업 트리에 있으며 GitHub v1.8 배포본에는 포함되지 않는다. 이번 계획에는 버전 변경·커밋·Release 게시는 포함되지 않았다.
+
+- 목표/완료: 오른쪽 패널 숨김과 편집 영역 확장, 상단 검색·정리 토글/보기 메뉴 동기화, Ctrl+F 마지막 검색칸 전체 선택, Ctrl+H 치환 원문 전체 선택, 패널 내부 Esc로 편집기 복귀. 조건과 옵션·패널 폭을 유지하며 조건 초기화는 세 검색칸만 비운다. 찾기와 Undo 명령 고정, 결과 부가 명령 더 보기, 즐겨찾기와 글꼴 오버플로를 구현했다.
+- 주요 파일: MainWindow.Panels.cs는 표시·포커스·IME 조합 추적·Esc·오버플로 공통 경로를 맡는다. MainWindow.xaml은 고정 명령/패널 헤더/도구 모음 배치, MainWindow.xaml.cs는 기존 명령 연결을 담당한다. UserSettings/SettingsService의 LastSearchField(All/Any/Exclude), SelectedToolTab(0/1)은 구버전 기본값과 정규화를 제공한다.
+- 설계: 숨기기 전에 ActualWidth를 저장하고 열린 패널에 Ctrl+F를 눌러도 폭을 다시 설정하지 않는다. 포커스는 generation으로 마지막 요청만 적용하며 새 마우스 조작은 이전 요청을 취소한다. 실제 입력칸을 재생성하지 않아 기존 입력·스크롤을 보존한다. 일반 마우스 포커스에서는 전체 선택하지 않는다. 조합 입력은 포커스 전환 전 CompleteComposition을 호출하고 Esc는 조합·콤보 우선 처리한다.
+- 검증: Release 빌드 오류/경고0, Core39/39, --panel-ux/--search-actions 및 기존 GUI 회귀 통과. 패널 폭/입력 보존·조건 교체·최신 포커스 요청·Esc·설정 JSON·즐겨찾기19개 순서/접근·5개 테마 1040/1920 논리 폭에서 명령 경계를 검사했다. 30MB 로딩 중앙값0.236초. 캡처는 artifacts/panel-ux/visual의 WPF RenderTargetBitmap이며 native 편집기 본문은 제외된다.
+- 제한/다음 작업: 현재 실제 DPI96(100%)만 확인했으며 물리 한글 IME 조합 입력과 실제125/150%는 미검증이다. 해당 수동 검증이 우선이다. 필요 시 로컬 변경을 별도 버전으로 커밋/배포한다. 사용자 기존 .gitignore 변경과 대용량 테스트파일을 보존하고, 테스트가 실제 사용자 설정을 저장하지 않도록 _settingsReady/debounce/종료 경로를 계속 차단해야 한다.
+
+## 검색 결과·Merge 단축키·실행 취소 개선 (최신 작업)
+
+사용자가 승인한 개선 구현을 완료했다. 이번 변경은 로컬 작업 트리에 있으며 기존 v1.8 GitHub Release에는 아직 포함되지 않는다. 버전 변경·새 Release 게시는 이번 승인 계획에 포함되지 않았다.
+
+- 검색 결과: 명시적 줄 번호/본문 템플릿과 가상화, 단일 클릭 원본 이동 및 결과 포커스 유지. 전체 복사·전체를 새 문서로 버튼을 주 영역에 배치했다. 복사는 원본 순서, 줄 번호 기본 OFF이며 새 문서 추출은 항상 snapshot.Text/NewLine을 사용한다. 원문 변경·닫힘 뒤에도 복사·추출은 유지하고 이동·삭제는 차단한다.
+- MainWindow.xaml 및 .xaml.cs가 검색 결과 상태/동작과 공통 Undo 버튼을 관리한다. ScintillaEditorHost.GoToLine에 선택적 focusEditor 인자를 추가해 결과 목록 포커스를 보존한다. 단일 클릭은 일반 PreviewMouseUp 터널 이벤트에서 왼쪽 버튼만 처리한다.
+- Merge: native host와 DiffWorkspaceWindow의 WPF 경로에서 F7 이전/F8 다음, 기존 Alt 방향키 유지. 비활성·만료·차이 없음 이동을 차단한다.
+- 매크로: MacroWindowCallbacks에 텍스트를 읽지 않는 Undo 상태 조회/요청을 추가했다. MacroWindow.RefreshDocumentState를 메인 상태 변경 때 호출한다. 대상 문서 이름과 편집 실행 취소를 표시하며 기존 계산 취소 버튼은 실행 중단으로 구분한다. Ctrl+Z와 동일한 Undo 기록을 사용하고 별도 복원 스냅샷은 만들지 않는다.
+- 검증: Release 솔루션 빌드 오류/경고0, Core39/39. 기존 GUI 회귀 및 신규 MergeKeysVerification 통과, 30MB 로딩 중앙값0.293초. --search-actions 신규 GUI 테스트에서 단일 클릭·선택/포커스 유지·복사 순서/문맥/줄 번호·stale/닫힌 원문 추출·Undo 상태·매크로 저비용 상태 조회 통과. 클릭 테스트는 WPF routed event 방식이며 실제 Ctrl/Shift 물리 입력 자동화는 아니다.
+- 1040×720 실제96DPI(100%) 결과 패널 WPF 캡처에서 줄 번호와 주요 버튼을 확인했다. artifacts/v1.8/visual/search-actions-1040-wpf.png는 native 본문이 제외되는 RenderTargetBitmap 캡처다. 실제125/150% 배율은 미검증이다.
+- 다음 작업: 필요 시 변경을 커밋하고 새 버전/Release 생성. 현재 src/MyTextEditor/bin/Release/net9.0-windows가 최신 빌드다. 사용자 기존 .gitignore 변경 및 테스트파일은 그대로 보존해야 한다.
 
 ## v1.8 표시·테마·Merge 개선 (최신)
 

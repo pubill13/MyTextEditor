@@ -11,6 +11,8 @@ public sealed class UserSettings
     public double ToolPanelWidth { get; set; } = 360;
     public double ResultPanelHeight { get; set; } = 220;
     public bool ToolPanelVisible { get; set; } = true;
+    public string LastSearchField { get; set; } = "All";
+    public int SelectedToolTab { get; set; }
     public bool ResultPanelVisible { get; set; }
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }

@@ -17,6 +17,10 @@ public partial class MainWindow
         }
         var window = new MacroWindow(new MacroWindowCallbacks
         {
+            GetCurrentUndoState = () => CurrentDocument is { } document
+                ? new MacroDocumentUndoState(document.Id, document.DisplayName, !_closingInProgress && document.Editor.CanUndo)
+                : null,
+            UndoCurrentDocument = () => Undo_Click(this, new RoutedEventArgs()),
             GetCurrentDocument = () => CurrentDocument is { } document
                 ? new MacroDocumentSnapshot(document.Id, document.ContentRevision, document.Text, document.NewLine, document.DisplayName)
                 : null,

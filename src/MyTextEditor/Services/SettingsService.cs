@@ -64,6 +64,8 @@ public static class SettingsService
 
     private static SettingsNormalizationResult Normalize(UserSettings settings)
     {
+        if (settings.LastSearchField is not ("All" or "Any" or "Exclude")) settings.LastSearchField = "All";
+        settings.SelectedToolTab = Math.Clamp(settings.SelectedToolTab, 0, 1);
         settings.Theme = ThemePalette.Get(settings.Theme).Id;
         settings.EditorFontFamily = string.IsNullOrWhiteSpace(settings.EditorFontFamily) ? "Cascadia Mono" : settings.EditorFontFamily;
         settings.EditorFontSize = double.IsFinite(settings.EditorFontSize) ? Math.Clamp(Math.Round(settings.EditorFontSize), 6, 72) : 15;
