@@ -2,17 +2,19 @@
 
 ## 현재 작업: OmniEdit 1.9.0
 
-현재 목표는 사용자가 요청한 12개 사용성 문제를 해결하고, Windows용 자체 포함 EXE/ZIP을 검증해 GitHub 저장소에 반영하는 것이다. 내부 C# 네임스페이스와 `%LOCALAPPDATA%\MyTextEditor` 설정 경로는 기존 사용자 설정 호환성을 위해 유지하고, 화면 제목·도움말·아이콘·실행 파일 이름을 OmniEdit로 바꾼다. 사용자가 만든 `.gitignore`의 `테스트파일/` 변경과 대용량 테스트 파일은 건드리지 않는다.
+사용자가 요청한 12개 사용성 문제의 구현과 Windows용 자체 포함 EXE/ZIP 배포를 완료했다. 내부 C# 네임스페이스와 `%LOCALAPPDATA%\MyTextEditor` 설정 경로는 기존 사용자 설정 호환성을 위해 유지하고, 화면 제목·도움말·아이콘·실행 파일 이름을 OmniEdit로 바꿨다. 사용자가 만든 `.gitignore`의 `테스트파일/` 변경과 대용량 테스트 파일은 건드리지 않았다.
+
+배포 완료: 구현 커밋 `5972e5a`가 `main`에 있으며 `v1.9` 태그와 [GitHub Release](https://github.com/pubill13/MyTextEditor/releases/tag/v1.9)를 게시했다. 공개 API에서 EXE(80,056,242바이트, SHA-256 `693b6281f3ce3096ea9833e5debff24efc7265cc0326e91a4c6f73a5729aa8af`)와 ZIP(74,530,284바이트, SHA-256 `968580da25a0e43b052b1a90a68c90c5925d38692a19542ed34328e158de1ce2`)의 업로드 완료 상태를 확인했다.
 
 2026-09-21 기준 구현: 명령행 파일 경로 열기와 초기 빈 탭 제거, 상단 비교/매크로 중복 버튼 제거, Diff·Macro Esc 닫기, 5개 테마의 네이티브 우클릭 메뉴 색상 및 WPF 메뉴 스타일, OmniEdit 아이콘 A안, 일반 단어 찾기/다음·이전과 모두 찾기 분리, 열린 모든 문서 검색, 현재 폴더 검색(하위 폴더·확장자 패턴), 파일/줄 번호가 붙은 다중 원본 결과 탭, 일반·검색 결과·Merge 탭 우클릭 메뉴, 빈 Merge 좌우 직접 입력 시 준비 상태 전환과 중앙 gutter 폭 조정, Diff 닫기 처리 개선. 직접 입력 Merge 종료 과정에서 동기적으로 `Close()`를 재호출하는 재진입 버그를 발견해 Dispatcher 후속 호출로 수정했다. 아이콘 A/B/C 원본 시안과 생성 스크립트는 `artifacts/omni-icons/`, `tools/Generate-OmniIcons.ps1`에 있다. 현재 채택한 A는 파란 O 링과 청록색 텍스트 커서다.
 
 주요 변경 파일: `App.xaml(.cs)`와 `MainWindow.xaml.cs`는 시작 파일 처리; `MainWindow.SearchWorkflow.cs`는 일반/열린 문서/폴더 찾기, 결과 이동, 탭 메뉴; `MainWindow.xaml`은 UI; `MyTextEditor.Core/TextOccurrenceSearch.cs`, `FolderTextSearchService.cs`는 검색; `Models/UiModels.cs`, `SettingsModels.cs`, `UserSettings.cs`, `Services/SettingsService.cs`는 결과/설정/구버전 검색 모드 마이그레이션; `Controls/ScintillaEditorHost.cs`와 `EditorScrollBar.cs`, `Themes/Controls.xaml`은 네이티브 편집기/메뉴 색상과 찾기; `Diff/DiffTabView.xaml(.cs)`, `DiffWorkspaceWindow.xaml.cs`, `Macros/MacroWindow.cs`는 비교·매크로 UX/종료; `Assets/AppIcon.ico`, `MyTextEditor.csproj`, `Help/HelpWindow.xaml(.cs)`는 브랜드/도움말; Core 테스트와 Performance의 `OmniSearchVerification`, `OmniThemeVerification`, `OmniMergeVerification`는 회귀 검증.
 
-현재까지 Core 41/41, Omni 검색 GUI, 5개 테마 메뉴+Unicode 네이티브 찾기, Merge 직접 입력/Undo/2탭 저장 취소/버리기 종료(약 136ms), 기존 패널 UX·검색 결과·v1.8 GUI·매크로·30MB 성능 회귀가 통과했다. 30MB 로딩 중앙값은 0.244초이며 Release 빌드는 오류/경고 0이다. 자체 포함 `artifacts/OmniEdit-win-x64/OmniEdit.exe`(80,056,242바이트)와 ZIP(74,530,284바이트)을 생성했고, EXE에 파일 경로를 전달해 실제 시작/정상 종료(exit 0)를 확인했다. NuGet은 샌드박스 네트워크가 막혀 있으므로 복원 시 `dotnet restore MyTextEditor.sln --ignore-failed-sources -p:NuGetAudit=false -p:RestorePackagesPath=C:\Users\Lim\.nuget\packages`를 사용한다. 이후 `--no-restore` 빌드는 정상이다. 일반 샌드박스에서 GitHub 접속은 막히지만 네트워크 승격 시 `git ls-remote origin HEAD`는 성공했다. `gh` CLI는 PATH에 없고 Git credential fill에 저장된 토큰은 없다. 실제 125/150% DPI·물리 한글 IME 조작은 아직 이 작업에서 검증하지 않았다.
+Core 41/41, Omni 검색 GUI, 5개 테마 메뉴+Unicode 네이티브 찾기, Merge 직접 입력/Undo/2탭 저장 취소/버리기 종료(약 136ms), 기존 패널 UX·검색 결과·v1.8 GUI·매크로·30MB 성능 회귀가 통과했다. 30MB 로딩 중앙값은 0.244초이며 Release 빌드는 오류/경고 0이다. 자체 포함 EXE에 파일 경로를 전달해 실제 시작/정상 종료(exit 0)를 확인했다. NuGet은 샌드박스 네트워크가 막혀 있으므로 복원 시 `dotnet restore MyTextEditor.sln --ignore-failed-sources -p:NuGetAudit=false -p:RestorePackagesPath=C:\Users\Lim\.nuget\packages`를 사용한다. 이후 `--no-restore` 빌드는 정상이다. `gh` CLI는 PATH에 없지만 Git Credential Manager의 저장된 인증으로 Release API를 사용했다. 실제 125/150% DPI·물리 한글 IME 조작은 아직 이 작업에서 검증하지 않았다.
 
-우선순위: (1) 사용자 `.gitignore` 변경을 스테이징하지 않고 OmniEdit 변경만 커밋, (2) 인증된 GitHub 경로로 main push, v1.9 tag, Release EXE/ZIP, (3) 실제 125/150% DPI와 물리 한글 IME 수동 확인. 파일 검색은 현재 지정한 텍스트 확장자 패턴만 대상으로 하며 UI에서 패턴을 변경할 수 있다. 폴더 검색 결과는 파일 길이/수정 시각이 달라지면 원문 이동을 차단한다. 열린 문서 결과는 원문 수정·닫힘 후 스냅샷 복사/추출만 가능하다.
+다음 우선순위: (1) 실제 125/150% DPI와 물리 한글 IME 수동 확인, (2) 현장 피드백에 따라 UX 수정. 파일 검색은 현재 지정한 텍스트 확장자 패턴만 대상으로 하며 UI에서 패턴을 변경할 수 있다. 폴더 검색 결과는 파일 길이/수정 시각이 달라지면 원문 이동을 차단한다. 열린 문서 결과는 원문 수정·닫힘 후 스냅샷 복사/추출만 가능하다. 배포 후 이 문서만 추가 커밋하므로 `v1.9` 태그는 구현 커밋을 가리킨다.
 
-최종 갱신: 2026-09-16 (Asia/Seoul)
+최종 갱신: 2026-09-22 (Asia/Seoul)
 
 ## 과거 버전 기록 (아래의 ‘최신 작업’ 표현은 당시 기준)
 
