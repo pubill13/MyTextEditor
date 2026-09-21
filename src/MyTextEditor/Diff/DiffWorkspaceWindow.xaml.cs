@@ -78,15 +78,22 @@ public partial class DiffWorkspaceWindow : Window
 
     public void CancelPreparedClose()
     {
-        if (!_resourcesReleased) _closingApproved = false;
+        if (_resourcesReleased) return;
+        _closingApproved = false;
+        foreach (var view in Views) view.ResumeComparisonAfterCloseCanceled();
     }
 
     public async Task<bool> RequestCloseAsync()
     {
         if (_closingApproved) return true;
         var views = Views.ToArray();
+        foreach (var view in views) view.PauseComparisonForClose();
         foreach (var view in views)
-            if (!await view.RequestCloseAsync()) return false;
+            if (!await view.RequestCloseAsync())
+            {
+                CancelPreparedClose();
+                return false;
+            }
         _closingApproved = true;
         return true;
     }
@@ -100,12 +107,25 @@ public partial class DiffWorkspaceWindow : Window
         var header = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
         header.Children.Add(headerText); header.Children.Add(close);
         var item = new TabItem { Header = header, Content = view, Tag = headerText };
+        var tabMenu = new ContextMenu { DataContext = item };
+        var closeTabMenu = new MenuItem { Header = "비교 탭 닫기" };
+        closeTabMenu.Click += async (_, _) => await CloseTabAsync(item);
+        var closeOthersMenu = new MenuItem { Header = "다른 비교 닫기" };
+        closeOthersMenu.Click += async (_, _) =>
+            await CloseTabsAsync(ComparisonTabs.Items.OfType<TabItem>().Where(tab => tab != item).ToArray());
+        var closeAllMenu = new MenuItem { Header = "모든 비교 닫기" };
+        closeAllMenu.Click += async (_, _) => await CloseTabsAsync(ComparisonTabs.Items.OfType<TabItem>().ToArray());
+        tabMenu.Items.Add(closeTabMenu);
+        tabMenu.Items.Add(closeOthersMenu);
+        tabMenu.Items.Add(closeAllMenu);
+        header.ContextMenu = tabMenu;
         close.Click += async (_, e) => { e.Handled = true; await CloseTabAsync(item); };
         view.StateChanged += (_, _) => headerText.Text = view.TabTitle;
         view.OptionsChanged += (_, _) => UpdateDefaults(view.GetOptions());
         view.NewComparisonRequested += (_, e) => OpenComparison(e.Left, e.Right);
         view.FilesDropped += async (_, e) => await LoadDroppedFilesAsync(e.Paths);
         view.CloseRequested += async (_, _) => await CloseTabAsync(item);
+        view.CloseWorkspaceRequested += (_, _) => Close();
         view.CycleTabRequested += (_, e) => CycleTab(e.Direction);
         view.FontSizeRequested += ChangeFontSize;
         ComparisonTabs.Items.Add(item);
@@ -252,6 +272,14 @@ public partial class DiffWorkspaceWindow : Window
     private void Window_DragOver(object sender, System.Windows.DragEventArgs e) { e.Effects = TryGetFiles(e, out _) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None; e.Handled = true; }
     private async void Window_Drop(object sender, System.Windows.DragEventArgs e) { if (TryGetFiles(e, out var paths)) await LoadDroppedFilesAsync(paths); e.Handled = true; }
 
+    private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Handled || e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None) return;
+        if (DiffFontSizeCombo.IsDropDownOpen) return;
+        e.Handled = true;
+        Close();
+    }
+
     private async void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
@@ -283,12 +311,16 @@ public partial class DiffWorkspaceWindow : Window
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (_closingApproved) { ReleaseResources(); return; }
+        if (_closingApproved) { Hide(); ReleaseResources(); return; }
         if (_closePromptRunning) { e.Cancel = true; return; }
-        if (!HasUnsavedChanges) { ReleaseResources(); return; }
+        if (!HasUnsavedChanges) { Hide(); ReleaseResources(); return; }
         e.Cancel = true;
         _closePromptRunning = true;
-        try { if (await RequestCloseAsync()) Close(); }
+        try
+        {
+            if (await RequestCloseAsync())
+                _ = Dispatcher.BeginInvoke(new Action(Close));
+        }
         finally { _closePromptRunning = false; }
     }
 

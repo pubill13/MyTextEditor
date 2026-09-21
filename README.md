@@ -1,4 +1,4 @@
-# 나만의 텍스트 편집기
+# OmniEdit (옴니에딧)
 
 복잡한 검색식이나 정규식을 외우지 않고도 원하는 줄을 찾고, 추출하고, 정리할 수 있는 Windows용 텍스트 편집기입니다.
 
@@ -6,7 +6,8 @@
 
 - 여러 문서를 탭으로 열어 편집하고 저장
 - Scintilla 기반 대용량 로그 편집과 파일·다중 파일 드래그 앤 드롭
-- `모두 포함`·`하나라도 포함`·`제외` 입력과 삭제 가능한 조건 태그
+- 일반 단어·문장 찾기와 `모두 포함`·`하나라도 포함`·`제외` 조건 검색
+- 열린 파일 전체 또는 현재 파일의 폴더 검색
 - 검색할 때마다 독립적으로 남는 결과 탭과 원문 스냅샷
 - 선택·전체 결과 복사(줄 번호 선택), 새 문서 추출, 삭제 미리보기
 - 원문 수정·닫힘 뒤에도 유지되는 검색 결과 복사
@@ -36,19 +37,32 @@ dotnet build MyTextEditor.sln -c Release
 dotnet run --project src/MyTextEditor/MyTextEditor.csproj
 ```
 
+파일을 바로 열려면 `dotnet run --project src/MyTextEditor/MyTextEditor.csproj -- "C:\logs\example.log"`처럼 경로를 전달합니다.
+
 ## 테스트
 
 ```powershell
 dotnet run --project tests/MyTextEditor.Core.Tests/MyTextEditor.Core.Tests.csproj -c Release
 dotnet run --project tests/MyTextEditor.Performance/MyTextEditor.Performance.csproj -c Release
+dotnet run --project tests/MyTextEditor.Performance/MyTextEditor.Performance.csproj -c Release -- --omni-search
+dotnet run --project tests/MyTextEditor.Performance/MyTextEditor.Performance.csproj -c Release -- --omni-theme
+dotnet run --project tests/MyTextEditor.Performance/MyTextEditor.Performance.csproj -c Release -- --omni-merge
 ```
 
 테스트 프로젝트는 외부 테스트 프레임워크 없이 실행 가능한 자체 검증 프로그램입니다. 실패한 검증이 있으면 0이 아닌 종료 코드로 끝납니다.
 성능 실행기는 3천만 자 UTF-8 로그를 세 번 열고 Scintilla 렌더까지 잰 중앙값이 2초를 넘으면 실패합니다.
 
+## 일반 찾기와 검색 범위
+
+`Ctrl+F`로 검색칸을 열어 단어나 문장을 입력합니다. `찾기`는 현재 문서의 다음 일치 위치를 선택하며 `F3`/`Shift+F3`으로 이동할 수 있습니다. `모두 찾기`는 일치 줄을 아래 결과 탭에 모읍니다. 복잡한 줄 검색은 `포함·제외 조건 사용`을 켜고 세 조건칸을 사용합니다.
+
+`열린 파일 전체`는 현재 열린 모든 문서를, `현재 폴더`는 현재 파일의 폴더를 검색합니다. 하위 폴더 포함과 파일 이름 패턴을 설정할 수 있습니다. 결과에는 파일 이름과 원본 줄 번호가 표시되고 클릭하면 원문으로 이동합니다. 결과 탭을 우클릭하면 개별·다른·모든 결과 닫기와 검색 조건 복사를 사용할 수 있습니다. 문서 탭도 우클릭해서 닫기와 전체 경로 복사를 할 수 있습니다.
+
+Windows 탐색기에서 `OmniEdit.exe`를 연결 프로그램으로 선택하면 전달된 파일 경로를 새 인스턴스에서 바로 엽니다. 내부 설정과 매크로 파일은 기존 `%LOCALAPPDATA%\MyTextEditor` 경로를 유지하여 업그레이드해도 사용자 설정이 보존됩니다.
+
 ## Diff / Merge
 
-상단 `비교/병합`을 누르면 대상 선택창 없이 좌우가 비어 있는 모델리스 작업 공간이 바로 열립니다. `+`로 Merge 탭을 추가할 수 있고 각 탭은 좌우 편집 내용, Undo, 비교 옵션, 현재 차이와 스크롤 위치를 독립적으로 유지합니다. 파일 하나는 원하는 좌우 영역에 놓고, 파일 두 개를 작업 공간에 함께 놓으면 새 탭의 왼쪽과 오른쪽에 전달 순서대로 자동 배치됩니다. 완전히 빈 탭이 있으면 그 탭을 재사용하고, 세 개 이상은 앞의 두 파일만 사용합니다.
+`비교 → 비교/병합 열기`을 누르면 대상 선택창 없이 좌우가 비어 있는 모델리스 작업 공간이 바로 열립니다. `+`로 Merge 탭을 추가할 수 있고 각 탭은 좌우 편집 내용, Undo, 비교 옵션, 현재 차이와 스크롤 위치를 독립적으로 유지합니다. 파일 하나는 원하는 좌우 영역에 놓고, 파일 두 개를 작업 공간에 함께 놓으면 새 탭의 왼쪽과 오른쪽에 전달 순서대로 자동 배치됩니다. 완전히 빈 탭이 있으면 그 탭을 재사용하고, 세 개 이상은 앞의 두 파일만 사용합니다.
 
 각 좌우 영역의 `소스` 메뉴에서 파일, 열린 문서, 클립보드를 선택하거나 비울 수 있습니다. 일반 편집기 창에 놓은 파일은 계속 일반 문서 탭으로 열립니다. 줄 추가·삭제·수정과 줄 안의 변경 부분을 색으로 표시하며 `공백 무시`, `대소문자 무시`, `빈 줄 무시` 옵션을 제공합니다.
 
@@ -62,7 +76,7 @@ dotnet run --project tests/MyTextEditor.Performance/MyTextEditor.Performance.csp
 
 ## 작업 매크로 (v1.7)
 
-상단 `매크로`에서 검색·치환·자르기·삭제·빠른 정리 단계를 원하는 순서로 조립해 이름을 붙여 저장합니다. 단계는 추가·복제·삭제·순서 변경·비활성화할 수 있습니다. 검색 없는 `접두사 추가 → 치환 → 중복 제거`도 사용할 수 있습니다.
+`매크로` 메뉴에서 검색·치환·자르기·삭제·빠른 정리 단계를 원하는 순서로 조립해 이름을 붙여 저장합니다. 단계는 추가·복제·삭제·순서 변경·비활성화할 수 있습니다. 검색 없는 `접두사 추가 → 치환 → 중복 제거`도 사용할 수 있습니다.
 
 각 단계의 대상은 `전체 문서` 또는 `최근 검색에서 찾은 줄`입니다. 검색은 그 시점의 가공된 내용에서 실행되며 이전 검색 대상을 교체합니다. 검색 후 내용이 바뀌어도 같은 줄을 추적합니다. 줄 분할은 대상 여부를 이어받고, 찾은 줄 합치기는 연속된 대상 구간마다 처리합니다. `대상 줄 삭제`와 `대상 줄만 남기기`는 별도 동작입니다.
 
@@ -160,7 +174,7 @@ Diff 작업 공간에서는 `Ctrl+W`로 현재 Merge 탭을 닫고 `Ctrl+Tab`·`
 
 v1.7.1은 대용량 매크로에서 원문 줄 복사와 임시 객체를 줄였습니다. 로컬 300MiB 혼합 로그의 검색·접두사 매크로는 1.75초에서 0.51초로, 계산 직후 메모리는 약 5.0GiB에서 2.8GiB로 감소했습니다. 파일 내용·단계에 따라 달라지며, 전체 결과 적용과 Undo에는 추가 메모리와 시간이 필요합니다. 수백 MB에서 모든 작업이 끊김 없이 수행된다는 보장은 아닙니다.
 
-최신 설치 불필요 배포본은 [GitHub Releases](https://github.com/pubill13/MyTextEditor/releases/latest)에서 `MyTextEditor.exe` 또는 `MyTextEditor-win-x64.zip`을 내려받을 수 있습니다.
+최신 설치 불필요 배포본은 [GitHub Releases](https://github.com/pubill13/MyTextEditor/releases/latest)에서 `OmniEdit.exe` 또는 `OmniEdit-win-x64.zip`을 내려받을 수 있습니다.
 
 ```powershell
 dotnet publish src/MyTextEditor/MyTextEditor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts/win-x64

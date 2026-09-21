@@ -4,6 +4,8 @@ using MyTextEditor.Core.Models;
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("단어 탐색 방향 순환 Unicode 경계", SearchWorkflowTests.Occurrences),
+    ("폴더 검색 인코딩 패턴 문맥 오류 취소", SearchWorkflowTests.FolderSearch),
     ("중첩 AND/OR와 제외 검색", TestNestedSearch),
     ("검색 옵션과 문맥", TestSearchOptionsAndContext),
     ("머리/꼬리 자르기", TestHeadAndTailTrim),

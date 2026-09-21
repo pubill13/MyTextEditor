@@ -72,6 +72,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     public event EventHandler<DiffTabRequestedEventArgs>? NewComparisonRequested;
     public event EventHandler<DiffFilesDroppedEventArgs>? FilesDropped;
     public event EventHandler? CloseRequested;
+    public event EventHandler? CloseWorkspaceRequested;
     public event EventHandler<DiffTabCycleRequestedEventArgs>? CycleTabRequested;
     public event Action<double>? FontSizeRequested;
     public bool HasUnsavedChanges => _leftDirty || _rightDirty;
@@ -167,6 +168,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (_updatingEditors) return;
         _leftDirty = _leftEditor.IsModified;
+        PromoteTypedEndpoint(true);
         EditorChanged();
     }
 
@@ -174,7 +176,22 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (_updatingEditors) return;
         _rightDirty = _rightEditor.IsModified;
+        PromoteTypedEndpoint(false);
         EditorChanged();
+    }
+
+    private void PromoteTypedEndpoint(bool left)
+    {
+        var endpoint = left ? _left : _right;
+        if (endpoint.IsReady) return;
+        var scratch = new DiffEndpoint
+        {
+            Kind = DiffEndpointKind.Scratch,
+            DisplayName = left ? "왼쪽 직접 입력" : "오른쪽 직접 입력",
+            Text = string.Empty, NewLine = endpoint.NewLine
+        };
+        if (left) _left = scratch; else _right = scratch;
+        RefreshReadyState();
     }
 
     private void EditorChanged()
@@ -521,7 +538,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private static string DescribeEndpoint(DiffEndpoint endpoint) => endpoint.Kind switch
     {
-        DiffEndpointKind.Empty => "소스를 선택하거나 파일을 놓으세요",
+        DiffEndpointKind.Empty => "직접 입력하거나 파일을 놓으세요",
+        DiffEndpointKind.Scratch => "직접 입력 · 저장되지 않은 비교 버퍼",
         DiffEndpointKind.OpenDocument => endpoint.FilePath ?? "열린 문서",
         DiffEndpointKind.File => endpoint.FilePath ?? "파일",
         DiffEndpointKind.Clipboard => "클립보드 스냅샷 · 읽기 전용",
@@ -673,7 +691,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             return await _callbacks.SaveSourceAsync(id);
         }
         var destination = endpoint.FilePath;
-        if (endpoint.Kind == DiffEndpointKind.File && destination is not null && HasExternalChange(endpoint))
+        if (destination is not null && HasExternalChange(endpoint))
         {
             var choice = WpfMessageBox.Show(Window.GetWindow(this), "파일이 외부에서 변경되었습니다.\n\n예: 덮어쓰기   아니요: 다른 이름으로 저장", "외부 변경 감지", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
             if (choice == MessageBoxResult.Cancel) return false;
@@ -726,6 +744,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             case EditorShortcut.MergeRight: MergeCurrent(DiffSide.Left); e.Handled = true; break;
             case EditorShortcut.SaveDocument: _ = SaveEndpointAsync(ReferenceEquals(sender, _leftEditor)); e.Handled = true; break;
             case EditorShortcut.CloseDocument: CloseRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; break;
+            case EditorShortcut.CloseWindow: CloseWorkspaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; break;
             case EditorShortcut.NextDocument: CycleTabRequested?.Invoke(this, new(1)); e.Handled = true; break;
             case EditorShortcut.PreviousDocument: CycleTabRequested?.Invoke(this, new(-1)); e.Handled = true; break;
             case EditorShortcut.Help: _callbacks.ShowHelp?.Invoke(); e.Handled = true; break;
@@ -775,6 +794,17 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             if (_rightDirty && !await SaveEndpointAsync(false)) return false;
         }
         return true;
+    }
+
+    public void PauseComparisonForClose()
+    {
+        _recompareTimer.Stop();
+        ++_generation;
+    }
+
+    public void ResumeComparisonAfterCloseCanceled()
+    {
+        if (!_resourcesReleased && IsReady && _result is null) _recompareTimer.Start();
     }
 
     public void ReleaseResources()

@@ -34,6 +34,7 @@ public enum EditorShortcut
     ZoomOut,
     ZoomReset,
     GoToLine,
+    CloseWindow,
     PreviousDifference = DiffPrevious,
     NextDifference = DiffNext,
     MergeRightToLeft = MergeLeft,
@@ -157,6 +158,34 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             var start = Math.Min(_editor.SelectionStart, _editor.SelectionEnd);
             return new EditorTextRange(start, Math.Abs(_editor.SelectionEnd - _editor.SelectionStart));
         }
+    }
+    public int SelectionStartUtf16 => Math.Min(_editor.SelectionStart, _editor.SelectionEnd);
+    public int SelectionEndUtf16 => Math.Max(_editor.SelectionStart, _editor.SelectionEnd);
+    public void SelectUtf16Range(int start, int length, bool focusEditor = true)
+    {
+        SelectAndReveal(new EditorTextRange(start, length), focusEditor);
+    }
+    public bool FindOccurrence(string text, bool matchCase, bool wholeWord, bool previous, out bool wrapped)
+    {
+        wrapped = false;
+        if (string.IsNullOrEmpty(text)) return false;
+        var flags = ScintillaNET.SearchFlags.None;
+        if (matchCase) flags |= ScintillaNET.SearchFlags.MatchCase;
+        if (wholeWord) flags |= ScintillaNET.SearchFlags.WholeWord;
+        var boundary = previous ? SelectionStartUtf16 : SelectionEndUtf16;
+        var found = previous
+            ? _editor.FindText(flags, text, boundary, 0)
+            : _editor.FindText(flags, text, boundary, _editor.TextLength);
+        if (found < 0)
+        {
+            wrapped = true;
+            found = previous
+                ? _editor.FindText(flags, text, _editor.TextLength, boundary)
+                : _editor.FindText(flags, text, 0, boundary);
+        }
+        if (found < 0) return false;
+        SelectAndReveal(new EditorTextRange(found, text.Length));
+        return true;
     }
     public int LineCount => _editor.Lines.Count;
     public int CurrentLine => _editor.LineFromPosition(_editor.CurrentPosition);
@@ -370,6 +399,14 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     public void Undo() => _editor.Undo();
     public void Redo() => _editor.Redo();
     public void SelectAll() => _editor.SelectAll();
+
+    public void SelectAndReveal(EditorTextRange range, bool focusEditor = true)
+    {
+        ValidateRange(range);
+        _editor.SetSelection(range.End, range.Start);
+        _editor.ScrollCaret();
+        if (focusEditor) _editor.Focus();
+    }
     public void FocusEditor() => _editor.Focus();
 
     public void MarkSaved()
@@ -451,7 +488,19 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         _horizontalBar.ApplyPalette(palette);
         _contextMenu.BackColor = palette.MarginBackground;
         _contextMenu.ForeColor = palette.EditorForeground;
-        _contextMenu.Renderer = new Forms.ToolStripProfessionalRenderer(new EditorMenuColors(palette));
+        var menuRenderer = new EditorMenuRenderer(palette);
+        ApplyMenuPalette(_contextMenu);
+        void ApplyMenuPalette(Forms.ToolStrip strip)
+        {
+            strip.Renderer = menuRenderer;
+            strip.BackColor = palette.MarginBackground;
+            strip.ForeColor = palette.EditorForeground;
+            foreach (Forms.ToolStripItem item in strip.Items)
+            {
+                item.ForeColor = palette.EditorForeground;
+                if (item is Forms.ToolStripMenuItem menu && menu.HasDropDownItems) ApplyMenuPalette(menu.DropDown);
+            }
+        }
         Background = new MediaBrush(MediaColor.FromRgb(palette.EditorBackground.R, palette.EditorBackground.G, palette.EditorBackground.B));
         UpdateScrollBars();
     }
@@ -547,6 +596,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
     private bool ProcessShortcut(Forms.Keys keyData)
     {
+        if (keyData == Forms.Keys.Escape && (_editor.IsComposing || _contextMenu.Visible)) return false;
         if (!TryGetShortcut(keyData, out var shortcut) || ShortcutRequested is not { } handler) return false;
         var args = new EditorShortcutEventArgs(shortcut);
         handler(this, args);
@@ -558,6 +608,11 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         shortcut = default;
         var key = keyData & Forms.Keys.KeyCode;
         var modifiers = keyData & Forms.Keys.Modifiers;
+        if (modifiers == Forms.Keys.None && key == Forms.Keys.Escape)
+        {
+            shortcut = EditorShortcut.CloseWindow;
+            return true;
+        }
         if (modifiers == Forms.Keys.Control)
         {
             shortcut = key switch
@@ -639,6 +694,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     private sealed class ShortcutScintilla : Scintilla
     {
         private Func<Forms.Keys, bool>? _shortcutProcessor;
+        public bool IsComposing { get; private set; }
 
         public void SetShortcutProcessor(Func<Forms.Keys, bool>? shortcutProcessor) => _shortcutProcessor = shortcutProcessor;
 
@@ -647,6 +703,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
         protected override void WndProc(ref Forms.Message message)
         {
+            if (message.Msg == 0x010D) IsComposing = true; // WM_IME_STARTCOMPOSITION
+            if (message.Msg == 0x010E) IsComposing = false; // WM_IME_ENDCOMPOSITION
             const int mouseWheel = 0x020A;
             if (message.Msg == mouseWheel && (Forms.Control.ModifierKeys & Forms.Keys.Control) != 0)
             {

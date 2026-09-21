@@ -4,12 +4,14 @@ namespace MyTextEditor.Core;
 
 public sealed class TextSearchEngine
 {
-    public IReadOnlyList<SearchResult> Search(string text, ConditionNode condition, SearchOptions? options = null)
+    public IReadOnlyList<SearchResult> Search(string text, ConditionNode condition, SearchOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        var rangeResults = SearchRanges(text, condition, options);
+        var rangeResults = SearchRanges(text, condition, options, cancellationToken);
         var results = new List<SearchResult>(rangeResults.Count);
         foreach (var result in rangeResults)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var context = new List<ContextLine>(result.Context.Count);
             foreach (var item in result.Context)
             {
@@ -23,7 +25,7 @@ public sealed class TextSearchEngine
     }
 
     public IReadOnlyList<SearchRangeResult> SearchRanges(
-        string text, ConditionNode condition, SearchOptions? options = null)
+        string text, ConditionNode condition, SearchOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(condition);
@@ -32,10 +34,12 @@ public sealed class TextSearchEngine
             throw new ArgumentOutOfRangeException(nameof(options), "문맥 줄 수는 0 이상이어야 합니다.");
         if (!HasValidCondition(condition)) return [];
 
-        var lines = GetLineRanges(text);
+        cancellationToken.ThrowIfCancellationRequested();
+        var lines = GetLineRanges(text, cancellationToken);
         var matches = new List<int>();
         for (var index = 0; index < lines.Count; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var range = lines[index];
             if (Evaluate(condition, text.AsSpan(range.Start, range.Length), options)) matches.Add(index);
         }
@@ -43,6 +47,7 @@ public sealed class TextSearchEngine
         var results = new List<SearchRangeResult>(matches.Count);
         foreach (var matchIndex in matches)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var context = new List<ContextRange>();
             var from = Math.Max(0, matchIndex - options.ContextLines);
             var to = Math.Min(lines.Count - 1, matchIndex + options.ContextLines);
@@ -61,12 +66,13 @@ public sealed class TextSearchEngine
         return HasValidConditionCore(condition);
     }
 
-    private static List<TextRange> GetLineRanges(string text)
+    private static List<TextRange> GetLineRanges(string text, CancellationToken cancellationToken)
     {
         var ranges = new List<TextRange>();
         var start = 0;
         for (var index = 0; index < text.Length; index++)
         {
+            if ((index & 65535) == 0) cancellationToken.ThrowIfCancellationRequested();
             if (text[index] is not ('\r' or '\n')) continue;
             ranges.Add(new TextRange(start, index - start));
             if (text[index] == '\r' && index + 1 < text.Length && text[index + 1] == '\n') index++;

@@ -34,7 +34,7 @@ internal static class PanelUxVerification
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
-        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MyTextEditor;component/Themes/Controls.xaml", UriKind.Relative) });
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative) });
         var window = new MainWindow { ShowInTaskbar = false, WindowState = WindowState.Normal, Width = 1380, Height = 860 };
         // Keep the real user's settings and documents untouched, including the closing flush.
         Set(window, "_settingsReady", false);
@@ -66,6 +66,8 @@ internal static class PanelUxVerification
         var all = Field<TextBox>(window, "SimpleAllBox");
         var any = Field<TextBox>(window, "SimpleAnyBox");
         var exclude = Field<TextBox>(window, "SimpleExcludeBox");
+        var conditionMode = Field<CheckBox>(window, "UseConditionSearchCheck");
+        conditionMode.IsChecked = true;
         var boxes = new[] { all, any, exclude };
         Call(window, "SetToolsVisible", true, false);
         Field<System.Windows.Controls.TabControl>(window, "ToolTabs").SelectedIndex = 0;
@@ -92,6 +94,13 @@ internal static class PanelUxVerification
         Check(to.Text == "유지할 치환", "Replace focus cleared the replacement input");
         Call(window, "ShowReplaceInput"); Call(window, "ShowSearchInput"); Pump();
         Check(exclude.IsKeyboardFocused && exclude.SelectedText == exclude.Text, "Latest Find request lost to Replace");
+        conditionMode.IsChecked = false;
+        var literal = Field<TextBox>(window, "LiteralFindBox");
+        literal.Text = "기존 단어";
+        Call(window, "ShowSearchInput"); Pump();
+        Check(literal.IsKeyboardFocused && literal.SelectedText == literal.Text,
+            "Ordinary Find did not select the current literal query");
+        conditionMode.IsChecked = true;
         Field<CheckBox>(window, "MatchCaseCheck").IsChecked = true;
         Field<CheckBox>(window, "WholeWordCheck").IsChecked = true;
         Field<ComboBox>(window, "ContextLinesCombo").SelectedIndex = 2;

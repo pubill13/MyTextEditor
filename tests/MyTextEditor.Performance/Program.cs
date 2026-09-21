@@ -24,6 +24,9 @@ internal static class Program
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
         if (args.Contains("--v18")) return V18Verification.Run();
+        if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();
+        if (args.Contains("--omni-theme")) return OmniThemeVerification.Run();
+        if (args.Contains("--omni-search")) return OmniSearchVerification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))
@@ -31,11 +34,11 @@ internal static class Program
             var macroApplication = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             macroApplication.Resources.MergedDictionaries.Add(new ResourceDictionary
             {
-                Source = new Uri("/MyTextEditor;component/Themes/Light.xaml", UriKind.Relative)
+                Source = new Uri("/OmniEdit;component/Themes/Light.xaml", UriKind.Relative)
             });
             macroApplication.Resources.MergedDictionaries.Add(new ResourceDictionary
             {
-                Source = new Uri("/MyTextEditor;component/Themes/Controls.xaml", UriKind.Relative)
+                Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative)
             });
             VerifyMacroIntegration();
             macroApplication.Shutdown();

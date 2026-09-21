@@ -153,6 +153,13 @@ public partial class MainWindow : Window
 
     private async Task OpenFileAsync(string filePath) => await OpenFilesAsync([filePath]);
 
+    public async Task OpenStartupFilesAsync(IEnumerable<string> paths)
+    {
+        var placeholder = Documents.Count == 1 && Documents[0].FilePath is null && !Documents[0].IsModified ? Documents[0] : null;
+        await OpenFilesAsync(paths);
+        if (placeholder is not null && Documents.Count > 1 && !placeholder.IsModified) RemoveDocument(placeholder);
+    }
+
     private async Task OpenFilesAsync(IEnumerable<string> paths)
     {
         var uniquePaths = new List<string>();
@@ -367,8 +374,8 @@ public partial class MainWindow : Window
     private void SelectAll_Click(object sender, RoutedEventArgs e) => CurrentEditor?.SelectAll();
     private void Find_Click(object sender, RoutedEventArgs e) => ShowSearchInput();
     private void Replace_Click(object sender, RoutedEventArgs e) => ShowReplaceInput();
-    private void FindNext_Click(object sender, RoutedEventArgs e) => MoveToSearchResult(1);
-    private void FindPrevious_Click(object sender, RoutedEventArgs e) => MoveToSearchResult(-1);
+    private void FindNext_Click(object sender, RoutedEventArgs e) { if (UseConditionSearchCheck.IsChecked == true) MoveToSearchResult(1); else FindOccurrence(false); }
+    private void FindPrevious_Click(object sender, RoutedEventArgs e) { if (UseConditionSearchCheck.IsChecked == true) MoveToSearchResult(-1); else FindOccurrence(true); }
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
@@ -524,8 +531,8 @@ public partial class MainWindow : Window
             case EditorShortcut.ZoomReset: ApplyEditorFontSize(15, OverflowFontSizeCombo); break;
             case EditorShortcut.NextDocument: SelectRelativeDocument(1); break;
             case EditorShortcut.PreviousDocument: SelectRelativeDocument(-1); break;
-            case EditorShortcut.FindNext: MoveToSearchResult(1); break;
-            case EditorShortcut.FindPrevious: MoveToSearchResult(-1); break;
+            case EditorShortcut.FindNext: if (UseConditionSearchCheck.IsChecked == true) MoveToSearchResult(1); else FindOccurrence(false); break;
+            case EditorShortcut.FindPrevious: if (UseConditionSearchCheck.IsChecked == true) MoveToSearchResult(-1); else FindOccurrence(true); break;
             case EditorShortcut.Help: ShowHelpWindow(); break;
         }
     }
@@ -555,7 +562,7 @@ public partial class MainWindow : Window
 
     private void ShowSearchInput()
     {
-        var input = _settings.LastSearchField switch { "Any" => SimpleAnyBox, "Exclude" => SimpleExcludeBox, _ => SimpleAllBox };
+        var input = UseConditionSearchCheck.IsChecked == true ? _settings.LastSearchField switch { "Any" => SimpleAnyBox, "Exclude" => SimpleExcludeBox, _ => SimpleAllBox } : LiteralFindBox;
         FocusToolInput(0, input, true);
     }
 
@@ -624,7 +631,7 @@ public partial class MainWindow : Window
         RenderSimpleTags();
         UpdateConditionSummary();
     }
-    private void SearchInput_KeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter && SearchButton.IsEnabled) { Search_Click(sender, new RoutedEventArgs()); e.Handled = true; } }
+    private void SearchInput_KeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter && SearchAllButton.IsEnabled) { Search_Click(sender, new RoutedEventArgs()); e.Handled = true; } }
 
     private void UpdateConditionSummary()
     {
@@ -632,7 +639,9 @@ public partial class MainWindow : Window
         ConditionSummaryText.Text = !valid
             ? "검색 조건을 입력하세요."
             : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다.";
-        SearchButton.IsEnabled = valid;
+        ConditionInputsPanel.Visibility = UseConditionSearchCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        SearchButton.IsEnabled = !string.IsNullOrEmpty(LiteralFindBox.Text) && UseConditionSearchCheck.IsChecked != true;
+        SearchAllButton.IsEnabled = SearchOpenButton.IsEnabled = SearchFolderButton.IsEnabled = UseConditionSearchCheck.IsChecked == true ? valid : !string.IsNullOrEmpty(LiteralFindBox.Text);
         MarkSettingsDirty();
     }
 
@@ -693,13 +702,18 @@ public partial class MainWindow : Window
     private SearchInputState CaptureSearchState(SearchOptions? options = null)
     {
         options ??= new SearchOptions(MatchCaseCheck.IsChecked == true, WholeWordCheck.IsChecked == true, SelectedNumber(ContextLinesCombo));
-        return SearchInputState.CreateSimple(
+        var state = SearchInputState.CreateSimple(
             ParseTerms(SimpleAllBox.Text), ParseTerms(SimpleAnyBox.Text), ParseTerms(SimpleExcludeBox.Text),
             new SavedSearchOptions { MatchCase = options.MatchCase, WholeWord = options.WholeWord, ContextLines = options.ContextLines });
+        state.LiteralText = LiteralFindBox.Text;
+        state.UseConditions = UseConditionSearchCheck.IsChecked == true;
+        return state;
     }
 
     private void RestoreSearchState(SearchInputState state)
     {
+        LiteralFindBox.Text = state.LiteralText;
+        UseConditionSearchCheck.IsChecked = state.UseConditions;
         SimpleAllBox.Text = string.Join(", ", state.SimpleAllTerms);
         SimpleAnyBox.Text = string.Join(", ", state.SimpleAnyTerms);
         SimpleExcludeBox.Text = string.Join(", ", state.SimpleExcludeTerms);
@@ -747,7 +761,7 @@ public partial class MainWindow : Window
         if (CurrentDocument is null) return;
         try
         {
-            var condition = BuildSimpleCondition();
+            var condition = ActiveSearchCondition();
             var options = new SearchOptions(MatchCaseCheck.IsChecked == true, WholeWordCheck.IsChecked == true, SelectedNumber(ContextLinesCombo));
             var document = CurrentDocument;
             var revision = document.ContentRevision;
@@ -765,7 +779,7 @@ public partial class MainWindow : Window
                 foreach (var context in result.Context)
                     displayLines.TryAdd(context.LineNumber, context.Range);
             }
-            var summary = ConditionSummaryText.Text;
+            var summary = ActiveSearchSummary();
             RecordRecentSearch(summary, options);
             var shortSummary = summary.Length > 28 ? summary[..28] + "…" : summary;
             var session = new SearchResultSession
@@ -803,9 +817,10 @@ public partial class MainWindow : Window
         var row = matches[index];
         _activeResultsList.SelectedItem = row;
         _activeResultsList.ScrollIntoView(row);
+        if (row.Source is not null) { _ = NavigateExternalResultAsync(_activeResultsList, row); return; }
         if (IsSessionCurrent(session))
         {
-            DocumentTabs.SelectedItem = session.Snapshot.Source;
+            DocumentTabs.SelectedItem = session.Snapshot!.Source;
             session.Snapshot.Source.Editor.GoToLine(row.LineNumber);
         }
     }
@@ -819,7 +834,8 @@ public partial class MainWindow : Window
 
     private ListBox? _activeResultsList;
     private SearchResultSession? ActiveSearchSession => SearchResultTabs.SelectedItem as SearchResultSession;
-    private bool IsSessionCurrent(SearchResultSession session) => Documents.Contains(session.Snapshot.Source) && session.Snapshot.Source.ContentRevision == session.Snapshot.Revision;
+    private bool IsSessionCurrent(SearchResultSession session) => session.Snapshot is { } snapshot && IsSnapshotCurrent(snapshot);
+    private bool IsSnapshotCurrent(SearchSnapshot snapshot) => Documents.Contains(snapshot.Source) && snapshot.Source.ContentRevision == snapshot.Revision;
     private void SearchResultsList_Loaded(object sender, RoutedEventArgs e) { _activeResultsList = (ListBox)sender; RefreshSearchSessionState(); }
     private void SearchResultsList_Unloaded(object sender, RoutedEventArgs e) { if (ReferenceEquals(sender, _activeResultsList)) _activeResultsList = null; }
     private void SearchResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -847,12 +863,13 @@ public partial class MainWindow : Window
     private void NavigateResult(ListBox list, SearchResultRow row)
     {
         if (ActiveSearchSession is not { } session) return;
+        if (row.Source is not null) { _ = NavigateExternalResultAsync(list, row); return; }
         if (!IsSessionCurrent(session))
         {
             StatusMessage.Text = "원문이 변경되거나 닫혀 이동할 수 없습니다. 복사와 새 문서 추출은 가능합니다.";
             return;
         }
-        DocumentTabs.SelectedItem = session.Snapshot.Source;
+        DocumentTabs.SelectedItem = session.Snapshot!.Source;
         session.Snapshot.Source.Editor.GoToLine(row.LineNumber, focusEditor: false);
         list.Focus();
     }
@@ -861,7 +878,7 @@ public partial class MainWindow : Window
     private void RefreshSearchSessionState()
     {
         var session = ActiveSearchSession;
-        var hasMatches = session?.MatchedLineNumbers.Count > 0;
+        var hasMatches = session?.Rows.Any(row => !row.IsContext) == true;
         var selected = _activeResultsList is { } list && list.DataContext == session ? list.SelectedItems : null;
         CopyAllResultsButton.IsEnabled = ExtractAllButton.IsEnabled = hasMatches;
         CopySelectedResultsButton.IsEnabled = selected?.Count > 0;
@@ -870,7 +887,7 @@ public partial class MainWindow : Window
         if (session is null) { SearchSessionStatus.Text = "검색 결과 없음"; return; }
         IncludeLineNumbersCheck.IsChecked = session.IncludeLineNumbers;
         var current = IsSessionCurrent(session);
-        SearchSessionStatus.Text = current ? $"{session.Snapshot.Source.DisplayName} · 클릭하면 원문으로 이동" : $"{session.Snapshot.Source.DisplayName} · 원문 변경 또는 닫힘 (복사·새 문서 가능, 이동·삭제 불가)";
+        SearchSessionStatus.Text = session.Snapshot is null ? session.Description ?? "여러 파일 검색 · 클릭하면 해당 파일로 이동 · 원문 삭제는 문서별 검색에서 사용" : current ? $"{session.Snapshot.Source.DisplayName} · 클릭하면 원문으로 이동" : $"{session.Snapshot.Source.DisplayName} · 원문 변경 또는 닫힘 (복사·새 문서 가능, 이동·삭제 불가)";
         DeleteSelectedButton.IsEnabled = current && ExtractSelectedButton.IsEnabled;
         DeleteAllButton.IsEnabled = current && hasMatches;
     }
@@ -880,15 +897,24 @@ public partial class MainWindow : Window
     private void CopyRows(IEnumerable<SearchResultRow> source)
     {
         if (ActiveSearchSession is not { } session) return;
-        var rows = source.OrderBy(row => row.LineNumber).ToArray(); if (rows.Length == 0) return;
-        Clipboard.SetText(string.Join(session.Snapshot.NewLine, rows.Select(row => session.IncludeLineNumbers ? $"{row.LineNumber}: {row.Text}" : row.Text)));
+        var selected = source.ToHashSet();
+        var rows = session.Rows.Where(selected.Contains).ToArray(); if (rows.Length == 0) return;
+        Clipboard.SetText(string.Join(session.NewLine, rows.Select(row => session.IncludeLineNumbers ? $"{row.SourceLabel}{(row.Source is null ? "" : ":")}{row.LineNumber}: {row.Text}" : row.Text)));
         StatusMessage.Text = $"{rows.Length:N0}개 결과를 복사했습니다.";
     }
-    private void ExtractSelectedResults_Click(object sender, RoutedEventArgs e) => ExtractSessionRows(SelectedMatchRows().Select(row => row.LineNumber));
-    private void ExtractAllResults_Click(object sender, RoutedEventArgs e) => ExtractSessionRows(ActiveSearchSession?.MatchedLineNumbers ?? []);
-    private void ExtractSessionRows(IEnumerable<int> lines)
+    private void ExtractSelectedResults_Click(object sender, RoutedEventArgs e) => ExtractResultRows(SelectedMatchRows());
+    private void ExtractAllResults_Click(object sender, RoutedEventArgs e) => ExtractResultRows(ActiveSearchSession?.Rows.Where(row => !row.IsContext) ?? []);
+    private void ExtractResultRows(IEnumerable<SearchResultRow> rows)
     {
         if (ActiveSearchSession is not { } session) return;
+        if (session.Snapshot is not null) { ExtractSessionRows(rows.Select(row => row.LineNumber)); return; }
+        var selected = rows.ToHashSet();
+        var text = string.Join(session.NewLine, session.Rows.Where(row => !row.IsContext && selected.Contains(row)).Select(row => row.Text));
+        if (selected.Count > 0) NewDocument(text);
+    }
+    private void ExtractSessionRows(IEnumerable<int> lines)
+    {
+        if (ActiveSearchSession is not { Snapshot: { } } session) return;
         var numbers = lines.Distinct().Order().ToArray(); if (numbers.Length == 0) return;
         var result = _transformService.ExtractLines(session.Snapshot.Text, numbers, 0, session.Snapshot.NewLine);
         NewDocument(result.Text);
@@ -906,7 +932,7 @@ public partial class MainWindow : Window
     {
         if (ActiveSearchSession is not { } session || !IsSessionCurrent(session)) return;
         var numbers = lines.Distinct().Order().ToArray(); if (numbers.Length == 0) return;
-        DocumentTabs.SelectedItem = session.Snapshot.Source;
+        DocumentTabs.SelectedItem = session.Snapshot!.Source;
         ShowTransformPreview(_transformService.DeleteLines(session.Snapshot.Source.Text, numbers, session.Snapshot.Source.NewLine), "일치 줄 삭제");
     }
     private void SearchResultClose_Click(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is SearchResultSession session) CloseSearchSession(session); e.Handled = true; }
@@ -914,8 +940,13 @@ public partial class MainWindow : Window
     private void CloseAllResults_Click(object sender, RoutedEventArgs e) { foreach (var session in SearchSessions.ToArray()) CloseSearchSession(session); HideResultPanelIfEmpty(); }
     private void CloseSearchSession(SearchResultSession session)
     {
-        SearchSessions.Remove(session); session.Snapshot.ReferenceCount--;
-        if (session.Snapshot.ReferenceCount == 0) _searchSnapshots.Remove((session.Snapshot.Source, session.Snapshot.Revision));
+        SearchSessions.Remove(session);
+        var snapshots = session.Snapshot is { } single ? new[] { single } : session.Rows.Select(row => row.Source?.Snapshot).OfType<SearchSnapshot>().Distinct();
+        foreach (var snapshot in snapshots)
+        {
+            snapshot.ReferenceCount--;
+            if (snapshot.ReferenceCount == 0) _searchSnapshots.Remove((snapshot.Source, snapshot.Revision));
+        }
         RefreshSearchSessionState(); HideResultPanelIfEmpty();
     }
 
@@ -1417,6 +1448,8 @@ public partial class MainWindow : Window
     private void RestoreWorkState()
     {
         RestoreSearchState(_settings.SearchState);
+        IncludeSubfoldersCheck.IsChecked = _settings.SearchSubfolders;
+        FolderPatternBox.Text = _settings.SearchFilePatterns;
         var state = _settings.TransformState;
         var selected = TextTools.FirstOrDefault(item => item.Id == state.SelectedToolId && item.OperationIndex is not null);
         TrimOperationCombo.SelectedIndex = selected?.OperationIndex ?? 0;
@@ -1432,6 +1465,8 @@ public partial class MainWindow : Window
     private void CaptureWorkState()
     {
         _settings.SearchState = CaptureSearchState();
+        _settings.SearchSubfolders = IncludeSubfoldersCheck.IsChecked == true;
+        _settings.SearchFilePatterns = FolderPatternBox.Text;
         var operationTool = TextTools.First(item => item.OperationIndex == TrimOperationCombo.SelectedIndex);
         _settings.TransformState = new TransformInputState
         {
@@ -1449,6 +1484,9 @@ public partial class MainWindow : Window
 
     private void AttachSettingsTracking()
     {
+        IncludeSubfoldersCheck.Checked += (_, _) => MarkSettingsDirty();
+        IncludeSubfoldersCheck.Unchecked += (_, _) => MarkSettingsDirty();
+        FolderPatternBox.TextChanged += (_, _) => MarkSettingsDirty();
         foreach (var textBox in new[] { StartMarkerBox, EndMarkerBox, CharacterCountBox, ValueInputBox, StartNumberBox,
                      LineNumberSeparatorBox, ReplaceFromBox, ReplaceToBox, DeleteContainingBox })
             textBox.TextChanged += (_, _) => MarkSettingsDirty();

@@ -10,7 +10,8 @@ public enum DiffEndpointKind
     OpenDocument,
     File,
     Clipboard,
-    Selection
+    Selection,
+    Scratch
 }
 
 public sealed class DiffEndpoint

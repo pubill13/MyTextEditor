@@ -84,3 +84,27 @@ internal sealed class EditorMenuColors(ThemePalette palette) : Forms.Professiona
     public override Drawing.Color MenuItemPressedGradientMiddle => palette.SelectionBackground;
     public override Drawing.Color MenuItemPressedGradientEnd => palette.SelectionBackground;
 }
+
+// WinForms' default renderer uses system (often black) text even with a dark color table.
+internal sealed class EditorMenuRenderer(ThemePalette palette) : Forms.ToolStripProfessionalRenderer(new EditorMenuColors(palette))
+{
+    private Drawing.Color Foreground(Forms.ToolStripItem? item) => item is null || !item.Enabled ? palette.MarginForeground :
+        item.Selected || item.Pressed ? palette.SelectionForeground : palette.EditorForeground;
+
+    protected override void OnRenderItemText(Forms.ToolStripItemTextRenderEventArgs e)
+    {
+        Forms.TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, e.TextRectangle, Foreground(e.Item), e.TextFormat);
+        if (e.Item.Tag is Drawing.Color color)
+        {
+            using var brush = new Drawing.SolidBrush(color);
+            e.Graphics.FillRectangle(brush, 6, Math.Max(2, (e.Item.Height - 10) / 2), 10, 10);
+        }
+    }
+
+    protected override void OnRenderArrow(Forms.ToolStripArrowRenderEventArgs e)
+    {
+        e.ArrowColor = Foreground(e.Item);
+        base.OnRenderArrow(e);
+    }
+
+}

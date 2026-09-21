@@ -17,6 +17,8 @@ namespace MyTextEditor.Macros;
 
 public sealed class MacroWindow : Window
 {
+    private TextComposition? _composition;
+    private bool _escapeOwnedByInput;
     private readonly MacroWindowCallbacks _callbacks;
     private readonly MacroStore _store;
     private List<MacroDefinition> _saved = [];
@@ -54,7 +56,7 @@ public sealed class MacroWindow : Window
     public MacroWindow(MacroWindowCallbacks callbacks, MacroStore? store = null)
     {
         _callbacks = callbacks; _store = store ?? new MacroStore();
-        Title = "작업 매크로 — MyTextEditor"; Width = 1180; Height = 800; MinWidth = 900; MinHeight = 600;
+        Title = "작업 매크로 — OmniEdit(옴니에딧)"; Width = 1180; Height = 800; MinWidth = 900; MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SetResourceReference(BackgroundProperty, "WindowBrush");
         SetResourceReference(ForegroundProperty, "TextBrush");
@@ -111,6 +113,22 @@ public sealed class MacroWindow : Window
         LoadDraft(_saved.FirstOrDefault() ?? _draft); RefreshLibrary();
         Closing += OnClosing; Closed += (_, _) => { _closed = true; _execution?.Cancel(); ClearExecutionResult(); };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { _callbacks.ShowHelp?.Invoke(); e.Handled = true; } };
+        TextCompositionManager.AddPreviewTextInputStartHandler(this, (_, e) => _composition = e.TextComposition);
+        TextCompositionManager.AddPreviewTextInputHandler(this, (_, _) => _composition = null);
+        PreviewKeyDown += (_, e) =>
+        {
+            _escapeOwnedByInput = _composition is not null;
+            for (var node = e.OriginalSource as DependencyObject; node is System.Windows.Media.Visual; node = System.Windows.Media.VisualTreeHelper.GetParent(node))
+                if (node is ComboBox { IsDropDownOpen: true } or ContextMenu { IsOpen: true } or MenuItem { IsSubmenuOpen: true }) _escapeOwnedByInput = true;
+            if (e.Key == Key.Escape && _composition is { } composition)
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() => { if (ReferenceEquals(_composition, composition)) _composition = null; }));
+        };
+        KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape || e.Handled || _escapeOwnedByInput || Keyboard.Modifiers != ModifierKeys.None) return;
+            e.Handled = true;
+            Close();
+        };
         Activated += (_, _) => RefreshDocumentState();
         RefreshDocumentState();
     }

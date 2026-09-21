@@ -67,6 +67,8 @@ public sealed class SavedSearchOptions
 
 public sealed class SearchInputState
 {
+    public string LiteralText { get; set; } = string.Empty;
+    public bool UseConditions { get; set; }
     public SavedSearchMode Mode { get; set; }
     public List<string> SimpleAllTerms { get; set; } = [];
     public List<string> SimpleAnyTerms { get; set; } = [];
@@ -141,6 +143,8 @@ public static class SavedSearchHistory
         ArgumentNullException.ThrowIfNull(right);
 
         return left.Mode == right.Mode
+            && left.UseConditions == right.UseConditions
+            && string.Equals(left.LiteralText, right.LiteralText, StringComparison.Ordinal)
             && left.Options.MatchCase == right.Options.MatchCase
             && left.Options.WholeWord == right.Options.WholeWord
             && left.Options.ContextLines == right.Options.ContextLines
@@ -203,6 +207,7 @@ public static class LegacySearchMigration
         }
 
         simple = SearchInputState.CreateSimple(allTerms, anyTerms, excludeTerms, CloneOptions(source.Options));
+        simple.UseConditions = true;
         return true;
     }
 

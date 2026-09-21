@@ -21,7 +21,10 @@ public static class SettingsService
 
         try
         {
-            var settings = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(FilePath)) ?? new UserSettings();
+            var json = File.ReadAllText(FilePath);
+            var settings = JsonSerializer.Deserialize<UserSettings>(json) ?? new UserSettings();
+            using (var document = JsonDocument.Parse(json))
+                MigrateSearchModeFields(document.RootElement, settings);
             var normalization = Normalize(settings);
             return new SettingsLoadResult(settings, null, normalization.RemovedLegacySearchCount,
                 normalization.LegacySearchSettingsChanged);
@@ -31,6 +34,28 @@ public static class SettingsService
             return new SettingsLoadResult(new UserSettings(), exception);
         }
     }
+
+    private static void MigrateSearchModeFields(JsonElement root, UserSettings settings)
+    {
+        if (root.TryGetProperty("SearchState", out var current) && current.ValueKind == JsonValueKind.Object &&
+            !current.TryGetProperty("UseConditions", out _) && settings.SearchState is { } active)
+            active.UseConditions = HasSavedConditions(active);
+        if (!root.TryGetProperty("RecentSearches", out var recent) || recent.ValueKind != JsonValueKind.Array ||
+            settings.RecentSearches is null) return;
+        for (var index = 0; index < Math.Min(recent.GetArrayLength(), settings.RecentSearches.Count); index++)
+        {
+            var item = recent[index];
+            if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("Search", out var search) &&
+                search.ValueKind == JsonValueKind.Object && !search.TryGetProperty("UseConditions", out _) &&
+                settings.RecentSearches[index].Search is not null)
+                settings.RecentSearches[index].Search.UseConditions = HasSavedConditions(settings.RecentSearches[index].Search);
+        }
+    }
+
+    private static bool HasSavedConditions(SearchInputState search) =>
+        search.Mode == SavedSearchMode.Advanced ||
+        (search.SimpleAllTerms?.Count ?? 0) + (search.SimpleAnyTerms?.Count ?? 0) +
+        (search.SimpleExcludeTerms?.Count ?? 0) > 0;
 
     public static void Save(UserSettings settings)
     {
@@ -83,6 +108,7 @@ public static class SettingsService
         settings.FavoriteToolIds ??= [TextToolIds.RemoveLinesContaining, TextToolIds.Replace];
         settings.RecentSearches ??= [];
         settings.SearchState ??= new SearchInputState();
+        settings.SearchFilePatterns ??= new UserSettings().SearchFilePatterns;
         settings.TransformState ??= new TransformInputState();
         settings.Diff ??= new DiffUserSettings();
         settings.Diff.FontSize = double.IsFinite(settings.Diff.FontSize) ? Math.Clamp(Math.Round(settings.Diff.FontSize), 6, 72) : 11;
@@ -148,6 +174,7 @@ public static class SettingsService
 
     private static void NormalizeSearch(SearchInputState search)
     {
+        search.LiteralText ??= string.Empty;
         if (!Enum.IsDefined(search.Mode)) search.Mode = SavedSearchMode.Simple;
         search.SimpleAllTerms ??= [];
         search.SimpleAnyTerms ??= [];

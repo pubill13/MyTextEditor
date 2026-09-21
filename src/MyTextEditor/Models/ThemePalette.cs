@@ -41,6 +41,7 @@ public sealed class ThemePalette
     public DrawingColor ScrollThumb { get; }
     public DrawingColor ScrollHover => Hover;
     public DrawingColor Accent { get; }
+    public DrawingColor UiSelection => Selection;
 
     public static IReadOnlyList<ThemePalette> All { get; } = new[]
     {

@@ -45,7 +45,7 @@
         </StatusBar>
 
         <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="78"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="112"/><ColumnDefinition/></Grid.ColumnDefinitions>
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
                 <Border Padding="10,7" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,1">
@@ -64,7 +64,7 @@
                     </Grid>
                 </Border>
                 <Border Grid.Row="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
-                    <Grid AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><ContentControl x:Name="LeftEditorContainer"/><Border x:Name="LeftDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="8" Margin="24" AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="왼쪽 파일을 여기에 놓으세요" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="또는 아래에서 소스를 선택하세요" Margin="0,8,0,12" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="파일 선택" Click="ChooseLeftFile_Click"/><Button Margin="6,0,0,0" Content="열린 문서" Click="ChooseLeftDocument_Click"/><Button Margin="6,0,0,0" Content="클립보드" Click="UseLeftClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
+                    <Grid AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><ContentControl Grid.Row="1" x:Name="LeftEditorContainer"/><Border x:Name="LeftDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="4" Margin="6" Padding="6" AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="왼쪽: 아래에 직접 입력하거나 파일을 놓으세요" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="파일·열린 문서·클립보드로도 비교할 수 있습니다" Margin="0,3,0,5" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="파일 선택" Click="ChooseLeftFile_Click"/><Button Margin="6,0,0,0" Content="열린 문서" Click="ChooseLeftDocument_Click"/><Button Margin="6,0,0,0" Content="클립보드" Click="UseLeftClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
                 </Border>
             </Grid>
 
@@ -98,7 +98,7 @@
                         </StackPanel>
                     </Grid>
                 </Border>
-                <Grid Grid.Row="1" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><ContentControl x:Name="RightEditorContainer"/><Border x:Name="RightDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="8" Margin="24" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="오른쪽 파일을 여기에 놓으세요" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="또는 아래에서 소스를 선택하세요" Margin="0,8,0,12" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="파일 선택" Click="ChooseRightFile_Click"/><Button Margin="6,0,0,0" Content="열린 문서" Click="ChooseRightDocument_Click"/><Button Margin="6,0,0,0" Content="클립보드" Click="UseRightClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
+                <Grid Grid.Row="1" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><ContentControl Grid.Row="1" x:Name="RightEditorContainer"/><Border x:Name="RightDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="4" Margin="6" Padding="6" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="오른쪽: 아래에 직접 입력하거나 파일을 놓으세요" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="파일·열린 문서·클립보드로도 비교할 수 있습니다" Margin="0,3,0,5" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="파일 선택" Click="ChooseRightFile_Click"/><Button Margin="6,0,0,0" Content="열린 문서" Click="ChooseRightDocument_Click"/><Button Margin="6,0,0,0" Content="클립보드" Click="UseRightClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
             </Grid>
         </Grid>
     </DockPanel>

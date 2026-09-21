@@ -26,7 +26,7 @@ internal static class SearchActionsVerification
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
-        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/MyTextEditor;component/Themes/Controls.xaml", UriKind.Relative) });
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative) });
         var window = new MainWindow { ShowInTaskbar = false };
         // No normal shutdown/settings path: these tests must not persist the user's workspace.
         Set(window, "_settingsReady", false);

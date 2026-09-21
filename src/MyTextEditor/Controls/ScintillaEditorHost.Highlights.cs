@@ -63,7 +63,7 @@ public sealed partial class ScintillaEditorHost
         menu.DropDownItems.Add("최근 색상", null, (_, _) => AddSelectionHighlight(all));
         foreach (var (name, hex) in new[] { ("노랑", "#F2CC60"), ("주황", "#F2994A"), ("초록", "#6FCF97"), ("파랑", "#56B4E9"), ("보라", "#BB86FC"), ("분홍", "#F38BA8") })
         {
-            var item = new Forms.ToolStripMenuItem(name) { ForeColor = System.Drawing.ColorTranslator.FromHtml(hex) };
+            var item = new Forms.ToolStripMenuItem(name) { Tag = System.Drawing.ColorTranslator.FromHtml(hex) };
             item.Click += (_, _) => { ChooseHighlightColor(hex); AddSelectionHighlight(all); };
             menu.DropDownItems.Add(item);
         }
