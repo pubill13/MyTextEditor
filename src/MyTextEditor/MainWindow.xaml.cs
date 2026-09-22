@@ -31,6 +31,7 @@ using Panel = System.Windows.Controls.Panel;
 using ListBox = System.Windows.Controls.ListBox;
 using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 using TextBox = System.Windows.Controls.TextBox;
+using TabControl = System.Windows.Controls.TabControl;
 
 namespace MyTextEditor;
 
@@ -74,13 +75,14 @@ public partial class MainWindow : Window
     public ObservableCollection<SearchResultSession> SearchSessions { get; } = [];
     public ObservableCollection<TransformPreviewRow> PreviewRows { get; } = [];
 
-    private DocumentViewModel? CurrentDocument => DocumentTabs.SelectedItem as DocumentViewModel;
+    private DocumentViewModel? CurrentDocument => ActiveDocumentTabs.SelectedItem as DocumentViewModel;
     private ScintillaEditorHost? CurrentEditor => CurrentDocument?.Editor;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = this;
+        InitializeDocumentPanes();
         var loadResult = SettingsService.LoadWithResult();
         _settings = loadResult.Settings;
         _settingsSnapshot = loadResult.NeedsSave ? string.Empty : JsonSerializer.Serialize(_settings);
@@ -105,6 +107,7 @@ public partial class MainWindow : Window
         _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); SaveSettings(false); };
         AttachSettingsTracking();
         _settingsReady = true;
+        InitializeFileSync();
         InitializePanelInteraction();
         LocationChanged += (_, _) => MarkSettingsDirty();
         StateChanged += (_, _) => MarkSettingsDirty();
@@ -134,7 +137,7 @@ public partial class MainWindow : Window
         if (text.Length > 0) editor.ReplaceAll(text);
         Documents.Add(document);
         document.IsModified = text.Length > 0;
-        DocumentTabs.SelectedItem = document;
+        SelectDocument(document);
         EmptyDocumentState.Visibility = Visibility.Collapsed;
         StatusMessage.Text = "새 문서를 만들었습니다.";
     }
@@ -214,7 +217,8 @@ public partial class MainWindow : Window
     private async Task OpenFileCoreAsync(string filePath)
     {
         var alreadyOpen = Documents.FirstOrDefault(item => string.Equals(item.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
-        if (alreadyOpen is not null) { DocumentTabs.SelectedItem = alreadyOpen; return; }
+        if (alreadyOpen is not null) { SelectDocument(alreadyOpen); return; }
+        var fileSyncStamp = await ReadFileSyncStampAsync(filePath);
         var buffer = await _fileService.LoadBufferAsync(filePath);
         var editor = new ScintillaEditorHost();
         var document = new DocumentViewModel
@@ -230,8 +234,9 @@ public partial class MainWindow : Window
         editor.SetNewLine(document.NewLine);
         editor.LoadUtf8(buffer.Utf8Buffer);
         Documents.Add(document);
-        DocumentTabs.SelectedItem = document;
+        SelectDocument(document);
         AddRecentFile(filePath);
+        TrackFileSyncDocument(document, fileSyncStamp);
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveDocumentAsync(CurrentDocument, false);
@@ -298,6 +303,7 @@ public partial class MainWindow : Window
             else
                 document.Editor.MarkSaved();
             document.NotifyIdentityChanged();
+            await RefreshFileSyncBaselineAsync(document);
             AddRecentFile(path!);
             UpdateStatus();
             StatusMessage.Text = hasNewerChanges
@@ -357,12 +363,17 @@ public partial class MainWindow : Window
 
     private void RemoveDocument(DocumentViewModel document)
     {
+        var wasCurrent = document == CurrentDocument;
         Documents.Remove(document);
+        _fileSyncStates.Remove(document);
+        if (ActiveDocumentTabs.Items.Count == 0)
+            _activeDocumentTabs = LeftDocuments.Count > 0 ? DocumentTabs : RightDocuments.Count > 0 ? RightDocumentTabs : DocumentTabs;
         RefreshDiffSourceStates();
         document.Editor.ReleaseResources();
         RefreshSearchSessionState();
         EmptyDocumentState.Visibility = Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateStatus();
+        if (wasCurrent) FocusCurrentDocumentAfterLayout();
     }
 
     private void Undo_Click(object sender, RoutedEventArgs e)
@@ -423,6 +434,7 @@ public partial class MainWindow : Window
 
     private void CompleteShutdown()
     {
+        StopFileSync();
         _settingsSaveTimer.Stop();
         Hide();
         _diffWorkspaceWindow?.Hide();
@@ -439,6 +451,7 @@ public partial class MainWindow : Window
         }
         foreach (var document in Documents)
             document.Editor.ReleaseResources();
+        _resultsWindow?.Close();
         SearchSessions.Clear();
         _searchSnapshots.Clear();
     }
@@ -447,7 +460,7 @@ public partial class MainWindow : Window
     {
         foreach (var document in Documents.Where(item => item.IsModified).ToArray())
         {
-            DocumentTabs.SelectedItem = document;
+            SelectDocument(document);
             var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "프로그램 종료", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) return false;
             if (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false)) return false;
@@ -554,9 +567,10 @@ public partial class MainWindow : Window
 
     private void SelectRelativeDocument(int direction)
     {
-        if (Documents.Count < 2) return;
-        var index = DocumentTabs.SelectedIndex;
-        DocumentTabs.SelectedIndex = (index + direction + Documents.Count) % Documents.Count;
+        var tabs = ActiveDocumentTabs;
+        if (tabs.Items.Count < 2) return;
+        var index = tabs.SelectedIndex;
+        tabs.SelectedIndex = (index + direction + tabs.Items.Count) % tabs.Items.Count;
         CurrentEditor?.FocusEditor();
     }
 
@@ -589,7 +603,7 @@ public partial class MainWindow : Window
 
     private void DocumentTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.Source != DocumentTabs) return;
+        if (e.Source != sender || sender != ActiveDocumentTabs) return;
         UpdateStatus();
     }
 
@@ -613,6 +627,7 @@ public partial class MainWindow : Window
     private void ConfigureEditor(DocumentViewModel document)
     {
         var editor = document.Editor;
+        editor.EditorFocused += (_, _) => { if (Documents.Contains(document)) SelectDocument(document); };
         editor.CaretChanged += Editor_CaretChanged;
         editor.RevisionChanged += Editor_RevisionChanged;
         editor.DirtyChanged += Editor_DirtyChanged;
@@ -826,7 +841,7 @@ public partial class MainWindow : Window
         if (row.Source is not null) { _ = NavigateExternalResultAsync(_activeResultsList, row); return; }
         if (IsSessionCurrent(session))
         {
-            DocumentTabs.SelectedItem = session.Snapshot!.Source;
+            SelectDocument(session.Snapshot!.Source);
             session.Snapshot.Source.Editor.GoToLine(row.LineNumber);
         }
     }
@@ -843,7 +858,12 @@ public partial class MainWindow : Window
     private bool IsSessionCurrent(SearchResultSession session) => session.Snapshot is { } snapshot && IsSnapshotCurrent(snapshot);
     private bool IsSnapshotCurrent(SearchSnapshot snapshot) => Documents.Contains(snapshot.Source) && snapshot.Source.ContentRevision == snapshot.Revision;
     private void SearchResultsList_Loaded(object sender, RoutedEventArgs e) { _activeResultsList = (ListBox)sender; RefreshSearchSessionState(); }
-    private void SearchResultsList_Unloaded(object sender, RoutedEventArgs e) { if (ReferenceEquals(sender, _activeResultsList)) _activeResultsList = null; }
+    private void SearchResultsList_Unloaded(object sender, RoutedEventArgs e)
+    {
+        // Moving the same panel to another window must retain its selection and copy target.
+        if (ReferenceEquals(sender, _activeResultsList) && ((ListBox)sender).DataContext != ActiveSearchSession)
+            _activeResultsList = null;
+    }
     private void SearchResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _activeResultsList = (ListBox)sender;
@@ -875,7 +895,7 @@ public partial class MainWindow : Window
             StatusMessage.Text = "원문이 변경되거나 닫혀 이동할 수 없습니다. 복사와 새 문서 추출은 가능합니다.";
             return;
         }
-        DocumentTabs.SelectedItem = session.Snapshot!.Source;
+        SelectDocument(session.Snapshot!.Source);
         session.Snapshot.Source.Editor.GoToLine(row.LineNumber, focusEditor: false);
         list.Focus();
     }
@@ -938,7 +958,7 @@ public partial class MainWindow : Window
     {
         if (ActiveSearchSession is not { } session || !IsSessionCurrent(session)) return;
         var numbers = lines.Distinct().Order().ToArray(); if (numbers.Length == 0) return;
-        DocumentTabs.SelectedItem = session.Snapshot!.Source;
+        SelectDocument(session.Snapshot!.Source);
         ShowTransformPreview(_transformService.DeleteLines(session.Snapshot.Source.Text, numbers, session.Snapshot.Source.NewLine), "일치 줄 삭제");
     }
     private void SearchResultClose_Click(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is SearchResultSession session) CloseSearchSession(session); e.Handled = true; }
@@ -1042,7 +1062,7 @@ public partial class MainWindow : Window
         if (CurrentDocument is null) return;
         if (operation == "LogCleanup")
         {
-            var cleanup = _transformService.CleanupLog(CurrentDocument.Text, CurrentDocument.NewLine);
+            var cleanup = _transformService.CleanupLog(CurrentDocument.Text, _settings.LogCleanup.ToOptions(), CurrentDocument.NewLine);
             var summary = cleanup.CleanupSummary;
             var details = $"ANSI {summary.AnsiSequencesRemoved:N0} · 제어문자 {summary.ControlCharactersRemoved:N0} · 뒤 공백 {summary.TrailingWhitespaceCharactersRemoved:N0} · 빈 줄 {summary.CollapsedBlankLines:N0}";
             if (preview) ShowTransformPreview(cleanup.TransformResult, $"{title} · {details}");
@@ -1168,11 +1188,7 @@ public partial class MainWindow : Window
         TransformPreviewView.Visibility = Visibility.Visible;
         ApplyTransformButton.Visibility = Visibility.Visible;
         ApplyTransformButton.IsEnabled = result.Summary.ChangedLines > 0;
-        ResultPanel.Visibility = Visibility.Visible;
-        ResultRow.MinHeight = 120;
-        ResultSplitterRow.Height = new GridLength(5);
-        ResultsMenuItem.IsChecked = true;
-        ResultRow.Height = new GridLength(Math.Max(180, _settings.ResultPanelHeight));
+        ExpandResults();
         StatusMessage.Text = "변경 전과 변경 후를 확인한 다음 적용하세요.";
     }
 
@@ -1194,11 +1210,7 @@ public partial class MainWindow : Window
     {
         SearchResultsView.Visibility = Visibility.Visible;
         TransformPreviewView.Visibility = Visibility.Collapsed;
-        ResultPanel.Visibility = Visibility.Visible;
-        ResultRow.MinHeight = 120;
-        ResultSplitterRow.Height = new GridLength(5);
-        ResultsMenuItem.IsChecked = true;
-        ResultRow.Height = new GridLength(Math.Max(120, _settings.ResultPanelHeight));
+        ExpandResults();
     }
 
     private void PreviewFilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1235,6 +1247,9 @@ public partial class MainWindow : Window
     private void HideResultPanelIfEmpty()
     {
         if (SearchSessions.Count > 0 || TransformPreviewView.Visibility == Visibility.Visible) return;
+        if (_resultsWindow is { } window) { window.Close(); return; }
+        _resultsMinimized = false;
+        ResultRestoreBar.Visibility = Visibility.Collapsed;
         ResultPanel.Visibility = Visibility.Collapsed; ResultRow.MinHeight = 0; ResultRow.Height = new GridLength(0);
         ResultSplitterRow.Height = new GridLength(0); ResultsMenuItem.IsChecked = false;
     }
@@ -1274,10 +1289,8 @@ public partial class MainWindow : Window
     private void ToggleResults_Click(object sender, RoutedEventArgs e)
     {
         var show = (sender as MenuItem)?.IsChecked == true;
-        ResultRow.MinHeight = show ? 120 : 0;
-        ResultRow.Height = show ? new GridLength(Math.Max(120, _settings.ResultPanelHeight)) : new GridLength(0);
-        ResultSplitterRow.Height = show ? new GridLength(5) : new GridLength(0);
-        ResultPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show) ExpandResults();
+        else MinimizeResults_Click(sender, e);
         MarkSettingsDirty();
     }
 
@@ -1526,9 +1539,9 @@ public partial class MainWindow : Window
         _settings.WindowTop = RestoreBounds.Top;
         _settings.WindowState = WindowState == WindowState.Maximized ? "Maximized" : "Normal";
         _settings.ToolPanelVisible = ToolPanel.Visibility == Visibility.Visible;
-        _settings.ResultPanelVisible = ResultPanel.Visibility == Visibility.Visible;
+        _settings.ResultPanelVisible = !_resultsMinimized && ResultPanel.Visibility == Visibility.Visible;
         if (ToolColumn.Width.Value > 0) _settings.ToolPanelWidth = ToolColumn.ActualWidth;
-        if (ResultRow.Height.Value > 0) _settings.ResultPanelHeight = ResultRow.ActualHeight;
+        RememberResultHeight();
         var serialized = JsonSerializer.Serialize(_settings);
         if (serialized == _settingsSnapshot) return true;
         var result = SettingsService.TrySave(_settings);

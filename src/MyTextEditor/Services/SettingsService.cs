@@ -62,7 +62,7 @@ public static class SettingsService
         ArgumentNullException.ThrowIfNull(settings);
         _ = Normalize(settings);
         Directory.CreateDirectory(DirectoryPath);
-        var temporaryPath = FilePath + ".tmp";
+        var temporaryPath = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
@@ -110,6 +110,7 @@ public static class SettingsService
         settings.SearchState ??= new SearchInputState();
         settings.SearchFilePatterns ??= new UserSettings().SearchFilePatterns;
         settings.TransformState ??= new TransformInputState();
+        settings.LogCleanup ??= new LogCleanupPreferences();
         settings.Diff ??= new DiffUserSettings();
         settings.Diff.FontSize = double.IsFinite(settings.Diff.FontSize) ? Math.Clamp(Math.Round(settings.Diff.FontSize), 6, 72) : 11;
         settings.Help ??= new HelpUserSettings();

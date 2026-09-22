@@ -28,6 +28,20 @@
             </Grid>
         </Border>
 
+        <Border DockPanel.Dock="Top" Padding="10,5" Background="{DynamicResource SurfaceAltBrush}">
+            <StackPanel>
+                <WrapPanel>
+                    <TextBlock Text="색상 기준: 왼쪽 → 오른쪽" Margin="0,0,14,0" Foreground="{DynamicResource MutedBrush}"/>
+                    <TextBlock Text="●" Foreground="#40A05B"/><TextBlock Text=" 오른쪽에만 있음 (추가)" Margin="0,0,14,0"/>
+                    <TextBlock Text="●" Foreground="#D23F44"/><TextBlock Text=" 왼쪽에만 있음 (삭제)" Margin="0,0,14,0"/>
+                    <TextBlock Text="●" Foreground="#CD971F"/><TextBlock Text=" 양쪽 내용 다름 (수정)" Margin="0,0,14,0"/>
+                    <TextBlock Text="진한 부분: 줄 안에서 달라진 내용" Foreground="{DynamicResource MutedBrush}"/>
+                </WrapPanel>
+                <TextBlock x:Name="BlockRangeText" Margin="0,3,0,0" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Text="차이를 선택하면 좌우의 실제 반영 범위가 표시됩니다."/>
+            </StackPanel>
+        </Border>
+
         <Border x:Name="StaleBanner" DockPanel.Dock="Top" Visibility="Collapsed" Padding="10,7"
                 Background="{DynamicResource SelectionBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
@@ -71,7 +85,7 @@
             <Border Grid.Column="1" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                    <Canvas x:Name="MergeGutterCanvas" Margin="5,0" SizeChanged="MergeGutter_SizeChanged"/>
+                    <Canvas x:Name="MergeGutterCanvas" ClipToBounds="True" SizeChanged="MergeGutter_SizeChanged"/>
                     <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="5,0,5,10">
                         <Button x:Name="CopyAllLeftButton" Content="← 전체" ToolTip="오른쪽 전체를 왼쪽으로 복사" Click="CopyAllToLeft_Click"/>
                         <Button x:Name="CopyAllRightButton" Margin="0,5,0,0" Content="전체 →" ToolTip="왼쪽 전체를 오른쪽으로 복사" Click="CopyAllToRight_Click"/>

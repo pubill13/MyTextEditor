@@ -1,5 +1,25 @@
 # OmniEdit 작업 인수인계
 
+## 1.9.3 UX 구현·검증 완료
+
+현재 사용자 요청에 따라 로그 정리 옵션, 연속 Ctrl+W, 외부 파일 변경 자동 반영 ON/OFF, 문서 좌우 분할, Merge 범위·방향 표시를 구현했다. 로그 정리는 ANSI/제어문자, 줄 끝 공백, 연속 빈 줄을 각각 켜고 끌 수 있는 `LogCleanupOptionsDialog`와 설정 모델을 사용한다. 문서 분할은 `MainWindow.DocumentPanes.cs`의 LeftDocuments/RightDocuments와 활성 pane 포커스로 Undo·검색·탭 닫기를 라우팅한다. 외부 동기화는 `MainWindow.FileSync.cs`에서 1초 metadata polling을 하며 clean 문서만 `ReloadUtf8`로 자동 반영하고 dirty 문서는 유지·알림한다. `AutoReloadFiles`는 설정에 저장된다. Merge는 범위 행 번호, 방향별 대체/삽입/삭제 설명, gutter 연결 polygon과 색상 범례를 표시한다.
+
+2026-09-22 테스트 안정화 완료: Release 빌드 오류/경고 0, Core 42/42. 외부 동기화와 Merge 범위 검사를 각각 3회 연속 통과했다. 자동 반영 OFF/ON, revision, UTF-16/BOM/줄바꿈, dirty 보호, 삭제/재생성, 잠금 해제 후 재시도, 직접 저장 후 Undo 유지, 진행 중 OFF 취소와 ON 재개를 검사했다. 좌우 분할/활성 pane Undo/문서 보존/세 번 연속 Ctrl+W, 검색 결과 복사·분리/복귀, 패널 UX, F7/F8, 매크로, Diff 탭·드롭, 하이라이트·5개 테마 회귀도 통과했다. 30MB 로딩 3회 중앙값 0.233초, 해제 최대 0.052초. 5만 줄 Merge 스크롤/gutter p95는 100개 변경 0.09ms, 5천 개 변경 0.41ms. 실제 GUI 배율은 96 DPI(100%)이며 125/150%와 물리 한글 IME는 미검증이다.
+
+멈춤 원인은 OFF 경계가 아니라 반복 reload 후 편집 시 `ScheduleHighlightRefresh`의 managed `IndicatorClearRange`가 TextChanged 알림 안에서 문자 위치 캐시를 참조한 것이었다. `ScintillaEditorHost.Highlights.cs`에서 이 전체 범위 지우기만 native 바이트 좌표(SCI_GETLENGTH/SCI_INDICATORCLEARRANGE)로 처리했다. FileSync에는 poll별 취소 토큰을 추가해 OFF 후 ON으로 돌아와도 안전하게 재개한다. Merge 테스트는 대상 CRLF 보존을 LF 원본과 문자열 동등으로 잘못 검사하던 것을 실제 결과 생성 완료와 정확한 대상 CRLF 검증으로 수정했다. 테스트 기대값을 없애지 말 것.
+
+Performance 테스트 진입점은 실패를 stderr/exit 1로 보고하여 Windows 오류 보고 창이 테스트 DLL을 점유하지 않게 했다. 실제 키 입력 검사(`--document-panes`, `--search-actions`)는 정상 Windows 데스크톱 입력 권한과 foreground가 필요하다. 제한된 실행에서 Ctrl+W 입력 전달 실패가 있었고 정상 권한 실행에서 통과했다. 멈춘 테스트를 정리할 때는 명령행으로 확인된 Performance 프로세스만 종료하고 사용자의 OmniEdit 프로세스는 종료하지 않는다.
+
+배포: 사용자 요청으로 버전을 1.9.3으로 올리고 `artifacts/v1.9.3/`에 자체 포함 EXE·ZIP을 생성했다. EXE 80,069,014바이트, FileVersion 1.9.3.0의 실제 시작·정상 종료(exit 0)를 확인했다. main/v1.9.3 및 GitHub Release 게시 대상으로 준비했으며 배포 상태는 원격 태그/Release에서 확인한다. 다음 수동 확인 항목은 실제 125/150% DPI·IME다. 사용자 `.gitignore` 변경은 보존한다.
+
+## 1.9.2 결과 영역 UX (로컬 작업)
+
+검색 조건 제목을 조건 입력 영역 내부로 옮겨 폴더 내 검색 체크박스 아래 16px 간격을 확보했다. 검색 결과 명령을 한 줄로 줄이고 탭 높이를 낮췄으며, 줄 번호 포함은 더 보기 메뉴로 이동했다. ‘—’는 결과를 28px 복원 바로 접고, ‘↗’는 같은 결과 패널을 모델리스 창으로 이동한다. 닫기/‘↙’는 본창에 다시 붙인다. 새 검색은 펼치며 결과 내용·탭·선택 행을 보존한다. Ctrl+C는 목록 PreviewKeyDown과 표준 Copy CommandBinding으로 지원한다. 삭제/치환 제목은 크기 14와 얇은 강조선/배경으로 입력 라벨과 구분했다.
+
+MainWindow.Results.cs가 접기/복원/분리/수명 관리를 담당한다. 재부모화 전에 ResultPanel.DataContext를 고정해야 ItemsSource와 선택 행이 초기화되지 않는다. 종료 확인 취소 시 별도 창을 유지하고 실제 CompleteShutdown에서만 닫는다. 창 분리 상태/내용은 저장하지 않는다. SettingsService의 임시 파일명을 GUID로 구분하여 여러 프로세스의 설정 쓰기가 같은 .tmp 파일을 사용하지 않게 했다. 문서/Undo/검색은 독립적이나 설정·매크로 파일은 공유한다.
+
+검증 완료: Core 41/41, 패널 UX와 SearchActionsVerification 통과. 표준 Copy 명령과 실제 Windows Ctrl+C 키 입력(본창/별도 창/선택 없음), 접기 높이/복원, 별도 창 분리/복귀와 선택 보존, 5개 테마의 최소 창 폭 640px 명령 경계를 확인했다. WinForms SendKeys의 메시지 처리 타이밍으로 불안정했던 키 입력 검사는 키별 Windows 이벤트와 WPF 메시지 처리를 구분하도록 수정했다. 실제 DPI는 100%이며 125/150%와 물리 IME는 미검증이다. Release 빌드 경고/오류 0, `artifacts/v1.9.2/win-x64/OmniEdit.exe`(80,057,430바이트)의 두 프로세스/별도 창 동시 실행과 한쪽 종료 시 다른 쪽 유지, 양쪽 정상 종료(exit 0)를 확인했다. v1.9.2는 로컬 작업이며 GitHub 최신 배포는 v1.9.1이다. 사용자 .gitignore 변경은 보존한다.
+
 ## 1.9.1 검색 UX 수정 (배포 완료)
 
 로컬 자체 포함 실행 파일: `artifacts/v1.9.1/win-x64/OmniEdit.exe` (1.9.1.0). Release 빌드 오류/경고 0, 게시된 EXE 실제 시작 및 정상 종료(exit 0)를 확인했다.

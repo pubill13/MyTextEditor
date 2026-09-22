@@ -54,3 +54,8 @@ public sealed record LogCleanupSummary(
 public sealed record LogCleanupResult(
     TextTransformResult TransformResult,
     LogCleanupSummary CleanupSummary);
+
+public sealed record LogCleanupOptions(
+    bool RemoveAnsiAndControlCharacters = true,
+    bool TrimTrailingWhitespace = true,
+    bool CollapseBlankLines = true);

@@ -9,6 +9,8 @@ namespace MyTextEditor.Controls;
 public sealed partial class ScintillaEditorHost
 {
     private const int UserIndicator = 23;
+    private const int SciGetLength = 2006;
+    private const int SciIndicatorClearRange = 2505;
     private sealed record HighlightRule(EditorTextRange Range, string? Phrase, DrawingColor Color);
     private readonly List<HighlightRule> _highlightRules = [];
     private readonly DispatcherTimer _highlightTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
@@ -146,10 +148,12 @@ public sealed partial class ScintillaEditorHost
     {
         if (_resourcesReleased) return;
         _highlightCancellation?.Cancel(); _highlightTimer.Stop();
-        _editor.IndicatorCurrent = UserIndicator; _editor.IndicatorClearRange(0, _editor.TextLength);
+        // TextChanged can run while ScintillaNET is updating its character-position cache.
+        // Clear in native byte coordinates to avoid consulting that cache inside the notification.
+        _editor.IndicatorCurrent = UserIndicator;
+        _editor.DirectMessage(SciIndicatorClearRange, IntPtr.Zero, _editor.DirectMessage(SciGetLength));
         if (immediate) _ = RefreshHighlightsAsync();
         else if (_highlightRules.Count > 0) _highlightTimer.Start();
-        else { _editor.IndicatorCurrent = UserIndicator; _editor.IndicatorClearRange(0, _editor.TextLength); }
     }
     private void HighlightTimer_Tick(object? sender, EventArgs e) { _highlightTimer.Stop(); _ = RefreshHighlightsAsync(); }
 

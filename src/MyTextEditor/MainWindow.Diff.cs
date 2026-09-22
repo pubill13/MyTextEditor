@@ -183,7 +183,7 @@ public partial class MainWindow
             return Task.FromResult(false);
 
         document.Editor.ReplaceAll(text);
-        DocumentTabs.SelectedItem = document;
+        SelectDocument(document);
         return Task.FromResult(true);
     }
 

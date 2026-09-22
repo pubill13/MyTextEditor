@@ -15,6 +15,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("특정 문장 포함 줄 삭제", TestRemoveLinesContaining),
     ("포함 줄 삭제 경계와 줄바꿈 보존", TestRemoveLinesContainingBoundaries),
     ("로그 ANSI와 제어문자 정리", TestLogCleanupSequences),
+    ("로그 정리 선택 옵션과 기존 API 호환", LogCleanupOptionsTests.IndependentOptions),
     ("로그 공백과 원문 보존", TestLogCleanupConservativeRules),
     ("로그 줄바꿈과 끝 개행 보존", TestLogCleanupNewLines),
     ("추출 및 삭제", TestExtractAndDelete),

@@ -45,7 +45,7 @@ public partial class MainWindow
         {
             foreach (var document in targets.Where(document => document.IsModified))
             {
-                DocumentTabs.SelectedItem = document;
+                SelectDocument(document);
                 var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?",
                     "탭 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (answer == MessageBoxResult.Cancel || answer == MessageBoxResult.Yes &&
@@ -228,7 +228,7 @@ public partial class MainWindow
                 StatusMessage.Text = "원본 문서가 바뀌거나 닫혀 이동할 수 없습니다.";
                 return;
             }
-            DocumentTabs.SelectedItem = snapshot.Source;
+            SelectDocument(snapshot.Source);
             snapshot.Source.Editor.GoToLine(row.LineNumber, focusEditor: false);
             list.Focus();
             return;
@@ -251,7 +251,7 @@ public partial class MainWindow
             await OpenFileAsync(filePath);
             opened = Documents.FirstOrDefault(document => string.Equals(document.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
             if (opened is null) return;
-            DocumentTabs.SelectedItem = opened;
+            SelectDocument(opened);
             opened.Editor.GoToLine(row.LineNumber, focusEditor: false);
             list.Focus();
         }

@@ -79,6 +79,8 @@ internal static class SearchActionsVerification
             item.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseUpEvent });
             Check(ReferenceEquals(Field<TabControl>(window, "DocumentTabs").SelectedItem, source) && source.Editor.CurrentLine == 3, "Single click did not select source/line");
             Check(list.IsKeyboardFocusWithin && list.SelectedItems.Count == 2, "Navigation stole result focus or selection");
+            VerifyResultWorkspace(window, session);
+            list = Field<ListBox>(window, "_activeResultsList");
 
             source.Editor.ReplaceAll("changed");
             Call(window, "RefreshSearchSessionState");
@@ -109,6 +111,99 @@ internal static class SearchActionsVerification
             Field<DispatcherTimer>(window, "_settingsSaveTimer").Stop(); window.Hide();
             foreach (var document in window.Documents.Concat(allDocuments).Distinct()) document.Editor.ReleaseResources();
             Set(window, "_allowClose", true); window.Close(); app.Shutdown();
+        }
+    }
+
+    private static void VerifyResultWorkspace(MainWindow window, SearchResultSession session)
+    {
+        var list = Field<ListBox>(window, "_activeResultsList");
+        Check(list is not null, "Missing list before result workspace checks");
+        Clipboard.SetText("before command");
+        Check(ApplicationCommands.Copy.CanExecute(null, list), "Result copy command unavailable");
+        ApplicationCommands.Copy.Execute(null, list);
+        var copied = Clipboard.GetText();
+        Check(copied == "1: 123 한글😀\r\n4: 456 끝", "Routed Ctrl+C copy lost selection");
+        var height = Field<RowDefinition>(window, "ResultRow").ActualHeight;
+        Call(window, "MinimizeResults_Click", window, new RoutedEventArgs()); Pump();
+        Check(Field<RowDefinition>(window, "ResultRow").ActualHeight <= 29 && window.SearchSessions.Contains(session), "Minimize lost session or occupied editor space");
+        Call(window, "RestoreResults_Click", window, new RoutedEventArgs()); Pump();
+        Check(Math.Abs(Field<RowDefinition>(window, "ResultRow").ActualHeight - height) < 2, "Restore lost panel height");
+        Call(window, "DetachResults_Click", window, new RoutedEventArgs()); Pump();
+        var detached = Field<Window>(window, "_resultsWindow");
+        Check(detached is not null, "Detached window disappeared");
+        Check(detached.IsVisible && ReferenceEquals(detached.Content, Field<Border>(window, "ResultPanel")), "Result panel did not move into detached window");
+        list = Field<ListBox>(window, "_activeResultsList");
+        Check(list is not null, "Detached result list was not registered");
+        Check(list.SelectedItems.Count == 2, "Detaching lost selected rows");
+        ApplicationCommands.Copy.Execute(null, list);
+        Check(Clipboard.GetText() == copied, "Detached copy differs from docked copy");
+        detached.Activate(); list.Focus(); Pump();
+        Check(detached.IsActive && list.IsKeyboardFocusWithin, "Detached keyboard test did not acquire focus");
+        Clipboard.SetText("before keyboard copy");
+        SendCopyKeys();
+        WaitForClipboard(copied);
+        detached.Width = 640; detached.UpdateLayout();
+        foreach (var palette in ThemePalette.All)
+        {
+            Call(window, "ApplyTheme", palette.Id); Pump();
+            var bar = Field<Border>(window, "ResultsCommandBar");
+            Check(bar.ActualHeight <= 38, "Result toolbar uses more than one compact row");
+            foreach (var name in new[] { "CopyAllResultsButton", "ExtractAllButton", "CopySelectedResultsButton", "ExtractSelectedButton", "DetachResultsButton" })
+            {
+                var button = Field<Button>(window, name);
+                var point = button.TranslatePoint(new System.Windows.Point(), bar);
+                Check(point.X >= 0 && point.X + button.ActualWidth <= bar.ActualWidth + 1, "Result command clipped at minimum detached width: " + name);
+            }
+        }
+        Call(window, "MinimizeResults_Click", window, new RoutedEventArgs()); Pump();
+        Check(!detached.IsVisible, "Detached minimize did not hide window");
+        Call(window, "RestoreResults_Click", window, new RoutedEventArgs()); Pump();
+        Check(detached.IsVisible, "Detached restore did not show window");
+        detached.Close(); Pump();
+        Check(Field<ListBox>(window, "_activeResultsList") is not null, "Docked result list was not registered");
+        Check(Field<Window?>(window, "_resultsWindow") is null && Field<ListBox>(window, "_activeResultsList").SelectedItems.Count == 2,
+            "Closing detached window did not dock results with selection intact");
+        window.Activate();
+        list = Field<ListBox>(window, "_activeResultsList"); list.Focus(); Pump();
+        Clipboard.SetText("before docked keyboard copy");
+        SendCopyKeys();
+        WaitForClipboard(copied);
+        list.SelectedItems.Clear();
+        Clipboard.SetText("empty selection");
+        SendCopyKeys(); Pump();
+        Check(Clipboard.GetText() == "empty selection", "Ctrl+C without selected results changed clipboard");
+        Console.WriteLine("PASS compact result toolbar in five themes, routed copy, minimize/restore, detach/dock and selection preservation");
+    }
+
+    private static void WaitForClipboard(string expected)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        do
+        {
+            Pump();
+            if (Clipboard.GetText() == expected) return;
+            Thread.Sleep(10);
+        } while (watch.Elapsed < TimeSpan.FromSeconds(2));
+        throw new InvalidOperationException("Ctrl+C keyboard gesture did not copy selected results");
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+
+    private static void SendCopyKeys()
+    {
+        try
+        {
+            keybd_event(0x11, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(30); Pump();
+            keybd_event(0x43, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(30); Pump();
+        }
+        finally
+        {
+            keybd_event(0x43, 0, 2, UIntPtr.Zero);
+            keybd_event(0x11, 0, 2, UIntPtr.Zero);
+            Thread.Sleep(30); Pump();
         }
     }
 

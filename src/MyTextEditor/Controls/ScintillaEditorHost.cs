@@ -109,6 +109,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         _editor.SavePointReached += Editor_SavePointChanged;
         _editor.DragEnter += Editor_DragEnter;
         _editor.DragDrop += Editor_DragDrop;
+        _editor.GotFocus += Editor_GotFocus;
         InitializeExtras();
     }
 
@@ -194,6 +195,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     public int LinesOnScreen => _editor.LinesOnScreen;
 
     public event EventHandler? CaretChanged;
+    public event EventHandler? EditorFocused;
+    private void Editor_GotFocus(object? sender, EventArgs e) => EditorFocused?.Invoke(this, EventArgs.Empty);
     public event EventHandler? RevisionChanged;
     public event EventHandler? DirtyChanged;
     public event EventHandler? ViewportChanged;
@@ -211,6 +214,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         _editor.SavePointLeft -= Editor_SavePointChanged;
         _editor.SavePointReached -= Editor_SavePointChanged;
         _editor.DragEnter -= Editor_DragEnter;
+        _editor.GotFocus -= Editor_GotFocus;
         _editor.DragDrop -= Editor_DragDrop;
         ReleaseExtras();
         Child = null;
@@ -222,6 +226,14 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         VerticalScrolled = null;
         ShortcutRequested = null;
         FilesDropped = null;
+    }
+
+    public void ReloadUtf8(ReadOnlyMemory<byte> utf8)
+    {
+        var previousRevision = ContentRevision;
+        LoadUtf8(utf8);
+        ContentRevision = previousRevision + 1;
+        RevisionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public unsafe void LoadUtf8(ReadOnlyMemory<byte> utf8)

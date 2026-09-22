@@ -30,7 +30,7 @@ public partial class MainWindow
                 if (_closingInProgress || document is null || document.ContentRevision != revision) return false;
                 ClearTransformPreview();
                 document.Editor.ReplaceAll(text);
-                DocumentTabs.SelectedItem = document;
+                SelectDocument(document);
                 StatusMessage.Text = "매크로 결과를 적용했습니다. Ctrl+Z 한 번으로 되돌릴 수 있습니다.";
                 return true;
             },

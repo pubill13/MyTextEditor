@@ -47,6 +47,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private bool _highlightsPending;
     private string _highlightColor;
     private readonly List<WpfStackPanel> _gutterPool = [];
+    private readonly List<System.Windows.Shapes.Polygon> _gutterConnections = [];
     private readonly SortedSet<int> _visibleBlocks = [];
 
     public DiffTabView(DiffEndpoint left, DiffEndpoint right, DiffWindowOptions options,
@@ -250,6 +251,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (_leftEditor is not null) _leftEditor.ClearDiffHighlights();
         if (_rightEditor is not null) _rightEditor.ClearDiffHighlights();
         foreach (var panel in _gutterPool) panel.Visibility = Visibility.Collapsed;
+        foreach (var connector in _gutterConnections) connector.Visibility = Visibility.Collapsed;
+        BlockRangeText.Text = "내용이 변경되었습니다. 비교가 끝나면 반영 범위가 표시됩니다.";
         PositionText.Text = "0 / 0";
         StatisticsText.Text = string.Empty;
         PreviousButton.IsEnabled = NextButton.IsEnabled = false;
@@ -294,12 +297,45 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         PositionText.Text = count == 0 ? "0 / 0" : $"{_currentBlockIndex + 1} / {count}";
         StatisticsText.Text = _result is null ? string.Empty : $"추가 {_result.AddedLines}  삭제 {_result.DeletedLines}  수정 {_result.ModifiedLines}";
         StatusText.Text = count == 0 ? "두 내용이 같습니다." : $"차이 {count}개";
+        RefreshBlockRange();
         RefreshReadyState();
         RebuildMergeGutter();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void Previous_Click(object sender, RoutedEventArgs e) => NavigateDifference(-1);
+
+    internal static string DescribeRange(int startLine, int count) => count == 0
+        ? startLine <= 1 ? "문서 시작 삽입 위치" : $"{startLine - 1}행 뒤 삽입 위치"
+        : count == 1 ? $"{startLine}행" : $"{startLine}–{startLine + count - 1}행 ({count}행)";
+
+    internal static string DescribeMerge(DiffBlock block, DiffSide sourceSide)
+    {
+        var source = sourceSide == DiffSide.Left ? "왼쪽" : "오른쪽";
+        var target = sourceSide == DiffSide.Left ? "오른쪽" : "왼쪽";
+        if (block.IsTerminalNewLineChange) return $"{source}의 파일 끝 개행 상태를 {target}에 반영";
+        var sourceStart = sourceSide == DiffSide.Left ? block.LeftStartLine : block.RightStartLine;
+        var sourceCount = sourceSide == DiffSide.Left ? block.LeftLineCount : block.RightLineCount;
+        var targetStart = sourceSide == DiffSide.Left ? block.RightStartLine : block.LeftStartLine;
+        var targetCount = sourceSide == DiffSide.Left ? block.RightLineCount : block.LeftLineCount;
+        if (sourceCount == 0) return $"{target} {DescribeRange(targetStart, targetCount)} 삭제 ({source}에는 없는 내용)";
+        if (targetCount == 0) return $"{source} {DescribeRange(sourceStart, sourceCount)} → {target} {DescribeRange(targetStart, 0)}에 추가";
+        return $"{source} {DescribeRange(sourceStart, sourceCount)} → {target} {DescribeRange(targetStart, targetCount)}를 대체";
+    }
+
+    private void RefreshBlockRange()
+    {
+        if (_result is null || _currentBlockIndex < 0 || _currentBlockIndex >= _result.Blocks.Count)
+        {
+            BlockRangeText.Text = "선택된 차이가 없습니다.";
+            return;
+        }
+        var block = _result.Blocks[_currentBlockIndex];
+        BlockRangeText.Text = block.IsTerminalNewLineChange
+            ? $"차이 {_currentBlockIndex + 1}: 파일 끝 개행 유무 차이"
+            : $"차이 {_currentBlockIndex + 1}: 왼쪽 {DescribeRange(block.LeftStartLine, block.LeftLineCount)}  ↔  오른쪽 {DescribeRange(block.RightStartLine, block.RightLineCount)}";
+        BlockRangeText.ToolTip = DescribeMerge(block, DiffSide.Right) + "\n" + DescribeMerge(block, DiffSide.Left) + "\n반영 후 Ctrl+Z로 되돌릴 수 있습니다.";
+    }
     private void Next_Click(object sender, RoutedEventArgs e) => NavigateDifference(1);
 
     internal void NavigateDifference(int delta)
@@ -369,7 +405,6 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         foreach (var index in _visibleBlocks)
         {
             var block = _result.Blocks[index];
-            if (block.IsTerminalNewLineChange) continue;
             var leftVisible = BlockVisible(block, _leftEditor, true);
             var editor = leftVisible ? _leftEditor : _rightEditor;
             var line = (leftVisible ? block.LeftStartLine : block.RightStartLine) - 1;
@@ -379,6 +414,18 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             if (used == _gutterPool.Count) _gutterPool.Add(CreateGutterButtons());
             var panel = _gutterPool[used++];
             panel.Visibility = Visibility.Visible;
+            var connector = _gutterConnections[used - 1];
+            var leftRange = GetVisibleBlockRange(block.LeftStartLine, block.LeftLineCount, _leftEditor);
+            var rightRange = GetVisibleBlockRange(block.RightStartLine, block.RightLineCount, _rightEditor);
+            var width = MergeGutterCanvas.ActualWidth;
+            connector.Points = new PointCollection
+            {
+                new(0, leftRange.Top), new(width, rightRange.Top),
+                new(width, rightRange.Bottom), new(0, leftRange.Bottom)
+            };
+            connector.Visibility = Visibility.Visible;
+            connector.Opacity = index == _currentBlockIndex ? 0.65 : 0.22;
+            connector.StrokeThickness = index == _currentBlockIndex ? 2 : 1;
             var left = (WpfButton)panel.Children[0];
             var right = (WpfButton)panel.Children[1];
             var firstLine = Math.Min(editor.FirstVisibleLine, Math.Max(0, editor.LineCount - 2));
@@ -387,24 +434,57 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             left.Height = right.Height = Math.Clamp(lineHeight, 10, 25);
             left.FontSize = right.FontSize = Math.Clamp(lineHeight - 2, 7, 14);
             left.Tag = right.Tag = index;
+            left.ToolTip = DescribeMerge(block, DiffSide.Right) + "\nCtrl+Z로 되돌리기";
+            right.ToolTip = DescribeMerge(block, DiffSide.Left) + "\nCtrl+Z로 되돌리기";
             left.IsEnabled = !_leftEditor.IsReadOnly;
             right.IsEnabled = !_rightEditor.IsReadOnly;
             Canvas.SetTop(panel, top);
         }
-        for (var index = used; index < _gutterPool.Count; index++) _gutterPool[index].Visibility = Visibility.Collapsed;
+        for (var index = used; index < _gutterPool.Count; index++)
+        {
+            _gutterPool[index].Visibility = Visibility.Collapsed;
+            _gutterConnections[index].Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private (double Top, double Bottom) GetVisibleBlockRange(int start, int count, ScintillaEditorHost editor)
+    {
+        var offset = editor.TranslatePoint(new System.Windows.Point(0, 0), MergeGutterCanvas).Y;
+        var line = Math.Clamp(start - 1, 0, Math.Max(0, editor.LineCount - 1));
+        var first = Math.Min(editor.FirstVisibleLine, Math.Max(0, editor.LineCount - 2));
+        var height = editor.LineCount > 1 ? Math.Abs(editor.GetLineY(first + 1) - editor.GetLineY(first)) : 18;
+        var top = offset + editor.GetLineY(line);
+        var bottom = top + (count == 0 ? 2 : Math.Max(1, count) * height);
+        return (Math.Clamp(top, 0, MergeGutterCanvas.ActualHeight), Math.Clamp(bottom, 0, MergeGutterCanvas.ActualHeight));
     }
 
     private WpfStackPanel CreateGutterButtons()
     {
         var panel = new WpfStackPanel { Orientation = WpfOrientation.Horizontal };
-        var left = new WpfButton { Content = "←", Width = 31, Height = 25, Padding = new Thickness(0), ToolTip = "오른쪽 블록을 왼쪽으로 병합" };
-        var right = new WpfButton { Content = "→", Width = 31, Height = 25, Margin = new Thickness(4, 0, 0, 0), Padding = new Thickness(0), ToolTip = "왼쪽 블록을 오른쪽으로 병합" };
+        var connector = new System.Windows.Shapes.Polygon { IsHitTestVisible = false };
+        connector.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "AccentBrush");
+        connector.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "AccentBrush");
+        System.Windows.Controls.Panel.SetZIndex(connector, -1);
+        MergeGutterCanvas.Children.Add(connector);
+        _gutterConnections.Add(connector);
+        var left = new WpfButton { Content = "← 반영", Width = 49, Height = 25, Padding = new Thickness(0), ToolTip = "오른쪽 블록을 왼쪽으로 병합" };
+        var right = new WpfButton { Content = "반영 →", Width = 49, Height = 25, Margin = new Thickness(4, 0, 0, 0), Padding = new Thickness(0), ToolTip = "왼쪽 블록을 오른쪽으로 병합" };
+        left.MouseEnter += GutterButton_MouseEnter;
+        right.MouseEnter += GutterButton_MouseEnter;
         left.Click += MergeBlockToLeft_Click;
         right.Click += MergeBlockToRight_Click;
         panel.Children.Add(left); panel.Children.Add(right);
-        Canvas.SetLeft(panel, 1);
+        Canvas.SetLeft(panel, 4);
         MergeGutterCanvas.Children.Add(panel);
         return panel;
+    }
+
+    private void GutterButton_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        SelectTaggedBlock(sender);
+        RefreshBlockRange();
+        RebuildMergeGutter();
+        if (sender is WpfButton button) StatusText.Text = button.ToolTip?.ToString()?.Split('\n')[0] ?? string.Empty;
     }
 
     private static bool BlockVisible(DiffBlock block, ScintillaEditorHost editor, bool left)
@@ -463,6 +543,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         {
             _currentBlockIndex = candidate.Index;
             PositionText.Text = $"{candidate.Index + 1} / {blocks.Count}";
+            RefreshBlockRange();
+            RebuildMergeGutter();
         }
     }
 
@@ -813,6 +895,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _resourcesReleased = true;
         CancelGutterUpdate();
         _gutterPool.Clear();
+        _gutterConnections.Clear();
         MergeGutterCanvas.Children.Clear();
         _generation++;
         _recompareTimer.Stop();

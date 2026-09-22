@@ -187,8 +187,12 @@ public sealed class TextTransformService
     }
 
     public LogCleanupResult CleanupLog(string text, string newLine = "\r\n")
+        => CleanupLog(text, new LogCleanupOptions(), newLine);
+
+    public LogCleanupResult CleanupLog(string text, LogCleanupOptions options, string newLine = "\r\n")
     {
         ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(options);
         ValidateNewLine(newLine);
 
         var lines = TextLines.Split(text);
@@ -205,14 +209,17 @@ public sealed class TextTransformService
         for (var index = 0; index < contentLineCount; index++)
         {
             var original = lines[index];
-            var cleaned = CleanLogLine(original, ref ansiSequencesRemoved, ref controlCharactersRemoved);
+            var cleaned = options.RemoveAnsiAndControlCharacters
+                ? CleanLogLine(original, ref ansiSequencesRemoved, ref controlCharactersRemoved)
+                : original;
             var contentEnd = cleaned.Length;
-            while (contentEnd > 0 && cleaned[contentEnd - 1] is ' ' or '\t') contentEnd--;
+            if (options.TrimTrailingWhitespace)
+                while (contentEnd > 0 && cleaned[contentEnd - 1] is ' ' or '\t') contentEnd--;
             trailingWhitespaceCharactersRemoved += cleaned.Length - contentEnd;
             if (contentEnd != cleaned.Length) cleaned = cleaned[..contentEnd];
 
-            var isBlank = cleaned.Length == 0;
-            var keep = !isBlank || !previousWasBlank;
+            var isBlank = cleaned.Length == 0 || (!options.TrimTrailingWhitespace && string.IsNullOrWhiteSpace(cleaned));
+            var keep = !options.CollapseBlankLines || !isBlank || !previousWasBlank;
             previousWasBlank = isBlank;
             if (keep) cleanedLines.Add(cleaned);
             else collapsedBlankLines++;
@@ -224,6 +231,7 @@ public sealed class TextTransformService
 
         var result = string.Join(newLine, cleanedLines);
         if (hasTerminalNewLine && cleanedLines.Count > 0) result += newLine;
+        if (!preview.Any(line => line.Status == TextChangeStatus.Changed)) result = text;
         return new LogCleanupResult(
             BuildResult(result, preview),
             new LogCleanupSummary(ansiSequencesRemoved, controlCharactersRemoved,

@@ -84,6 +84,8 @@
             <MenuItem Header="보기(_V)">
                 <MenuItem x:Name="ToolsMenuItem" Header="도구 패널" IsCheckable="True" IsChecked="True" Click="ToggleTools_Click" />
                 <MenuItem x:Name="ResultsMenuItem" Header="결과 패널" IsCheckable="True" IsChecked="False" Click="ToggleResults_Click" />
+                <MenuItem x:Name="SplitDocumentsMenuItem" Header="문서 좌우 분할" IsCheckable="True" Click="ToggleDocumentSplit_Click" />
+                <MenuItem x:Name="SyncFilesMenuItem" Header="외부 파일 변경 자동 반영" IsCheckable="True" Click="SyncFiles_Click" />
                 <Separator />
                 <MenuItem x:Name="ThemeMenu" Header="색상 테마" />
                 <MenuItem Header="글자 확대" InputGestureText="Ctrl++" Click="ZoomIn_Click" />
@@ -154,7 +156,7 @@
             </Grid>
         </Border>
 
-        <Grid>
+        <Grid x:Name="MainContentGrid">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition x:Name="ToolSplitterColumn" Width="5" />
@@ -167,8 +169,9 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource SurfaceBrush}">
-                <Grid>
-                    <TabControl x:Name="DocumentTabs" ItemsSource="{Binding Documents}" SelectionChanged="DocumentTabs_SelectionChanged">
+                <Grid x:Name="DocumentPanesGrid">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="DocumentPaneSplitterColumn" Width="0"/><ColumnDefinition x:Name="RightDocumentColumn" Width="0"/></Grid.ColumnDefinitions>
+                    <TabControl x:Name="DocumentTabs" ItemsSource="{Binding LeftDocuments}" SelectionChanged="DocumentTabs_SelectionChanged" PreviewMouseDown="DocumentPane_MouseDown" GotKeyboardFocus="DocumentPane_GotKeyboardFocus">
                         <TabControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
@@ -177,6 +180,7 @@
                                             <MenuItem Header="탭 닫기" Click="DocumentTabMenuClose_Click" />
                                             <MenuItem Header="다른 탭 닫기" Click="DocumentTabMenuCloseOthers_Click" />
                                             <MenuItem Header="모든 탭 닫기" Click="DocumentTabMenuCloseAll_Click" />
+                                            <MenuItem Header="다른 쪽으로 이동" Click="MoveDocumentPane_Click" />
                                             <Separator />
                                             <MenuItem Header="전체 경로 복사" Click="DocumentTabMenuCopyPath_Click" />
                                         </ContextMenu>
@@ -193,7 +197,9 @@
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>
-                    <Border x:Name="EmptyDocumentState" Background="{DynamicResource SurfaceBrush}" Visibility="Collapsed">
+                    <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}" />
+                    <TabControl x:Name="RightDocumentTabs" Grid.Column="2" Visibility="Collapsed" ItemsSource="{Binding RightDocuments}" ItemTemplate="{Binding ItemTemplate, ElementName=DocumentTabs}" ContentTemplate="{Binding ContentTemplate, ElementName=DocumentTabs}" SelectionChanged="DocumentTabs_SelectionChanged" PreviewMouseDown="DocumentPane_MouseDown" GotKeyboardFocus="DocumentPane_GotKeyboardFocus" />
+                    <Border x:Name="EmptyDocumentState" Grid.ColumnSpan="3" Background="{DynamicResource SurfaceBrush}" Visibility="Collapsed">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="340">
                             <Viewbox Width="72" Height="72" Margin="0,0,0,18">
                                 <Canvas Width="64" Height="64">
@@ -257,8 +263,8 @@
                                             <CheckBox x:Name="IncludeSubfoldersCheck" Content="하위 폴더 포함" IsChecked="True" />
                                             <TextBlock Text="파일 형식 (; 구분)"/><TextBox x:Name="FolderPatternBox" Text="*.txt;*.log;*.csv;*.md;*.json;*.xml;*.yaml;*.yml;*.ini;*.cfg;*.cs;*.py;*.js;*.ts;*.sql;*.out" />
                                         </StackPanel>
-                                        <TextBlock Text="조건 검색" FontWeight="SemiBold" />
                                         <StackPanel x:Name="ConditionInputsPanel" Visibility="Collapsed">
+                                            <TextBlock Text="조건 검색" FontWeight="SemiBold" Margin="0,16,0,7" />
                                             <TextBlock Text="쉼표로 여러 검색어를 구분할 수 있습니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" />
                                             <TextBlock Text="모두 포함" Margin="0,5,0,3"/><TextBox x:Name="SimpleAllBox" ToolTip="예: AAA, BBB — 쉼표로 추가" TextChanged="SimpleCondition_TextChanged" KeyDown="SearchInput_KeyDown" GotKeyboardFocus="SearchField_GotKeyboardFocus"/>
                                             <WrapPanel x:Name="SimpleAllTags" Margin="0,4,0,0" />
@@ -352,10 +358,10 @@
                                             <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="빈 줄 제거"/><Button Grid.Row="1" Grid.Column="1" Content="미리보기" Tag="Blank" ToolTip="빈 줄 제거" Click="QuickTransform_Click"/><Button Grid.Row="1" Grid.Column="2" Content="적용" Tag="Blank" ToolTip="빈 줄 제거" Click="ApplyQuickTransform_Click"/>
                                             <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="빈 줄 합치기"/><Button Grid.Row="2" Grid.Column="1" Content="미리보기" Tag="Collapse" ToolTip="빈 줄 합치기" Click="QuickTransform_Click"/><Button Grid.Row="2" Grid.Column="2" Content="적용" Tag="Collapse" ToolTip="빈 줄 합치기" Click="ApplyQuickTransform_Click"/>
                                             <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="앞뒤 공백 제거"/><Button Grid.Row="3" Grid.Column="1" Content="미리보기" Tag="Whitespace" ToolTip="앞뒤 공백 제거" Click="QuickTransform_Click"/><Button Grid.Row="3" Grid.Column="2" Content="적용" Tag="Whitespace" ToolTip="앞뒤 공백 제거" Click="ApplyQuickTransform_Click"/>
-                                            <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="로그 정리" ToolTip="ANSI 코드·제어문자·줄 끝 공백·연속 빈 줄을 정리합니다."/><Button Grid.Row="4" Grid.Column="1" Content="미리보기" Tag="LogCleanup" ToolTip="로그 정리" Click="QuickTransform_Click"/><Button Grid.Row="4" Grid.Column="2" Content="적용" Tag="LogCleanup" ToolTip="로그 정리" Click="ApplyQuickTransform_Click"/>
+                                            <Button Grid.Row="4" Content="로그 정리 옵션…" Padding="4,2" HorizontalAlignment="Left" ToolTip="ANSI·제어문자, 줄 끝 공백, 빈 줄 중 필요한 정리만 선택" Click="LogCleanupOptions_Click"/><Button Grid.Row="4" Grid.Column="1" Content="미리보기" Tag="LogCleanup" ToolTip="선택한 로그 정리 옵션 미리보기" Click="QuickTransform_Click"/><Button Grid.Row="4" Grid.Column="2" Content="적용" Tag="LogCleanup" ToolTip="선택한 로그 정리 옵션 적용" Click="ApplyQuickTransform_Click"/>
                                         </Grid>
                                         <Separator Margin="0,10" />
-                                        <TextBlock Text="특정 문장 포함 줄 삭제" FontWeight="SemiBold" />
+                                        <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="3,0,0,0" Padding="7,3" Background="{DynamicResource SurfaceAltBrush}"><TextBlock Text="특정 문장 포함 줄 삭제" FontWeight="SemiBold" FontSize="14" /></Border>
                                         <TextBlock Text="포함된 문장" Margin="0,7,0,3" /><TextBox x:Name="DeleteContainingBox" ToolTip="예: 연결 시간 초과" />
                                         <CheckBox x:Name="DeleteContainingMatchCaseCheck" Content="대소문자 구분" />
                                         <WrapPanel>
@@ -363,7 +369,7 @@
                                             <Button Content="바로 삭제" Foreground="{DynamicResource DangerBrush}" Click="ApplyDeleteContainingDirect_Click" ToolTip="확인창 없이 적용하며 Ctrl+Z로 되돌릴 수 있습니다." />
                                         </WrapPanel>
                                         <Separator Margin="0,10" />
-                                        <TextBlock Text="일괄 치환" FontWeight="SemiBold" />
+                                        <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="3,0,0,0" Padding="7,3" Background="{DynamicResource SurfaceAltBrush}"><TextBlock Text="일괄 치환" FontWeight="SemiBold" FontSize="14" /></Border>
                                         <TextBlock Text="찾을 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceFromBox" />
                                         <TextBlock Text="바꿀 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceToBox" />
                                         <WrapPanel>
@@ -381,22 +387,33 @@
             </Border>
 
             <GridSplitter Grid.Row="1" Grid.Column="0" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource BorderBrush}" DragCompleted="PanelSplitter_DragCompleted" />
+            <Border x:Name="ResultRestoreBar" Grid.Row="2" Grid.Column="0" Visibility="Collapsed" Background="{DynamicResource SurfaceAltBrush}">
+                <Button x:Name="RestoreResultsButton" Content="검색 결과 펼치기 ▴" HorizontalAlignment="Left" Padding="9,1" Margin="3,0" MinHeight="26" Click="RestoreResults_Click" ToolTip="접어 둔 검색 결과와 미리보기 다시 표시" />
+            </Border>
             <Border x:Name="ResultPanel" Grid.Row="2" Grid.Column="0" Visibility="Collapsed" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <DockPanel x:Name="SearchResultsView">
-                        <Border DockPanel.Dock="Top" Padding="9,5" Background="{DynamicResource SurfaceAltBrush}">
-                            <StackPanel>
-                                <TextBlock x:Name="SearchSessionStatus" Text="검색 결과" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <WrapPanel>
-                                    <Button x:Name="CopyAllResultsButton" Content="전체 복사" Style="{StaticResource PrimaryButton}" ToolTip="현재 검색 탭의 모든 일치 행 복사" Click="CopyAllResults_Click" />
-                                    <Button x:Name="ExtractAllButton" Content="전체를 새 문서로" ToolTip="모든 일치 행의 본문만 새 문서로 복사" Click="ExtractAllResults_Click" />
-                                    <CheckBox x:Name="IncludeLineNumbersCheck" Content="복사 시 줄 번호 포함" VerticalAlignment="Center" Checked="IncludeLineNumbers_Changed" Unchecked="IncludeLineNumbers_Changed" />
-                                </WrapPanel>
-                                <WrapPanel>
+                        <DockPanel.CommandBindings>
+                            <CommandBinding Command="ApplicationCommands.Copy" CanExecute="CopyResultCommand_CanExecute" Executed="CopyResultCommand_Executed" />
+                        </DockPanel.CommandBindings>
+                        <Border x:Name="ResultsCommandBar" DockPanel.Dock="Top" Padding="4,2" Background="{DynamicResource SurfaceAltBrush}" ToolTip="{Binding Text, ElementName=SearchSessionStatus}">
+                            <DockPanel LastChildFill="True">
+                                <DockPanel.Resources>
+                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="6,2"/><Setter Property="Margin" Value="2,0"/><Setter Property="MinHeight" Value="26"/></Style>
+                                </DockPanel.Resources>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button x:Name="DetachResultsButton" Content="↗" Click="DetachResults_Click" ToolTip="검색 결과를 별도 창으로 보기 / 본창으로 되돌리기" />
+                                    <Button Content="—" Click="MinimizeResults_Click" ToolTip="검색 결과를 아래로 접기" />
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                    <Button x:Name="CopyAllResultsButton" Content="전체 복사" Style="{StaticResource PrimaryButton}" Padding="6,2" Margin="2,0" MinHeight="26" ToolTip="현재 검색 탭의 모든 일치 행 복사" Click="CopyAllResults_Click" />
+                                    <Button x:Name="ExtractAllButton" Content="전체 새 문서" ToolTip="모든 일치 행의 본문만 새 문서로 복사" Click="ExtractAllResults_Click" />
                                     <Button x:Name="CopySelectedResultsButton" Content="선택 복사" ToolTip="선택한 결과 행 복사 (결과 목록에서 Ctrl+C)" Click="CopySelectedResults_Click" />
-                                    <Button x:Name="ExtractSelectedButton" Content="선택을 새 문서로" ToolTip="선택한 일치 행의 본문만 새 문서로 복사" Click="ExtractSelectedResults_Click" />
-                                    <Menu VerticalAlignment="Center" Background="Transparent" Margin="3">
+                                    <Button x:Name="ExtractSelectedButton" Content="선택 새 문서" ToolTip="선택한 일치 행의 본문만 새 문서로 복사" Click="ExtractSelectedResults_Click" />
+                                    <Menu VerticalAlignment="Center" Background="Transparent" Margin="2,0">
                                         <MenuItem Header="더 보기 ▾" ToolTip="삭제 미리보기와 검색 결과 탭 닫기">
+                                            <MenuItem StaysOpenOnClick="True"><MenuItem.Header><CheckBox x:Name="IncludeLineNumbersCheck" Content="복사 시 줄 번호 포함" Checked="IncludeLineNumbers_Changed" Unchecked="IncludeLineNumbers_Changed" /></MenuItem.Header></MenuItem>
+                                            <Separator/>
                                             <MenuItem x:Name="DeleteSelectedButton" Header="선택 행 삭제 미리보기" Foreground="{DynamicResource DangerBrush}" Click="DeleteSelectedResults_Click" />
                                             <MenuItem x:Name="DeleteAllButton" Header="전체 일치 행 삭제 미리보기" Foreground="{DynamicResource DangerBrush}" Click="DeleteAllResults_Click" />
                                             <Separator/>
@@ -404,10 +421,12 @@
                                             <MenuItem Header="모든 검색 결과 닫기" Click="CloseAllResults_Click" />
                                         </MenuItem>
                                     </Menu>
-                                </WrapPanel>
-                            </StackPanel>
+                                </StackPanel>
+                                <TextBlock x:Name="SearchSessionStatus" Text="검색 결과" FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="5,0" />
+                            </DockPanel>
                         </Border>
                         <TabControl x:Name="SearchResultTabs" ItemsSource="{Binding SearchSessions}" SelectionChanged="SearchResultTabs_SelectionChanged">
+                            <TabControl.ItemContainerStyle><Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}"><Setter Property="Padding" Value="8,3"/><Setter Property="FontSize" Value="12"/></Style></TabControl.ItemContainerStyle>
                             <TabControl.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" ToolTip="{Binding ToolTip}">
                                 <StackPanel.ContextMenu><ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                     <MenuItem Header="결과 닫기" Click="SearchTabMenuClose_Click"/>
@@ -416,13 +435,13 @@
                                     <Separator/>
                                     <MenuItem Header="검색 조건 복사" Click="SearchTabMenuCopyCondition_Click"/>
                                 </ContextMenu></StackPanel.ContextMenu>
-                                <TextBlock Text="{Binding Title}" Margin="0,0,7,0"/><Button Content="×" Tag="{Binding}" Padding="2,0" Margin="0" Background="Transparent" BorderThickness="0" Click="SearchResultClose_Click"/></StackPanel></DataTemplate></TabControl.ItemTemplate>
+                                <TextBlock Text="{Binding Title}" Margin="0,0,7,0" VerticalAlignment="Center"/><Button Content="×" Tag="{Binding}" Padding="2,0" MinHeight="18" Height="18" Margin="0" Background="Transparent" BorderThickness="0" Click="SearchResultClose_Click"/></StackPanel></DataTemplate></TabControl.ItemTemplate>
                             <TabControl.ContentTemplate><DataTemplate><DockPanel>
                                 <Grid DockPanel.Dock="Top" Margin="8,3"><Grid.ColumnDefinitions><ColumnDefinition Width="112"/><ColumnDefinition Width="128"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="원본 줄 번호"/><TextBlock Grid.Column="1" Text="파일"/><TextBlock Grid.Column="2" Text="내용"/></Grid>
                                 <ListBox ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource SearchResultRowTemplate}" SelectionMode="Extended"
                                          ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                                          Loaded="SearchResultsList_Loaded" Unloaded="SearchResultsList_Unloaded" SelectionChanged="SearchResultsList_SelectionChanged"
-                                         PreviewMouseUp="SearchResultsList_MouseLeftButtonUp" MouseDoubleClick="SearchResultsList_MouseDoubleClick" KeyDown="SearchResultsList_KeyDown" />
+                                         PreviewMouseUp="SearchResultsList_MouseLeftButtonUp" MouseDoubleClick="SearchResultsList_MouseDoubleClick" PreviewKeyDown="SearchResultsList_KeyDown" />
                             </DockPanel></DataTemplate></TabControl.ContentTemplate>
                         </TabControl>
                     </DockPanel>

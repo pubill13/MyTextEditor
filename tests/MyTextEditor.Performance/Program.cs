@@ -21,12 +21,26 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        try { return Run(args); }
+        catch (Exception exception)
+        {
+            // Fail with a usable exit code instead of leaving a Windows crash dialog holding the DLLs.
+            Console.Error.WriteLine(exception);
+            return 1;
+        }
+    }
+
+    private static int Run(string[] args)
+    {
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
         if (args.Contains("--v18")) return V18Verification.Run();
         if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();
         if (args.Contains("--omni-theme")) return OmniThemeVerification.Run();
         if (args.Contains("--omni-search")) return OmniSearchVerification.Run();
+        if (args.Contains("--document-panes")) return DocumentPanesVerification.Run();
+        if (args.Contains("--file-sync")) return FileSyncVerification.Run();
+        if (args.Contains("--merge-clarity")) return MergeClarityVerification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))
