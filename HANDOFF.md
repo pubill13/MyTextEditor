@@ -10,7 +10,7 @@
 
 Performance 테스트 진입점은 실패를 stderr/exit 1로 보고하여 Windows 오류 보고 창이 테스트 DLL을 점유하지 않게 했다. 실제 키 입력 검사(`--document-panes`, `--search-actions`)는 정상 Windows 데스크톱 입력 권한과 foreground가 필요하다. 제한된 실행에서 Ctrl+W 입력 전달 실패가 있었고 정상 권한 실행에서 통과했다. 멈춘 테스트를 정리할 때는 명령행으로 확인된 Performance 프로세스만 종료하고 사용자의 OmniEdit 프로세스는 종료하지 않는다.
 
-배포: 사용자 요청으로 버전을 1.9.3으로 올리고 `artifacts/v1.9.3/`에 자체 포함 EXE·ZIP을 생성했다. EXE 80,069,014바이트, FileVersion 1.9.3.0의 실제 시작·정상 종료(exit 0)를 확인했다. main/v1.9.3 및 GitHub Release 게시 대상으로 준비했으며 배포 상태는 원격 태그/Release에서 확인한다. 다음 수동 확인 항목은 실제 125/150% DPI·IME다. 사용자 `.gitignore` 변경은 보존한다.
+배포 완료: 버전 1.9.3, 구현 커밋 `6083a88`, `main`과 `v1.9.3` 태그를 원격에 반영했다. https://github.com/pubill13/MyTextEditor/releases/tag/v1.9.3 에 EXE(80,069,014바이트)와 ZIP(74,541,773바이트)을 게시했다. `artifacts/v1.9.3/`의 EXE FileVersion 1.9.3.0 실제 시작·정상 종료(exit 0), 공개 API의 두 SHA-256과 UTF-8 한글 릴리즈 설명 일치를 확인했다. 다음 수동 확인 항목은 실제 125/150% DPI·IME다. 사용자 `.gitignore` 변경은 보존한다.
 
 ## 1.9.2 결과 영역 UX (로컬 작업)
 
