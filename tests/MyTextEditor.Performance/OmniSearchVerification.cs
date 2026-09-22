@@ -38,8 +38,12 @@ internal static class OmniSearchVerification
             Require(window.Documents.Count == 1 && window.Documents[0].FilePath == file &&
                 !window.Documents[0].IsModified,
                 "Command-line file did not replace initial blank tab");
+            Field<CheckBox>(window, "FolderSearchCheck").IsChecked = false;
+            Field<CheckBox>(window, "UseConditionSearchCheck").IsChecked = true;
+            Field<TextBox>(window, "LiteralFindBox").Text = "";
+            Require(!Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Empty literal must disable Find");
             Field<TextBox>(window, "LiteralFindBox").Text = "AAA";
-            Field<CheckBox>(window, "UseConditionSearchCheck").IsChecked = false;
+            Require(Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Saved condition mode must not disable literal Find");
             Call(window, "FindOccurrence_Click", window, new RoutedEventArgs());
             Require(window.Documents[0].Editor.SelectedText == "AAA" && window.SearchSessions.Count == 0,
                 "Ordinary find must select one occurrence without creating results");
@@ -52,7 +56,28 @@ internal static class OmniSearchVerification
             Require(window.SearchSessions.Last().Rows.Count == 2 &&
                 window.SearchSessions.Last().Rows.All(row => row.Source?.Snapshot is not null),
                 "Open-document search lost snapshot/source");
-            Call(window, "SearchFolder_Click", window, new RoutedEventArgs());
+            var otherFolder = Path.Combine(directory, "selected-folder");
+            Directory.CreateDirectory(otherFolder);
+            File.WriteAllText(Path.Combine(otherFolder, "chosen.log"), "선택한 폴더 AAA", new UTF8Encoding(false));
+            Field<CheckBox>(window, "FolderSearchCheck").IsChecked = true;
+            Field<TextBox>(window, "SearchFolderPathBox").Text = "";
+            Require(!Field<System.Windows.Controls.Button>(window, "SearchAllButton").IsEnabled, "Folder search requires a selected folder");
+            Field<TextBox>(window, "SearchFolderPathBox").Text = otherFolder;
+            Call(window, "Search_Click", window, new RoutedEventArgs());
+            PumpUntil(() => window.SearchSessions.Last().Rows.Any(row => row.Source?.DisplayName == "chosen.log"));
+            Require(window.SearchSessions.Last().Rows.Count == 1, "Search must use selected folder instead of current document folder");
+            Call(window, "CaptureWorkState");
+            var saved = Field<UserSettings>(window, "_settings");
+            Require(saved.SearchInFolder && saved.SearchFolderPath == otherFolder, "Folder scope settings were not captured");
+            Field<CheckBox>(window, "FolderSearchCheck").IsChecked = false;
+            Field<TextBox>(window, "SearchFolderPathBox").Text = "";
+            Call(window, "RestoreWorkState");
+            Require(Field<CheckBox>(window, "FolderSearchCheck").IsChecked == true &&
+                Field<TextBox>(window, "SearchFolderPathBox").Text == otherFolder,
+                "Selected folder and scope did not restore");
+            Field<TextBox>(window, "SearchFolderPathBox").Text = directory;
+            Field<CheckBox>(window, "IncludeSubfoldersCheck").IsChecked = false;
+            Call(window, "Search_Click", window, new RoutedEventArgs());
             PumpUntil(() => window.SearchSessions.Last().Rows.Count == 3);
             var folderResult = window.SearchSessions.Last();
             Require(folderResult.Rows.Select(row => row.Source?.DisplayName).Distinct().Count() == 2,

@@ -1,5 +1,13 @@
 # OmniEdit 작업 인수인계
 
+## 1.9.1 검색 UX 수정 (로컬 작업)
+
+로컬 자체 포함 실행 파일: `artifacts/v1.9.1/win-x64/OmniEdit.exe` (1.9.1.0). Release 빌드 오류/경고 0, 게시된 EXE 실제 시작 및 정상 종료(exit 0)를 확인했다.
+
+사용자 요청 3건을 수정했다. `폴더 내 검색` 체크박스를 켜면 폴더 선택과 하위 폴더/파일 패턴 옵션을 표시하고 `폴더 모두 찾기`로 선택한 경로를 검색한다. 현재 파일의 폴더를 자동으로 검색하지 않는다. UserSettings의 SearchInFolder/SearchFolderPath에 범위와 경로를 저장한다. 일반 찾기 버튼은 포함·제외 조건 모드가 저장되어 있어도 텍스트가 있으면 활성화되며, 클릭/Enter로 일반 모드의 다음 위치를 찾는다. 기존 조건 입력은 보존한다. 공통 체크박스 표시를 중앙 정렬하고 저장과 검색·정리 사이에 구분선을 추가했다.
+
+주요 파일: MainWindow.xaml, MainWindow.xaml.cs, MainWindow.SearchWorkflow.cs, Models/UserSettings.cs, Themes/Controls.xaml. README와 도움말을 반영하고 버전은 1.9.1로 올렸다. OmniSearchVerification에 기존 조건 모드의 일반 찾기, 다른 폴더 선택, 폴더 미선택 차단, 경로/범위 설정 캡처·복원 회귀를 추가했다. Core 41/41, Omni 검색 GUI, 패널 UX 5개 테마/1040·1920 논리 폭 검사를 통과했다. 실제 DPI는 100%이며 다른 배율과 물리 IME는 미검증이다. GitHub의 최신 배포는 아래 v1.9이며 이번 변경은 아직 커밋/게시하지 않았다. 사용자 .gitignore 변경은 보존한다.
+
 ## 현재 작업: OmniEdit 1.9.0
 
 사용자가 요청한 12개 사용성 문제의 구현과 Windows용 자체 포함 EXE/ZIP 배포를 완료했다. 내부 C# 네임스페이스와 `%LOCALAPPDATA%\MyTextEditor` 설정 경로는 기존 사용자 설정 호환성을 위해 유지하고, 화면 제목·도움말·아이콘·실행 파일 이름을 OmniEdit로 바꿨다. 사용자가 만든 `.gitignore`의 `테스트파일/` 변경과 대용량 테스트 파일은 건드리지 않았다.

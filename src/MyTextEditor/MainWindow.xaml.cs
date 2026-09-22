@@ -636,12 +636,17 @@ public partial class MainWindow : Window
     private void UpdateConditionSummary()
     {
         var valid = SimpleDescriptions().Length > 0;
-        ConditionSummaryText.Text = !valid
-            ? "검색 조건을 입력하세요."
-            : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다.";
+        ConditionSummaryText.Text = UseConditionSearchCheck.IsChecked == true
+            ? !valid ? "검색 조건을 입력하세요." : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다."
+            : string.IsNullOrEmpty(LiteralFindBox.Text) ? "찾을 텍스트를 입력하세요." : $"'{LiteralFindBox.Text}'을(를) 찾습니다.";
         ConditionInputsPanel.Visibility = UseConditionSearchCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        SearchButton.IsEnabled = !string.IsNullOrEmpty(LiteralFindBox.Text) && UseConditionSearchCheck.IsChecked != true;
-        SearchAllButton.IsEnabled = SearchOpenButton.IsEnabled = SearchFolderButton.IsEnabled = UseConditionSearchCheck.IsChecked == true ? valid : !string.IsNullOrEmpty(LiteralFindBox.Text);
+        SearchButton.IsEnabled = !string.IsNullOrEmpty(LiteralFindBox.Text);
+        var canSearch = UseConditionSearchCheck.IsChecked == true ? valid : !string.IsNullOrEmpty(LiteralFindBox.Text);
+        var inFolder = FolderSearchCheck.IsChecked == true;
+        SearchOpenButton.IsEnabled = canSearch;
+        SearchAllButton.IsEnabled = canSearch && (!inFolder || _folderSearchCancellation is null && !string.IsNullOrWhiteSpace(SearchFolderPathBox.Text));
+        SearchAllButton.Content = inFolder ? "폴더 모두 찾기" : "모두 찾기";
+        SearchAllButton.ToolTip = inFolder ? "선택한 폴더에서 결과를 모아 표시" : "현재 문서의 결과를 아래에 모아 표시";
         MarkSettingsDirty();
     }
 
@@ -758,6 +763,7 @@ public partial class MainWindow : Window
 
     private void Search_Click(object sender, RoutedEventArgs e)
     {
+        if (FolderSearchCheck.IsChecked == true) { SearchFolder_Click(sender, e); return; }
         if (CurrentDocument is null) return;
         try
         {
@@ -1448,6 +1454,8 @@ public partial class MainWindow : Window
     private void RestoreWorkState()
     {
         RestoreSearchState(_settings.SearchState);
+        SearchFolderPathBox.Text = _settings.SearchFolderPath;
+        FolderSearchCheck.IsChecked = _settings.SearchInFolder;
         IncludeSubfoldersCheck.IsChecked = _settings.SearchSubfolders;
         FolderPatternBox.Text = _settings.SearchFilePatterns;
         var state = _settings.TransformState;
@@ -1465,6 +1473,8 @@ public partial class MainWindow : Window
     private void CaptureWorkState()
     {
         _settings.SearchState = CaptureSearchState();
+        _settings.SearchInFolder = FolderSearchCheck.IsChecked == true;
+        _settings.SearchFolderPath = SearchFolderPathBox.Text;
         _settings.SearchSubfolders = IncludeSubfoldersCheck.IsChecked == true;
         _settings.SearchFilePatterns = FolderPatternBox.Text;
         var operationTool = TextTools.First(item => item.OperationIndex == TrimOperationCombo.SelectedIndex);

@@ -26,6 +26,8 @@ public sealed class UserSettings
     public List<SavedSearch> RecentSearches { get; set; } = [];
     public SearchInputState SearchState { get; set; } = new();
     public bool SearchSubfolders { get; set; } = true;
+    public bool SearchInFolder { get; set; }
+    public string SearchFolderPath { get; set; } = string.Empty;
     public string SearchFilePatterns { get; set; } = "*.txt;*.log;*.csv;*.md;*.json;*.xml;*.yaml;*.yml;*.ini;*.cfg;*.cs;*.py;*.js;*.ts;*.sql;*.out";
     public TransformInputState TransformState { get; set; } = new();
     public DiffUserSettings Diff { get; set; } = new();

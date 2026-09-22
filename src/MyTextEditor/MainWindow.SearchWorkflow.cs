@@ -89,8 +89,7 @@ public partial class MainWindow
     private void LiteralFindBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key != System.Windows.Input.Key.Enter) return;
-        if (UseConditionSearchCheck.IsChecked == true) Search_Click(sender, new RoutedEventArgs());
-        else FindOccurrence(false);
+        FindOccurrence(false);
         e.Handled = true;
     }
 
@@ -99,6 +98,7 @@ public partial class MainWindow
     private void FindOccurrence(bool previous)
     {
         if (CurrentEditor is not { } editor || string.IsNullOrEmpty(LiteralFindBox.Text)) return;
+        UseConditionSearchCheck.IsChecked = false;
         var found = editor.FindOccurrence(LiteralFindBox.Text, MatchCaseCheck.IsChecked == true,
             WholeWordCheck.IsChecked == true, previous, out var wrapped);
         if (!found) { StatusMessage.Text = $"'{LiteralFindBox.Text}'을(를) 찾지 못했습니다."; return; }
@@ -130,15 +130,38 @@ public partial class MainWindow
         }
     }
 
+    private void FolderSearchMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (FolderSearchOptionsPanel is null) return;
+        FolderSearchOptionsPanel.Visibility = FolderSearchCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        UpdateConditionSummary();
+    }
+
+    private void SearchFolderPath_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (ConditionInputsPanel is not null) UpdateConditionSummary();
+    }
+
+    private void ChooseSearchFolder_Click(object sender, RoutedEventArgs e)
+    {
+        using var picker = new Forms.FolderBrowserDialog
+        {
+            Description = "검색할 폴더 선택",
+            UseDescriptionForTitle = true,
+            SelectedPath = Directory.Exists(SearchFolderPathBox.Text) ? SearchFolderPathBox.Text
+                : CurrentDocument?.FilePath is { } path ? Path.GetDirectoryName(path) ?? string.Empty : string.Empty
+        };
+        if (picker.ShowDialog() == Forms.DialogResult.OK) SearchFolderPathBox.Text = picker.SelectedPath;
+    }
+
     private async void SearchFolder_Click(object sender, RoutedEventArgs e)
     {
         if (_folderSearchCancellation is not null) return;
-        string? folder = CurrentDocument?.FilePath is { } path ? Path.GetDirectoryName(path) : null;
-        if (folder is null)
+        var folder = SearchFolderPathBox.Text;
+        if (!Directory.Exists(folder))
         {
-            using var picker = new Forms.FolderBrowserDialog { Description = "검색할 폴더 선택" };
-            if (picker.ShowDialog() != Forms.DialogResult.OK) return;
-            folder = picker.SelectedPath;
+            StatusMessage.Text = "검색할 폴더를 선택하세요. 폴더가 이동하거나 삭제되었는지도 확인하세요.";
+            return;
         }
         try
         {
@@ -147,7 +170,7 @@ public partial class MainWindow
             using var cancellation = new CancellationTokenSource();
             _folderSearchCancellation = cancellation;
             CancelFolderSearchButton.Visibility = Visibility.Visible;
-            SearchFolderButton.IsEnabled = false;
+            UpdateConditionSummary();
             StatusMessage.Text = $"{folder} 폴더 검색 중…";
             var progress = new Progress<FolderSearchProgress>(update =>
                 StatusMessage.Text = $"폴더 검색 중 · {update.FilesScanned:N0}개 파일 · {update.MatchingLines:N0}개 일치");
