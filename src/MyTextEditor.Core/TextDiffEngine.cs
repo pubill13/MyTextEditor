@@ -8,7 +8,7 @@ namespace MyTextEditor.Core;
 
 public sealed class TextDiffEngine
 {
-    public TextDiffResult Compare(string left, string right, DiffOptions? options = null)
+    public TextDiffResult Compare(string left, string right, DiffOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
@@ -16,11 +16,9 @@ public sealed class TextDiffEngine
 
         var leftDocument = DiffDocument.Parse(left, options);
         var rightDocument = DiffDocument.Parse(right, options);
-        // Diff windows may recalculate concurrently while older generations finish.
-        // Keep each comparison isolated instead of sharing DiffPlex's singleton builder.
+        cancellationToken.ThrowIfCancellationRequested();
         var builder = new SideBySideDiffBuilder(new Differ());
-        var model = builder.BuildDiffModel(
-            leftDocument.ComparisonText, rightDocument.ComparisonText, false, false);
+        var matches = FindMatchingLines(leftDocument, rightDocument, cancellationToken);
 
         var blocks = new List<DiffBlock>();
         var anchors = new List<DiffLineAnchor>();
@@ -48,36 +46,39 @@ public sealed class TextDiffEngine
             pending.Clear();
         }
 
-        var rowCount = Math.Max(model.OldText.Lines.Count, model.NewText.Lines.Count);
-        for (var row = 0; row < rowCount; row++)
+        var oldIndex = 0;
+        var newIndex = 0;
+        anchors.Add(new DiffLineAnchor(1, 1));
+        foreach (var match in matches.Append((Left: leftDocument.ComparedLines.Count, Right: rightDocument.ComparedLines.Count)))
         {
-            var oldPiece = model.OldText.Lines[row];
-            var newPiece = model.NewText.Lines[row];
-            var unchanged = oldPiece.Type == ChangeType.Unchanged && newPiece.Type == ChangeType.Unchanged;
-            if (unchanged)
+            cancellationToken.ThrowIfCancellationRequested();
+            var changedCount = Math.Max(match.Left - oldIndex, match.Right - newIndex);
+            if (changedCount > 0) anchors.Add(new DiffLineAnchor(leftAnchor, rightAnchor));
+            for (var offset = 0; offset < changedCount; offset++)
             {
-                CompleteBlock();
-                var leftLine = leftDocument.GetOriginalLine(oldPiece.Position);
-                var rightLine = rightDocument.GetOriginalLine(newPiece.Position);
-                if (leftLine is not null && rightLine is not null)
-                {
-                    anchors.Add(new DiffLineAnchor(leftLine.Number, rightLine.Number));
-                    leftAnchor = leftLine.Number + 1;
-                    rightAnchor = rightLine.Number + 1;
-                }
-                continue;
+                cancellationToken.ThrowIfCancellationRequested();
+                var oldLine = oldIndex + offset < match.Left ? leftDocument.ComparedLines[oldIndex + offset] : null;
+                var newLine = newIndex + offset < match.Right ? rightDocument.ComparedLines[newIndex + offset] : null;
+                if (oldLine is not null) leftAnchor = oldLine.Number + 1;
+                if (newLine is not null) rightAnchor = newLine.Number + 1;
+                var (leftChanges, rightChanges) = GetInlineChanges(oldLine?.Text, newLine?.Text,
+                    options.IgnoreWhitespace, options.IgnoreCase, builder);
+                pending.Add(new DiffLinePair(oldLine?.Number, oldLine?.Text, leftChanges,
+                    newLine?.Number, newLine?.Text, rightChanges));
             }
-
-            var oldLine = leftDocument.GetOriginalLine(oldPiece.Position);
-            var newLine = rightDocument.GetOriginalLine(newPiece.Position);
-            if (oldLine is not null) leftAnchor = oldLine.Number + 1;
-            if (newLine is not null) rightAnchor = newLine.Number + 1;
-            var (leftChanges, rightChanges) = GetInlineChanges(oldLine?.Text, newLine?.Text,
-                options.IgnoreWhitespace, options.IgnoreCase, builder);
-            pending.Add(new DiffLinePair(oldLine?.Number, oldLine?.Text, leftChanges,
-                newLine?.Number, newLine?.Text, rightChanges));
+            CompleteBlock();
+            if (match.Left < leftDocument.ComparedLines.Count && match.Right < rightDocument.ComparedLines.Count)
+            {
+                var oldLine = leftDocument.ComparedLines[match.Left];
+                var newLine = rightDocument.ComparedLines[match.Right];
+                anchors.Add(new DiffLineAnchor(oldLine.Number, newLine.Number));
+                leftAnchor = oldLine.Number + 1;
+                rightAnchor = newLine.Number + 1;
+            }
+            oldIndex = match.Left + 1;
+            newIndex = match.Right + 1;
         }
-        CompleteBlock();
+        anchors.Add(new DiffLineAnchor(leftDocument.AllLines.Count + 1, rightDocument.AllLines.Count + 1));
 
         if (leftDocument.HasTerminalNewLine != rightDocument.HasTerminalNewLine)
         {
@@ -98,6 +99,38 @@ public sealed class TextDiffEngine
                 block.Lines.Count(line => line.RightLineNumber.HasValue)));
         return new TextDiffResult(blocks, anchors, added, deleted, modified,
             leftDocument.HasTerminalNewLine, rightDocument.HasTerminalNewLine);
+    }
+
+    // A line absent from the other document cannot participate in an LCS.
+    // Removing only these lines preserves exact matching while avoiding quadratic
+    // work for large replacements. Retain original indexes to restore every gap.
+    private static List<(int Left, int Right)> FindMatchingLines(
+        DiffDocument left, DiffDocument right, CancellationToken token)
+    {
+        var common = new HashSet<string>(left.NormalizedLines, StringComparer.Ordinal);
+        common.IntersectWith(right.NormalizedLines);
+        var a = Enumerable.Range(0, left.NormalizedLines.Length)
+            .Where(i => common.Contains(left.NormalizedLines[i])).ToArray();
+        var b = Enumerable.Range(0, right.NormalizedLines.Length)
+            .Where(i => common.Contains(right.NormalizedLines[i])).ToArray();
+        token.ThrowIfCancellationRequested();
+        var matches = new List<(int Left, int Right)>(Math.Min(a.Length, b.Length));
+        if (a.Length == 0 || b.Length == 0) return matches;
+        var diff = new Differ().CreateLineDiffs(
+            string.Join('\n', a.Select(i => left.NormalizedLines[i])),
+            string.Join('\n', b.Select(i => right.NormalizedLines[i])), false, false);
+        var ai = 0;
+        var bi = 0;
+        foreach (var block in diff.DiffBlocks)
+        {
+            token.ThrowIfCancellationRequested();
+            while (ai < block.DeleteStartA && bi < block.InsertStartB)
+                matches.Add((a[ai++], b[bi++]));
+            ai = block.DeleteStartA + block.DeleteCountA;
+            bi = block.InsertStartB + block.InsertCountB;
+        }
+        while (ai < a.Length && bi < b.Length) matches.Add((a[ai++], b[bi++]));
+        return matches;
     }
 
     private static (IReadOnlyList<InlineDiffSpan> Left, IReadOnlyList<InlineDiffSpan> Right)
@@ -144,17 +177,17 @@ public sealed class TextDiffEngine
     private sealed class DiffDocument
     {
         private DiffDocument(IReadOnlyList<OriginalLine> allLines, IReadOnlyList<OriginalLine> comparedLines,
-            string comparisonText, bool hasTerminalNewLine)
+            string[] normalizedLines, bool hasTerminalNewLine)
         {
             AllLines = allLines;
             ComparedLines = comparedLines;
-            ComparisonText = comparisonText;
+            NormalizedLines = normalizedLines;
             HasTerminalNewLine = hasTerminalNewLine;
         }
 
         public IReadOnlyList<OriginalLine> AllLines { get; }
         public IReadOnlyList<OriginalLine> ComparedLines { get; }
-        public string ComparisonText { get; }
+        public string[] NormalizedLines { get; }
         public bool HasTerminalNewLine { get; }
 
         public OriginalLine? GetOriginalLine(int? comparisonPosition)
@@ -177,8 +210,8 @@ public sealed class TextDiffEngine
             var compared = options.IgnoreEmptyLines
                 ? allLines.Where(line => !string.IsNullOrWhiteSpace(line.Text)).ToArray()
                 : allLines;
-            var normalized = compared.Select(line => "\u0001" + Normalize(line.Text, options));
-            return new DiffDocument(allLines, compared, string.Join('\n', normalized), terminal);
+            var normalized = compared.Select(line => "\u0001" + Normalize(line.Text, options)).ToArray();
+            return new DiffDocument(allLines, compared, normalized, terminal);
         }
 
         private static string Normalize(string text, DiffOptions options)

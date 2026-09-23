@@ -36,6 +36,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private TextDiffResult? _result;
     private int _currentBlockIndex = -1;
     private int _generation;
+    private readonly SemaphoreSlim _compareGate = new(1, 1);
+    private CancellationTokenSource? _comparisonCancellation;
     private bool _updatingEditors;
     private bool _syncingScroll;
     private bool _resourcesReleased;
@@ -45,6 +47,9 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private bool _isActive;
     private bool _gutterScheduled;
     private bool _highlightsPending;
+    private sealed record HighlightRow(int Line, DiffHighlightKind Kind, IReadOnlyList<InlineDiffSpan> Spans);
+    private HighlightRow[] _leftHighlightRows = [], _rightHighlightRows = [];
+    private (int Start, int End) _leftPainted = (-1, -1), _rightPainted = (-1, -1);
     private string _highlightColor;
     private readonly List<WpfStackPanel> _gutterPool = [];
     private readonly List<System.Windows.Shapes.Polygon> _gutterConnections = [];
@@ -197,6 +202,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void EditorChanged()
     {
+        _comparisonCancellation?.Cancel();
         RefreshEndpointHeaders();
         CheckStaleSources();
         _generation++;
@@ -216,17 +222,30 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (!_initialized) return;
         if (_resourcesReleased || !IsReady) { InvalidateDisplayedResult(); RefreshReadyState(); return; }
+        _comparisonCancellation?.Cancel();
+        using var cancellation = new CancellationTokenSource();
+        _comparisonCancellation = cancellation;
         var generation = ++_generation;
-        var left = _leftEditor.GetText();
-        var right = _rightEditor.GetText();
-        var options = CurrentDiffOptions();
         InvalidateDisplayedResult();
         BusyProgress.Visibility = Visibility.Visible;
         StatusText.Text = "차이를 계산하는 중…";
+        await _compareGate.WaitAsync();
         try
         {
-            var result = await Task.Run(() => _diffEngine.Compare(left, right, options));
             if (generation != _generation || _resourcesReleased) return;
+            var left = _leftEditor.GetText();
+            var right = _rightEditor.GetText();
+            var options = CurrentDiffOptions();
+            var calculated = await Task.Run(() =>
+            {
+                var diff = _diffEngine.Compare(left, right, options, cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                return (Result: diff, Left: IndexHighlights(diff, true), Right: IndexHighlights(diff, false));
+            });
+            if (generation != _generation || _resourcesReleased) return;
+            var result = calculated.Result;
+            _leftHighlightRows = calculated.Left;
+            _rightHighlightRows = calculated.Right;
             _result = result;
             _currentBlockIndex = result.Blocks.Count == 0 ? -1 : Math.Clamp(_currentBlockIndex, 0, result.Blocks.Count - 1);
             _highlightsPending = !_isActive;
@@ -234,12 +253,15 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             RefreshResultState();
             CheckStaleSources();
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception exception)
         {
             if (generation == _generation) StatusText.Text = $"비교 실패: {exception.Message}";
         }
         finally
         {
+            _compareGate.Release();
+            if (ReferenceEquals(_comparisonCancellation, cancellation)) _comparisonCancellation = null;
             if (generation == _generation) BusyProgress.Visibility = Visibility.Collapsed;
         }
     }
@@ -247,6 +269,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void InvalidateDisplayedResult()
     {
         _result = null;
+        _leftHighlightRows = []; _rightHighlightRows = [];
+        _leftPainted = _rightPainted = (-1, -1);
         _currentBlockIndex = -1;
         if (_leftEditor is not null) _leftEditor.ClearDiffHighlights();
         if (_rightEditor is not null) _rightEditor.ClearDiffHighlights();
@@ -263,34 +287,56 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         IgnoreCaseCheck.IsChecked == true,
         IgnoreEmptyLinesCheck.IsChecked == true);
 
-    private void ApplyHighlights(TextDiffResult result)
+    private static HighlightRow[] IndexHighlights(TextDiffResult result, bool left)
     {
-        var leftLines = new List<DiffLineHighlight>();
-        var rightLines = new List<DiffLineHighlight>();
-        var leftInline = new List<DiffInlineHighlight>();
-        var rightInline = new List<DiffInlineHighlight>();
-        foreach (var block in result.Blocks.Where(item => !item.IsTerminalNewLineChange))
+        var rows = new List<HighlightRow>();
+        foreach (var block in result.Blocks)
         {
-            var leftKind = block.Kind == DiffBlockKind.Deleted ? DiffHighlightKind.Deleted : DiffHighlightKind.Modified;
-            var rightKind = block.Kind == DiffBlockKind.Added ? DiffHighlightKind.Added : DiffHighlightKind.Modified;
-            if (block.LeftLineCount > 0) leftLines.Add(new(block.LeftStartLine - 1, block.LeftLineCount, leftKind));
-            if (block.RightLineCount > 0) rightLines.Add(new(block.RightStartLine - 1, block.RightLineCount, rightKind));
+            var kind = block.Kind == DiffBlockKind.Deleted ? DiffHighlightKind.Deleted
+                : block.Kind == DiffBlockKind.Added ? DiffHighlightKind.Added : DiffHighlightKind.Modified;
             foreach (var pair in block.Lines)
-            {
-                if (pair.LeftLineNumber is { } leftNumber)
-                    foreach (var span in pair.LeftChanges)
-                        leftInline.Add(new(_leftEditor.GetLineTextRange(leftNumber - 1, span.Start, span.Length).Start,
-                            _leftEditor.GetLineTextRange(leftNumber - 1, span.Start, span.Length).Length, leftKind));
-                if (pair.RightLineNumber is { } rightNumber)
-                    foreach (var span in pair.RightChanges)
-                        rightInline.Add(new(_rightEditor.GetLineTextRange(rightNumber - 1, span.Start, span.Length).Start,
-                            _rightEditor.GetLineTextRange(rightNumber - 1, span.Start, span.Length).Length, rightKind));
-            }
+                if ((left ? pair.LeftLineNumber : pair.RightLineNumber) is { } line)
+                    rows.Add(new(line - 1, kind, left ? pair.LeftChanges : pair.RightChanges));
         }
-        _leftEditor.SetDiffHighlights(leftLines, leftInline);
-        _rightEditor.SetDiffHighlights(rightLines, rightInline);
+        return rows.ToArray();
     }
 
+    private void ApplyHighlights(TextDiffResult result)
+    {
+        _leftPainted = _rightPainted = (-1, -1);
+        PaintViewport(_leftEditor, _leftHighlightRows, ref _leftPainted);
+        PaintViewport(_rightEditor, _rightHighlightRows, ref _rightPainted);
+    }
+
+    private static void PaintViewport(ScintillaEditorHost editor, HighlightRow[] rows,
+        ref (int Start, int End) painted)
+    {
+        var first = editor.FirstVisibleLine;
+        var last = first + Math.Max(1, editor.LinesOnScreen);
+        if (first >= painted.Start && last <= painted.End) return;
+        var start = Math.Max(0, first - 30);
+        var end = last + 30;
+        var low = 0; var high = rows.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (rows[middle].Line < start) low = middle + 1; else high = middle;
+        }
+        var lines = new List<DiffLineHighlight>();
+        var spans = new List<DiffInlineHighlight>();
+        for (var index = low; index < rows.Length && rows[index].Line <= end; index++)
+        {
+            var row = rows[index];
+            lines.Add(new(row.Line, 1, row.Kind));
+            foreach (var span in row.Spans)
+            {
+                var range = editor.GetLineTextRange(row.Line, span.Start, span.Length);
+                spans.Add(new(range.Start, range.Length, row.Kind));
+            }
+        }
+        editor.SetDiffHighlights(lines, spans);
+        painted = (start, end);
+    }
     private void RefreshResultState()
     {
         var count = _result?.Blocks.Count ?? 0;
@@ -398,6 +444,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         CancelGutterUpdate();
         if (!_isActive || _resourcesReleased || _result is null || !IsVisible) return;
+        PaintViewport(_leftEditor, _leftHighlightRows, ref _leftPainted);
+        PaintViewport(_rightEditor, _rightHighlightRows, ref _rightPainted);
         _visibleBlocks.Clear();
         CollectVisibleBlocks(_leftEditor, true);
         CollectVisibleBlocks(_rightEditor, false);
@@ -579,6 +627,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         }
         var before = anchors[Math.Max(0, low - 1)];
         var after = anchors[Math.Min(anchors.Count - 1, low)];
+        if (low == anchors.Count) return Math.Max(1, To(before) + sourceLine - From(before));
+        if (low == 0) return Math.Max(1, To(after) + sourceLine - From(after));
         if (From(after) == From(before)) return To(before);
         var ratio = (sourceLine - From(before)) / (double)(From(after) - From(before));
         return Math.Max(1, (int)Math.Round(To(before) + ratio * (To(after) - To(before))));
@@ -880,6 +930,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     public void PauseComparisonForClose()
     {
+        _comparisonCancellation?.Cancel();
         _recompareTimer.Stop();
         ++_generation;
     }
@@ -893,6 +944,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (_resourcesReleased) return;
         _resourcesReleased = true;
+        _comparisonCancellation?.Cancel();
         CancelGutterUpdate();
         _gutterPool.Clear();
         _gutterConnections.Clear();

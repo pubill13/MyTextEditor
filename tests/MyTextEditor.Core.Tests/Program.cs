@@ -33,6 +33,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Diff 블록 양방향 병합", TestDiffBlockMerge),
     ("Diff 전체 및 연속 병합", TestDiffApplyAllAndSequentialMerge),
     ("Diff 5만 줄 성능", TestDiffPerformance),
+    ("Diff 대규모 교체 및 정확한 매칭", DiffOptimizationTests.Run),
     ("매크로 순서와 검색 대상 추적", MacroTests.SequenceAndTracking),
     ("매크로 분할 합치기와 대상 유지", MacroTests.SplitJoinTracking),
     ("매크로 삭제 중복과 연속 번호", MacroTests.DeleteDedupAndNumbers),
@@ -508,7 +509,7 @@ static Task TestDiffBlocksAndInlineSpans()
     foreach (var span in modified.Blocks[0].Lines[0].LeftChanges)
         Assert.True(span.Start >= 0 && span.Start + span.Length <= "hello old world".Length);
     Assert.Equal(1, modified.ModifiedLines);
-    Assert.SequenceEqual(new[] { 1, 3 }, modified.ScrollAnchors.Select(anchor => anchor.LeftLineNumber));
+    Assert.SequenceEqual(new[] { 1, 2, 3, 4 }, modified.ScrollAnchors.Select(anchor => anchor.LeftLineNumber).Distinct());
 
     var added = engine.Compare("a\nz", "a\nnew\nz");
     Assert.Equal(DiffBlockKind.Added, added.Blocks[0].Kind);

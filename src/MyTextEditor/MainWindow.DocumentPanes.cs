@@ -18,6 +18,7 @@ public partial class MainWindow
 
     private void InitializeDocumentPanes()
     {
+        InitializeDocumentTabDrag();
         Documents.CollectionChanged += (_, e) =>
         {
             if (e.Action == NotifyCollectionChangedAction.Reset) { LeftDocuments.Clear(); RightDocuments.Clear(); }
