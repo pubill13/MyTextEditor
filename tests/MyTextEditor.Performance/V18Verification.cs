@@ -27,6 +27,7 @@ internal static class V18Verification
             VerifySettings();
             VerifyScroll(100);
             VerifyScroll(5000);
+            VerifyScroll(50000);
             Console.WriteLine("PASS v1.8 integration");
             return 0;
         }
