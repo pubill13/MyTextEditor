@@ -68,7 +68,6 @@ public partial class MainWindow : Window
         new(TextToolIds.RemoveBlankLines, "빈 줄 제거", QuickOperation: "Blank"),
         new(TextToolIds.CollapseBlankLines, "빈 줄 합치기", QuickOperation: "Collapse"),
         new(TextToolIds.TrimWhitespace, "앞뒤 공백 제거", QuickOperation: "Whitespace"),
-        new(TextToolIds.CleanupLog, "로그 정리", QuickOperation: "LogCleanup")
     ];
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
@@ -186,6 +185,7 @@ public partial class MainWindow : Window
 
         var errors = new List<string>();
         var stopwatch = Stopwatch.StartNew();
+        DocumentViewModel? lastOpened = null;
         long openedBytes = 0;
         Mouse.OverrideCursor = Cursors.Wait;
         StatusMessage.Text = $"{uniquePaths.Count:N0}개 파일을 여는 중…";
@@ -193,7 +193,7 @@ public partial class MainWindow : Window
         {
             foreach (var filePath in uniquePaths)
             {
-                try { await OpenFileCoreAsync(filePath); openedBytes += new FileInfo(filePath).Length; }
+                try { lastOpened = await OpenFileCoreAsync(filePath, selectDocument: false); openedBytes += new FileInfo(filePath).Length; }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
                 {
                     errors.Add($"{Path.GetFileName(filePath)}: {exception.Message}");
@@ -202,6 +202,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            if (lastOpened is not null) SelectDocument(lastOpened);
             stopwatch.Stop();
             Mouse.OverrideCursor = null;
         }
@@ -214,12 +215,13 @@ public partial class MainWindow : Window
 
     private static string FormatFileSize(long bytes) => bytes >= 1024L * 1024 ? $"{bytes / 1024d / 1024d:F1}MB" : bytes >= 1024 ? $"{bytes / 1024d:F1}KB" : $"{bytes}B";
 
-    private async Task OpenFileCoreAsync(string filePath)
+    private async Task<DocumentViewModel> OpenFileCoreAsync(string filePath, bool selectDocument = true)
     {
         var alreadyOpen = Documents.FirstOrDefault(item => string.Equals(item.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
-        if (alreadyOpen is not null) { SelectDocument(alreadyOpen); return; }
+        if (alreadyOpen is not null) { if (selectDocument) SelectDocument(alreadyOpen); return alreadyOpen; }
         var fileSyncStamp = await ReadFileSyncStampAsync(filePath);
-        var buffer = await _fileService.LoadBufferAsync(filePath);
+        // Encoding validation can finish synchronously for cached files; keep that work off the UI thread.
+        var buffer = await Task.Run(() => _fileService.LoadBufferAsync(filePath));
         var editor = new ScintillaEditorHost();
         var document = new DocumentViewModel
         {
@@ -230,13 +232,14 @@ public partial class MainWindow : Window
             NewLine = buffer.NewLine,
             IsModified = false
         };
-        ConfigureEditor(document);
         editor.SetNewLine(document.NewLine);
         editor.LoadUtf8(buffer.Utf8Buffer);
+        ConfigureEditor(document);
         Documents.Add(document);
-        SelectDocument(document);
+        if (selectDocument) SelectDocument(document);
         AddRecentFile(filePath);
         TrackFileSyncDocument(document, fileSyncStamp);
+        return document;
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveDocumentAsync(CurrentDocument, false);
@@ -576,12 +579,20 @@ public partial class MainWindow : Window
 
     private void ShowSearchInput()
     {
+        if (CurrentEditor is { IsEditorFocused: true, HasSelection: true } editor &&
+            !editor.SelectedText.Contains('\n') && !editor.SelectedText.Contains('\r'))
+        {
+            UseConditionSearchCheck.IsChecked = false;
+            LiteralFindBox.Text = editor.SelectedText;
+        }
         var input = UseConditionSearchCheck.IsChecked == true ? _settings.LastSearchField switch { "Any" => SimpleAnyBox, "Exclude" => SimpleExcludeBox, _ => SimpleAllBox } : LiteralFindBox;
         FocusToolInput(0, input, true);
     }
 
     private void ShowReplaceInput()
     {
+        if (CurrentEditor is { IsEditorFocused: true, HasSelection: true } editor)
+            ReplaceFromBox.Text = editor.SelectedText;
         FocusToolInput(1, ReplaceFromBox, true);
     }
 
@@ -619,6 +630,8 @@ public partial class MainWindow : Window
             CaretStatus.Text = "줄 -, 열 -"; LineCountStatus.Text = "0줄"; EncodingStatus.Text = "-"; NewLineStatus.Text = "-"; return;
         }
         CaretStatus.Text = $"줄 {(editor?.CurrentLine ?? 0) + 1}, 열 {(editor?.CurrentColumn ?? 0) + 1}";
+        if (editor is { HasSelection: true })
+            CaretStatus.Text += $"  ·  선택 {editor.SelectionRange.Length:N0}자";
         LineCountStatus.Text = $"{editor?.LineCount ?? 1:N0}줄";
         EncodingStatus.Text = document.Encoding.WebName.ToUpperInvariant();
         NewLineStatus.Text = document.NewLine == "\r\n" ? "CRLF" : document.NewLine == "\n" ? "LF" : "CR";
@@ -1060,15 +1073,6 @@ public partial class MainWindow : Window
     private void RunQuickTransform(string operation, string title, bool preview = true)
     {
         if (CurrentDocument is null) return;
-        if (operation == "LogCleanup")
-        {
-            var cleanup = _transformService.CleanupLog(CurrentDocument.Text, _settings.LogCleanup.ToOptions(), CurrentDocument.NewLine);
-            var summary = cleanup.CleanupSummary;
-            var details = $"ANSI {summary.AnsiSequencesRemoved:N0} · 제어문자 {summary.ControlCharactersRemoved:N0} · 뒤 공백 {summary.TrailingWhitespaceCharactersRemoved:N0} · 빈 줄 {summary.CollapsedBlankLines:N0}";
-            if (preview) ShowTransformPreview(cleanup.TransformResult, $"{title} · {details}");
-            else ApplyTransformDirect(cleanup.TransformResult, $"{title} ({details})");
-            return;
-        }
         var result = operation switch
         {
             "Duplicate" => _transformService.RemoveDuplicateLines(CurrentDocument.Text, false, CurrentDocument.NewLine),

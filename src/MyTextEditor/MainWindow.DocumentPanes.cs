@@ -29,15 +29,6 @@ public partial class MainWindow
         };
     }
 
-    private void LogCleanupOptions_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new LogCleanupOptionsDialog(_settings.LogCleanup) { Owner = this };
-        if (dialog.ShowDialog() != true) return;
-        _settings.LogCleanup = dialog.Preferences;
-        MarkSettingsDirty();
-        StatusMessage.Text = "로그 정리 옵션을 저장했습니다. 미리보기로 결과를 확인하세요.";
-    }
-
     private void SelectDocument(DocumentViewModel document)
     {
         var tabs = RightDocuments.Contains(document) ? RightDocumentTabs : DocumentTabs;

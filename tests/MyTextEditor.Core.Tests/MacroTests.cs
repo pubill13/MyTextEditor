@@ -78,7 +78,6 @@ internal static class MacroTests
                 Assert.Equal("keep" + terminal, result.Text);
             }
         }
-        Assert.Equal("  INFO 한글\n\nnext", Run("\u001b[31m  INFO 한글\u001b[0m  \n\n\nnext\0", Step(MacroOperation.CleanupLog)).Text);
         var between = Step(MacroOperation.KeepBetween, "["); between.EndMarker = "]"; between.KeepStart = false; between.KeepEnd = false;
         Assert.Equal("한글\nmissing", Run("a[한글]b\nmissing", between).Text);
         return Task.CompletedTask;
@@ -122,6 +121,7 @@ internal static class MacroTests
         Assert.Equal(MacroTarget.MatchedLines, copy.Steps[1].Target);
         Expect<JsonException>(() => MacroJsonCodec.Deserialize(json.Replace("\"Version\": 1", "\"Version\": 9")));
         Expect<JsonException>(() => MacroJsonCodec.Deserialize(json.Replace("\"Search\"", "\"Unknown\"")));
+        Expect<JsonException>(() => MacroJsonCodec.Deserialize(json.Replace("\"Search\"", "\"CleanupLog\"")));
         Expect<JsonException>(() => MacroJsonCodec.Deserialize(json.Replace("\"Search\"", "900")));
         Expect<JsonException>(() => MacroJsonCodec.Deserialize("{bad json}"));
         var invalid = Macro(Search("ok")); invalid.Steps[0].Enabled = false; invalid.Steps[0].AllTerms = [null!];

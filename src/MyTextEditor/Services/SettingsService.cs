@@ -110,13 +110,12 @@ public static class SettingsService
         settings.SearchState ??= new SearchInputState();
         settings.SearchFilePatterns ??= new UserSettings().SearchFilePatterns;
         settings.TransformState ??= new TransformInputState();
-        settings.LogCleanup ??= new LogCleanupPreferences();
         settings.Diff ??= new DiffUserSettings();
         settings.Diff.FontSize = double.IsFinite(settings.Diff.FontSize) ? Math.Clamp(Math.Round(settings.Diff.FontSize), 6, 72) : 11;
         settings.Help ??= new HelpUserSettings();
 
         settings.RecentFiles.RemoveAll(item => item is null);
-        settings.FavoriteToolIds.RemoveAll(item => string.IsNullOrWhiteSpace(item));
+        settings.FavoriteToolIds.RemoveAll(item => string.IsNullOrWhiteSpace(item) || item == "cleanup-log");
         RemoveDuplicates(settings.FavoriteToolIds);
         settings.RecentSearches.RemoveAll(item => item is null);
 

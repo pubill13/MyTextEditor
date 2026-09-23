@@ -38,7 +38,7 @@ internal static class LargeFileBenchmark
                 ] };
                 if (scenario == "cleanup") macro.Steps.AddRange([
                     new MacroStep { Operation = MacroOperation.Replace, Target = MacroTarget.MatchedLines, Value = "AAA", Replacement = "XYZ" },
-                    new MacroStep { Operation = MacroOperation.CleanupLog }
+                    new MacroStep { Operation = MacroOperation.TrimWhitespace }
                 ]);
                 else if (scenario != "prefix") throw new ArgumentException("Use prefix or cleanup.");
                 var heartbeat = Stopwatch.StartNew();

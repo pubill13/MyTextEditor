@@ -5,7 +5,7 @@ public enum MacroOperation
     Search, DeleteTargetLines, KeepTargetLines, RemoveBefore, RemoveAfter, RemoveBetween,
     KeepBetween, RemoveCharactersLeft, RemoveCharactersRight, AddPrefix, AddSuffix,
     SplitByDelimiter, JoinLines, AddLineNumbers, RemoveLineNumbers, RemoveLinesContaining,
-    Replace, TrimWhitespace, RemoveDuplicateLines, RemoveBlankLines, CollapseBlankLines, CleanupLog
+    Replace, TrimWhitespace, RemoveDuplicateLines, RemoveBlankLines, CollapseBlankLines
 }
 
 public enum MacroTarget { WholeDocument, MatchedLines }

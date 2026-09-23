@@ -142,12 +142,6 @@ public sealed class TextMacroRunner
                     skipped += result.Skipped;
                     var lineChanged = !result.Text.Span.SequenceEqual(line.Text.Span);
                     if (lineChanged) changed++;
-                    if (step.Operation == MacroOperation.CleanupLog)
-                    {
-                        if (result.Text.Length == 0 &&
-                            output.Count > 0 && Targets(output[^1]) && output[^1].Text.Length == 0)
-                        { if (!lineChanged) changed++; continue; }
-                    }
                     AppendLines(output, result.Text, line.Matched, cancellationToken);
                 }
                 lines = output;
@@ -228,7 +222,6 @@ public sealed class TextMacroRunner
     {
         MacroOperation.RemoveCharactersLeft or MacroOperation.RemoveCharactersRight => _transform.RemoveCharacters(text, step.Count,
             step.Operation == MacroOperation.RemoveCharactersLeft ? CharacterRemovalSide.Left : CharacterRemovalSide.Right, newLine),
-        MacroOperation.CleanupLog => _transform.CleanupLog(text, newLine).TransformResult,
         _ => throw new ArgumentException("지원하지 않는 매크로 동작입니다.")
     };
 

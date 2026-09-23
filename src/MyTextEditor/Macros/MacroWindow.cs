@@ -50,7 +50,7 @@ public sealed class MacroWindow : Window
         [MacroOperation.RemoveCharactersLeft]="왼쪽 N글자 제거", [MacroOperation.RemoveCharactersRight]="오른쪽 N글자 제거", [MacroOperation.AddPrefix]="접두사 추가", [MacroOperation.AddSuffix]="접미사 추가",
         [MacroOperation.SplitByDelimiter]="구분자로 나누기", [MacroOperation.JoinLines]="구분자로 합치기", [MacroOperation.AddLineNumbers]="줄 번호 붙이기", [MacroOperation.RemoveLineNumbers]="줄 번호 제거",
         [MacroOperation.RemoveLinesContaining]="특정 문장 포함 줄 삭제", [MacroOperation.Replace]="일괄 치환", [MacroOperation.TrimWhitespace]="앞뒤 공백 제거", [MacroOperation.RemoveDuplicateLines]="중복 줄 제거",
-        [MacroOperation.RemoveBlankLines]="빈 줄 제거", [MacroOperation.CollapseBlankLines]="연속 빈 줄 합치기", [MacroOperation.CleanupLog]="로그 정리"
+        [MacroOperation.RemoveBlankLines]="빈 줄 제거", [MacroOperation.CollapseBlankLines]="연속 빈 줄 합치기"
     };
 
     public MacroWindow(MacroWindowCallbacks callbacks, MacroStore? store = null)

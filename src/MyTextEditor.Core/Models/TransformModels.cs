@@ -44,18 +44,3 @@ public sealed record TextTransformResult(
     string Text,
     IReadOnlyList<TextChangePreview> Preview,
     TextTransformSummary Summary);
-
-public sealed record LogCleanupSummary(
-    int AnsiSequencesRemoved,
-    int ControlCharactersRemoved,
-    int TrailingWhitespaceCharactersRemoved,
-    int CollapsedBlankLines);
-
-public sealed record LogCleanupResult(
-    TextTransformResult TransformResult,
-    LogCleanupSummary CleanupSummary);
-
-public sealed record LogCleanupOptions(
-    bool RemoveAnsiAndControlCharacters = true,
-    bool TrimTrailingWhitespace = true,
-    bool CollapseBlankLines = true);

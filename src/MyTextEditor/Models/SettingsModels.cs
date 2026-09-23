@@ -21,7 +21,6 @@ public static class TextToolIds
     public const string RemoveBlankLines = "remove-blank-lines";
     public const string CollapseBlankLines = "collapse-blank-lines";
     public const string TrimWhitespace = "trim-whitespace";
-    public const string CleanupLog = "cleanup-log";
     public const string Replace = "replace";
 }
 
