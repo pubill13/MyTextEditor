@@ -13,6 +13,8 @@ public sealed class SearchResultSource
     public required string DisplayName { get; init; }
     public string? FilePath { get; init; }
     public SearchSnapshot? Snapshot { get; init; }
+    public DocumentViewModel? Document { get; init; }
+    public long DocumentRevision { get; init; }
     public long FileLength { get; init; }
     public DateTime LastWriteTimeUtc { get; init; }
 }

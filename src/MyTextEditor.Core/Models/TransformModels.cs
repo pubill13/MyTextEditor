@@ -35,6 +35,11 @@ public sealed record TextChangePreview(
     string ResultText,
     TextChangeStatus Status);
 
+public interface ITextChangePreviewList : IReadOnlyList<TextChangePreview>
+{
+    TextChangeStatus GetStatus(int index);
+}
+
 public sealed record TextTransformSummary(
     int ChangedLines,
     int SkippedLines,

@@ -11,6 +11,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("머리/꼬리 자르기", TestHeadAndTailTrim),
     ("사이 지우기", TestRemoveBetween),
     ("치환 및 공백 정리", TestReplaceAndWhitespace),
+    ("정리 범위 미리보기와 할당 한도", TransformAllocationTests.Run),
     ("중복/빈 줄 정리", TestLineCleanup),
     ("특정 문장 포함 줄 삭제", TestRemoveLinesContaining),
     ("포함 줄 삭제 경계와 줄바꿈 보존", TestRemoveLinesContainingBoundaries),

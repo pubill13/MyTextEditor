@@ -27,6 +27,9 @@ public partial class MainWindow
             if (e.NewItems is not null)
                 foreach (DocumentViewModel document in e.NewItems)
                     (ActiveDocumentTabs == RightDocumentTabs ? RightDocuments : LeftDocuments).Add(document);
+            // File drops add documents without going through NewDocument; the empty overlay must
+            // follow the collection or it covers WPF tab headers above the native editor.
+            EmptyDocumentState.Visibility = Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         };
     }
 

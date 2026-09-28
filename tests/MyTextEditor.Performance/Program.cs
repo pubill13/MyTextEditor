@@ -32,6 +32,12 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--large-workspace")
+            return LargeWorkspaceVerification.Run(args.Length > 1 ? int.Parse(args[1]) : 4, args.Length > 2 ? int.Parse(args[2]) : 8);
+        if (args.Length > 0 && args[0] == "--native-buffer-memory")
+            return LargeWorkspaceVerification.RunNativeMemory(args.Length > 1 ? int.Parse(args[1]) : 30, args.Contains("--default-styles"));
+        if (args.Contains("--transform-work")) return TransformWorkVerification.Run();
+        if (args.Contains("--tab-visibility")) return TabVisibilityVerification.Run();
         if (args.Contains("--selection-ux")) return SelectionUxVerification.Run();
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();

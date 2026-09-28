@@ -45,7 +45,7 @@ public sealed class DocumentFileService
         string newLine;
         if (detected.Encoding.CodePage == Encoding.UTF8.CodePage)
         {
-            StrictUtf8.GetCharCount(sourceBytes.Span);
+            // DetectEncoding has already validated the entire UTF-8 buffer.
             utf8Buffer = sourceBytes;
             newLine = TextLines.DetectNewLine(sourceBytes.Span);
         }

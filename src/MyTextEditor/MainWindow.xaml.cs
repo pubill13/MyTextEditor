@@ -51,7 +51,7 @@ public partial class MainWindow : Window
     private bool _allowClose;
     private bool _closingInProgress;
     private bool _closingAllDocuments;
-    private readonly List<TransformPreviewRow> _allPreviewRows = [];
+    private IReadOnlyList<TextChangePreview> _allPreviewRows = [];
     private string _settingsSnapshot;
     private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool _settingsReady;
@@ -72,7 +72,7 @@ public partial class MainWindow : Window
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
     public ObservableCollection<SearchResultSession> SearchSessions { get; } = [];
-    public ObservableCollection<TransformPreviewRow> PreviewRows { get; } = [];
+    public TransformPreviewList PreviewRows { get; private set; } = new([], null);
 
     private DocumentViewModel? CurrentDocument => ActiveDocumentTabs.SelectedItem as DocumentViewModel;
     private ScintillaEditorHost? CurrentEditor => CurrentDocument?.Editor;
@@ -162,7 +162,23 @@ public partial class MainWindow : Window
         if (placeholder is not null && Documents.Count > 1 && !placeholder.IsModified) RemoveDocument(placeholder);
     }
 
+    private readonly SemaphoreSlim _fileOpenGate = new(1, 1);
+    private int _pendingFileOpens;
+
     private async Task OpenFilesAsync(IEnumerable<string> paths)
+    {
+        var files = paths.ToArray();
+        _pendingFileOpens++;
+        try
+        {
+            await _fileOpenGate.WaitAsync();
+            try { if (!_closingInProgress) await OpenFilesBatchAsync(files); }
+            finally { _fileOpenGate.Release(); }
+        }
+        finally { _pendingFileOpens--; }
+    }
+
+    private async Task OpenFilesBatchAsync(IEnumerable<string> paths)
     {
         var uniquePaths = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -193,7 +209,13 @@ public partial class MainWindow : Window
         {
             foreach (var filePath in uniquePaths)
             {
-                try { lastOpened = await OpenFileCoreAsync(filePath, selectDocument: false); openedBytes += new FileInfo(filePath).Length; }
+                try
+                {
+                    StatusMessage.Text = $"파일 여는 중: {Path.GetFileName(filePath)}";
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+                    lastOpened = await OpenFileCoreAsync(filePath, selectDocument: false);
+                    openedBytes += new FileInfo(filePath).Length;
+                }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
                 {
                     errors.Add($"{Path.GetFileName(filePath)}: {exception.Message}");
@@ -396,10 +418,10 @@ public partial class MainWindow : Window
     {
         if (_allowClose) return;
         if (_closingInProgress) { e.Cancel = true; return; }
-        if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0)
+        if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || _pendingFileOpens > 0)
         {
             e.Cancel = true;
-            StatusMessage.Text = "진행 중인 문서 저장 또는 닫기가 끝난 뒤 다시 시도하세요.";
+            StatusMessage.Text = "진행 중인 파일 열기·저장·닫기가 끝난 뒤 다시 시도하세요.";
             return;
         }
         if (_macroWindow is not null && !_macroWindow.PrepareClose())
@@ -437,6 +459,7 @@ public partial class MainWindow : Window
 
     private void CompleteShutdown()
     {
+        _folderSearchCancellation?.Cancel();
         StopFileSync();
         _settingsSaveTimer.Stop();
         Hide();
@@ -672,7 +695,7 @@ public partial class MainWindow : Window
         var canSearch = UseConditionSearchCheck.IsChecked == true ? valid : !string.IsNullOrEmpty(LiteralFindBox.Text);
         var inFolder = FolderSearchCheck.IsChecked == true;
         SearchOpenButton.IsEnabled = canSearch;
-        SearchAllButton.IsEnabled = canSearch && (!inFolder || _folderSearchCancellation is null && !string.IsNullOrWhiteSpace(SearchFolderPathBox.Text));
+        SearchAllButton.IsEnabled = canSearch && _folderSearchCancellation is null && (!inFolder || !string.IsNullOrWhiteSpace(SearchFolderPathBox.Text));
         SearchAllButton.Content = inFolder ? "폴더 모두 찾기" : "모두 찾기";
         SearchAllButton.ToolTip = inFolder ? "선택한 폴더에서 결과를 모아 표시" : "현재 문서의 결과를 아래에 모아 표시";
         MarkSettingsDirty();
@@ -789,10 +812,13 @@ public partial class MainWindow : Window
         menu.PlacementTarget = (Button)sender; menu.IsOpen = true;
     }
 
-    private void Search_Click(object sender, RoutedEventArgs e)
+    private async void Search_Click(object sender, RoutedEventArgs e)
     {
         if (FolderSearchCheck.IsChecked == true) { SearchFolder_Click(sender, e); return; }
-        if (CurrentDocument is null) return;
+        if (CurrentDocument is null || _folderSearchCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource();
+        _folderSearchCancellation = cancellation;
+        CancelFolderSearchButton.Visibility = Visibility.Visible;
         try
         {
             var condition = ActiveSearchCondition();
@@ -805,15 +831,30 @@ public partial class MainWindow : Window
                 snapshot = new SearchSnapshot(document, revision, document.Text, document.NewLine);
                 _searchSnapshots.Add(key, snapshot);
             }
-            var results = _searchEngine.SearchRanges(snapshot.Text, condition, options);
-            var matchedLines = results.Select(result => result.LineNumber).ToHashSet();
-            var displayLines = new Dictionary<int, TextRange>();
-            foreach (var result in results)
-            {
-                foreach (var context in result.Context)
-                    displayLines.TryAdd(context.LineNumber, context.Range);
-            }
             var summary = ActiveSearchSummary();
+            UpdateConditionSummary();
+            var results = snapshot.Text.Length < 1_000_000
+                ? _searchEngine.SearchRanges(snapshot.Text, condition, options, cancellation.Token)
+                : await Task.Run(() => _searchEngine.SearchRanges(snapshot.Text, condition, options, cancellation.Token), cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (_closingInProgress) return;
+            (HashSet<int> Matched, KeyValuePair<int, TextRange>[] Display) PrepareRows()
+            {
+                var matched = new HashSet<int>();
+                var display = new Dictionary<int, TextRange>();
+                foreach (var result in results)
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    matched.Add(result.LineNumber);
+                    foreach (var context in result.Context)
+                        display.TryAdd(context.LineNumber, context.Range);
+                }
+                var ordered = display.OrderBy(item => item.Key).ToArray();
+                cancellation.Token.ThrowIfCancellationRequested();
+                return (matched, ordered);
+            }
+            var preparedRows = snapshot.Text.Length < 1_000_000 ? PrepareRows() : await Task.Run(PrepareRows, cancellation.Token);
+            if (_closingInProgress) return;
             RecordRecentSearch(summary, options);
             var shortSummary = summary.Length > 28 ? summary[..28] + "…" : summary;
             var session = new SearchResultSession
@@ -824,8 +865,17 @@ public partial class MainWindow : Window
                 Snapshot = snapshot,
                 MatchedLineNumbers = results.Select(result => result.LineNumber).ToArray()
             };
-            foreach (var line in displayLines.OrderBy(item => item.Key))
-                session.Rows.Add(new SearchResultRow(line.Key, snapshot.Text.Substring(line.Value.Start, line.Value.Length), !matchedLines.Contains(line.Key)));
+            var rowCount = 0;
+            foreach (var line in preparedRows.Display)
+            {
+                session.Rows.Add(new SearchResultRow(line.Key, snapshot.Text.Substring(line.Value.Start, line.Value.Length), !preparedRows.Matched.Contains(line.Key)));
+                if (++rowCount % 2048 == 0)
+                {
+                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    if (_closingInProgress) return;
+                }
+            }
             snapshot.ReferenceCount++;
             SearchSessions.Add(session);
             SearchResultTabs.SelectedItem = session;
@@ -834,9 +884,18 @@ public partial class MainWindow : Window
             RefreshSearchSessionState();
             StatusMessage.Text = results.Count == 0 ? "일치하는 줄이 없습니다." : $"{results.Count:N0}개 줄을 찾았습니다.";
         }
+        catch (OperationCanceledException) { StatusMessage.Text = "검색을 중단했습니다."; }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             MessageBox.Show(this, exception.Message, "조건 검색", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        finally
+        {
+            _folderSearchCancellation = null;
+            CancelFolderSearchButton.Visibility = Visibility.Collapsed;
+            foreach (var unused in _searchSnapshots.Where(item => item.Value.ReferenceCount == 0).Select(item => item.Key).ToArray())
+                _searchSnapshots.Remove(unused);
+            UpdateConditionSummary();
         }
     }
 
@@ -1014,42 +1073,46 @@ public partial class MainWindow : Window
     {
         if (CurrentDocument is null) return;
         var index = TrimOperationCombo.SelectedIndex;
-        TextTransformResult result;
+        var newLine = CurrentDocument.NewLine;
+        var value = ValueInputBox.Text;
+        var includeBlank = IncludeBlankLinesCheck.IsChecked == true;
+        var separator = LineNumberSeparatorBox.Text;
+        Func<string, TextTransformResult> transform;
         if (index is >= 0 and <= 3)
         {
             if (string.IsNullOrEmpty(StartMarkerBox.Text)) { ShowInputMessage("시작 기준 텍스트를 입력하세요.", StartMarkerBox); return; }
             if (index is 2 or 3 && string.IsNullOrEmpty(EndMarkerBox.Text)) { ShowInputMessage("종료 기준 텍스트를 입력하세요.", EndMarkerBox); return; }
             var operation = index switch { 1 => TrimOperation.RemoveAfter, 2 => TrimOperation.RemoveBetween, 3 => TrimOperation.KeepBetween, _ => TrimOperation.RemoveBefore };
             var options = new TrimOptions(operation, StartMarkerBox.Text, EndMarkerBox.Text, KeepStartCheck.IsChecked == true, KeepEndCheck.IsChecked == true, TrimMatchCaseCheck.IsChecked == true);
-            result = _transformService.Trim(CurrentDocument.Text, options, CurrentDocument.NewLine);
+            transform = text => _transformService.Trim(text, options, newLine);
         }
         else if (index is 4 or 5)
         {
             if (!int.TryParse(CharacterCountBox.Text, out var count) || count < 0) { ShowInputMessage("삭제할 글자 수에 0 이상의 정수를 입력하세요.", CharacterCountBox); return; }
-            result = _transformService.RemoveCharacters(CurrentDocument.Text, count, index == 4 ? CharacterRemovalSide.Left : CharacterRemovalSide.Right, CurrentDocument.NewLine);
+            transform = text => _transformService.RemoveCharacters(text, count, index == 4 ? CharacterRemovalSide.Left : CharacterRemovalSide.Right, newLine);
         }
         else if (index is >= 6 and <= 9)
         {
             if (index is 8 or 9 && string.IsNullOrEmpty(ValueInputBox.Text)) { ShowInputMessage("구분자를 입력하세요.", ValueInputBox); return; }
-            result = index switch
+            transform = text => index switch
             {
-                6 => _transformService.AddPrefix(CurrentDocument.Text, ValueInputBox.Text, IncludeBlankLinesCheck.IsChecked == true, CurrentDocument.NewLine),
-                7 => _transformService.AddSuffix(CurrentDocument.Text, ValueInputBox.Text, IncludeBlankLinesCheck.IsChecked == true, CurrentDocument.NewLine),
-                8 => _transformService.SplitByDelimiter(CurrentDocument.Text, ValueInputBox.Text, CurrentDocument.NewLine),
-                _ => _transformService.JoinLines(CurrentDocument.Text, ValueInputBox.Text)
+                6 => _transformService.AddPrefix(text, value, includeBlank, newLine),
+                7 => _transformService.AddSuffix(text, value, includeBlank, newLine),
+                8 => _transformService.SplitByDelimiter(text, value, newLine),
+                _ => _transformService.JoinLines(text, value)
             };
         }
         else
         {
             if (index == 10 && (!int.TryParse(StartNumberBox.Text, out var startNumber) || startNumber < 0)) { ShowInputMessage("시작 번호에 0 이상의 정수를 입력하세요.", StartNumberBox); return; }
             if (string.IsNullOrEmpty(LineNumberSeparatorBox.Text)) { ShowInputMessage("번호 구분자를 입력하세요.", LineNumberSeparatorBox); return; }
-            result = index == 10
-                ? _transformService.AddLineNumbers(CurrentDocument.Text, int.Parse(StartNumberBox.Text), LineNumberSeparatorBox.Text, IncludeBlankLinesCheck.IsChecked == true, CurrentDocument.NewLine)
-                : _transformService.RemoveLineNumbers(CurrentDocument.Text, LineNumberSeparatorBox.Text, CurrentDocument.NewLine);
+            var number = index == 10 ? int.Parse(StartNumberBox.Text) : 0;
+            transform = text => index == 10
+                ? _transformService.AddLineNumbers(text, number, separator, includeBlank, newLine)
+                : _transformService.RemoveLineNumbers(text, separator, newLine);
         }
         var title = (TrimOperationCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "텍스트 정리";
-        if (preview) ShowTransformPreview(result, $"{title} 미리보기");
-        else ApplyTransformDirect(result, title);
+        _ = RunTransformAsync(transform, title, preview);
     }
 
     private void ShowInputMessage(string message, FrameworkElement? input = null)
@@ -1073,16 +1136,15 @@ public partial class MainWindow : Window
     private void RunQuickTransform(string operation, string title, bool preview = true)
     {
         if (CurrentDocument is null) return;
-        var result = operation switch
+        var newLine = CurrentDocument.NewLine;
+        _ = RunTransformAsync(text => operation switch
         {
-            "Duplicate" => _transformService.RemoveDuplicateLines(CurrentDocument.Text, false, CurrentDocument.NewLine),
-            "Blank" => _transformService.RemoveBlankLines(CurrentDocument.Text, CurrentDocument.NewLine),
-            "Collapse" => _transformService.CollapseBlankLines(CurrentDocument.Text, CurrentDocument.NewLine),
-            "Whitespace" => _transformService.TrimWhitespace(CurrentDocument.Text, CurrentDocument.NewLine),
+            "Duplicate" => _transformService.RemoveDuplicateLines(text, false, newLine),
+            "Blank" => _transformService.RemoveBlankLines(text, newLine),
+            "Collapse" => _transformService.CollapseBlankLines(text, newLine),
+            "Whitespace" => _transformService.TrimWhitespace(text, newLine),
             _ => throw new ArgumentException("지원하지 않는 빠른 정리 기능입니다.", nameof(operation))
-        };
-        if (preview) ShowTransformPreview(result, title);
-        else ApplyTransformDirect(result, title);
+        }, title, preview);
     }
 
     private void RenderFavoriteTools()
@@ -1142,10 +1204,11 @@ public partial class MainWindow : Window
     {
         if (CurrentDocument is null) return;
         if (string.IsNullOrEmpty(DeleteContainingBox.Text)) { ShowInputMessage("삭제할 줄에 포함된 문장을 입력하세요.", DeleteContainingBox); return; }
-        var result = _transformService.RemoveLinesContaining(CurrentDocument.Text, DeleteContainingBox.Text,
-            DeleteContainingMatchCaseCheck.IsChecked == true, CurrentDocument.NewLine);
-        if (preview) ShowTransformPreview(result, "특정 문장 포함 줄 삭제");
-        else ApplyTransformDirect(result, "특정 문장 포함 줄 삭제");
+        var value = DeleteContainingBox.Text;
+        var matchCase = DeleteContainingMatchCaseCheck.IsChecked == true;
+        var newLine = CurrentDocument.NewLine;
+        _ = RunTransformAsync(text => _transformService.RemoveLinesContaining(text, value, matchCase, newLine),
+            "특정 문장 포함 줄 삭제", preview);
     }
 
     private void PreviewReplace_Click(object sender, RoutedEventArgs e)
@@ -1158,9 +1221,10 @@ public partial class MainWindow : Window
     {
         if (CurrentDocument is null) return;
         if (string.IsNullOrEmpty(ReplaceFromBox.Text)) { ShowInputMessage("찾을 텍스트를 입력하세요.", ReplaceFromBox); return; }
-        var result = _transformService.Replace(CurrentDocument.Text, ReplaceFromBox.Text, ReplaceToBox.Text, false, CurrentDocument.NewLine);
-        if (preview) ShowTransformPreview(result, "치환 미리보기");
-        else ApplyTransformDirect(result, "일괄 치환");
+        var from = ReplaceFromBox.Text;
+        var to = ReplaceToBox.Text;
+        var newLine = CurrentDocument.NewLine;
+        _ = RunTransformAsync(text => _transformService.Replace(text, from, to, false, newLine), "일괄 치환", preview);
     }
 
     private void ApplyTransformDirect(TextTransformResult result, string title)
@@ -1180,10 +1244,7 @@ public partial class MainWindow : Window
 
     private void ShowTransformPreview(TextTransformResult result, string title)
     {
-        _allPreviewRows.Clear();
-        PreviewRows.Clear();
-        foreach (var item in result.Preview)
-            _allPreviewRows.Add(new TransformPreviewRow(item.LineNumber, item.OriginalText, item.ResultText, item.Status switch { TextChangeStatus.Changed => "변경", TextChangeStatus.Skipped => "건너뜀", _ => "유지" }));
+        _allPreviewRows = result.Preview;
         ApplyPreviewFilter();
         _pendingTransformedText = result.Text;
         CaptureResultSource();
@@ -1226,8 +1287,8 @@ public partial class MainWindow : Window
     private void ApplyPreviewFilter()
     {
         var filter = (PreviewFilterCombo?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "전체";
-        PreviewRows.Clear();
-        foreach (var row in _allPreviewRows.Where(row => filter == "전체" || row.Status == filter)) PreviewRows.Add(row);
+        PreviewRows = new TransformPreviewList(_allPreviewRows, filter switch { "변경" => TextChangeStatus.Changed, "건너뜀" => TextChangeStatus.Skipped, "유지" => TextChangeStatus.Unchanged, _ => (TextChangeStatus?)null });
+        if (PreviewGrid is not null) PreviewGrid.ItemsSource = PreviewRows;
     }
 
     private void ClosePreview_Click(object sender, RoutedEventArgs e)
@@ -1238,8 +1299,8 @@ public partial class MainWindow : Window
 
     private void ClearTransformPreview()
     {
-        PreviewRows.Clear();
-        _allPreviewRows.Clear();
+        _allPreviewRows = [];
+        ApplyPreviewFilter();
         _pendingTransformedText = null;
         _resultDocument = null;
         _resultSourceRevision = 0;

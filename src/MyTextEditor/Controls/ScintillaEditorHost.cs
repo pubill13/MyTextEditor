@@ -96,6 +96,13 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             WrapMode = WrapMode.None,
             AllowDrop = true
         };
+        // Plain text uses one style. A style byte for every UTF-8 byte would otherwise
+        // duplicate gigabytes of storage when many large logs are open.
+        var plainDocument = _editor.DirectMessage((int)SciApi.SCI_CREATEDOCUMENT,
+            IntPtr.Zero, (IntPtr)DocumentOption.StylesNone);
+        if (plainDocument == IntPtr.Zero) throw new OutOfMemoryException("텍스트 편집 버퍼를 만들 수 없습니다.");
+        _editor.DirectMessage((int)SciApi.SCI_SETDOCPOINTER, IntPtr.Zero, plainDocument);
+        _editor.DirectMessage((int)SciApi.SCI_RELEASEDOCUMENT, IntPtr.Zero, plainDocument);
         _editor.SetShortcutProcessor(ProcessShortcut);
         _editor.Margins[0].Type = MarginType.Number;
         _editor.Margins[0].Width = 44;

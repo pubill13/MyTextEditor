@@ -1,5 +1,29 @@
 # OmniEdit 작업 인수인계
 
+## GitHub 코드 업데이트
+
+사용자 요청에 따라 아래 대용량·탭 수정과 앞선 탭 드래그·Merge 최적화 커밋을 함께 main에 올린다. 소스 코드 업데이트이며 EXE/ZIP 릴리즈는 기존 v1.9.4 그대로다. 아래의 로컬/미배포 표시는 바이너리 배포 여부와 당시 검증 시점을 구분해 읽을 것.
+
+## 대용량 다중 파일·탭 제목 수정 (로컬 검증 완료, 미배포)
+
+현재 요청: 300MB 파일 20개 이상 로딩·검색·정리 지연 개선 및 첫 두 파일 드롭 때 탭 제목이 사라지는 문제 해결. 구현 및 검증 완료. 버전/태그/원격 릴리즈는 변경하지 않았다. 실행 가능한 최신 개발 빌드는 `src/MyTextEditor/bin/Next/OmniEdit.exe`이며 .NET 9 데스크톱 런타임이 필요하다. 기존 사용자 `.gitignore` 변경을 보존한다.
+
+- `MainWindow.DocumentPanes.cs`: 빈 화면 안내를 Documents 컬렉션 변경과 동기화. 빈 상태에서 파일 드롭 후 안내가 탭 제목을 덮는 현상을 재현하고 수정했다.
+- `ScintillaEditorHost.cs`: plain-text 문서를 StylesNone으로 생성해 문자별 스타일 버퍼를 제거. create/set/release 참조 수명을 유지하며 Diff와 사용자 하이라이트 indicator는 유지한다.
+- `MainWindow.SearchWorkflow.cs`, `MainWindow.xaml.cs`, `UiModels.cs`: 열린 파일을 순차 백그라운드 검색하고 일치 줄·문서 revision만 보존. 전체 파일들의 UTF-16 사본을 동시에 보관하지 않는다. 단일 대형 문서 검색과 결과 정렬도 백그라운드 처리하고 결과 행 생성은 UI에 주기적으로 양보한다. 단일 검색은 기존 전체 snapshot 공유 정책을 유지한다. 검색 중단과 종료 시 취소를 지원한다.
+- `TextTransformService.cs`, `TransformModels.cs`: 줄별 문자열 배열 대신 단일 출력 버퍼와 원문/결과 범위 목록. `ITextChangePreviewList.GetStatus()`로 문자열 생성 없이 상태 조회. 줄바꿈/통계/모든 미리보기 행을 유지한다.
+- `MainWindow.TransformWork.cs`, `TransformPreviewList.cs`: 100만 자 이상 정리 계산을 백그라운드 실행. 원문 수정·닫힘·탭 전환 시 오래된 결과를 적용하지 않는다. WPF IList로 미리보기 문자열을 필요한 행만 생성한다. 파일 열기는 gate로 직렬화해 중복 드롭 경합을 방지한다.
+
+검증: Release 빌드 0경고/0오류, Core 40/40, `--tab-visibility`, `--omni-search`, `--transform-work`, `--search-actions`, 기본 Performance, `--v18` 통과. Ctrl+C 테스트는 제한된 권한에서 실제 키 입력 실패 후 정상 데스크톱 입력 권한으로 통과했다. 탭 테스트는 최초 두 파일·모두 닫은 후 두 파일·시작 파일의 실제 헤더 표시/히트테스트/선택을 확인한다. 정리 테스트는 lazy WPF 목록·필터·다른 탭/수정 시 stale 차단·단일 Undo를 확인한다. 현재 실제 DPI는 100%; 다른 DPI/물리 IME는 이번 변경에서 미검증이다.
+
+실측: `--large-workspace 21 300`에서 300,000,000바이트 파일 21개(총 6.3GB) 열기 36.397초, 전체 검색 6.273초, 한 문서 치환 계산+적용 2.929초. 로드 직후 working set 8113MiB, 검색 후 9019MiB, peak 10167MiB. UI 최대 heartbeat 간격은 열기 1673ms, 검색 217ms, 치환 2198ms. 원문 캡처와 native 적용은 여전히 UI 스레드이므로 무중단 편집이라고 보고하면 안 된다. 테스트는 255자 ASCII 행+한글/이모지 검색 표식 1개, 하나의 fixture를 서로 다른 경로의 hardlink로 연 캐시 친화 조건이며 실제 서로 다른 파일들의 cold SSD 성능이나 모든 행 일치 검색을 대표하지 않는다. 원문은 탭별 독립 버퍼이며 치환/Undo/검색 결과 보존까지 확인했다.
+
+스타일 버퍼 비교: `--native-buffer-memory 300 --default-styles`의 로드 후 1003.5MiB, StylesNone은 716.9MiB(별도 프로세스 같은 fixture, 약 286.6MiB 절감). 30MB 로드 3회 중앙값 0.218초. 5만 줄 Merge 스크롤 p95 100/5000/50000 변경에서 1.00/1.31/3.11ms.
+
+남은 성능 한계/후속 우선순위: 전체 편집 버퍼 자체는 총 파일 크기에 비례한다. 모든 행이 일치하는 검색은 결과 수에 비례해 메모리를 사용한다. native 원문 캡처/최종 ReplaceAll 적용의 UI 중단을 줄이는 작업은 별도 개선 대상이다. 현재 요청의 최적화와 탭 버그 수정은 완료했지만 이 한계를 없앴다고 해석하지 말 것. 배포가 요청되면 최신 코드에서 자체 포함 EXE/ZIP을 만들고 버전/문서/원격을 함께 갱신한다. 사용자가 실행 중인 앱은 종료하지 않는다.
+
+빌드: `dotnet restore MyTextEditor.sln -p:NuGetAudit=false` (환경에 따라 정상 사용자 권한 필요), `dotnet build MyTextEditor.sln -c Release --no-restore -p:OutputPath=bin/Next/ -p:NuGetAudit=false`. 테스트는 `tests/MyTextEditor.Performance/bin/Next/MyTextEditor.Performance.dll`을 사용한다. 대용량 실행기는 가용 물리 RAM을 확인한 뒤 자체 임시 폴더에서만 fixture/hardlink를 생성·정리한다.
+
 ## 탭 드래그·Merge 최적화 (로컬, 미배포)
 
 문서 탭 제목을 오른쪽 끝으로 드래그하면 Popup 분할 미리보기를 표시하고 놓을 때 분할한다. 분할 후 양방향 이동, Esc/범위 밖 취소, 문서와 Undo 유지가 가능하다. MainWindow.DocumentTabDrag.cs가 native 편집기 위의 미리보기와 마우스 캡처를 관리한다. DocumentPanesVerification에서 실제 Windows mouse_event로 분할/돌아오기와 기존 Ctrl+W를 확인했다.

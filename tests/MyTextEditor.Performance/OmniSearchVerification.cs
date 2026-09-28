@@ -39,6 +39,9 @@ internal static class OmniSearchVerification
                 !window.Documents[0].IsModified,
                 "Command-line file did not replace initial blank tab");
             Field<CheckBox>(window, "FolderSearchCheck").IsChecked = false;
+            Field<System.Windows.Controls.ComboBox>(window, "ContextLinesCombo").SelectedIndex = 0;
+            Field<CheckBox>(window, "MatchCaseCheck").IsChecked = false;
+            Field<CheckBox>(window, "WholeWordCheck").IsChecked = false;
             Field<CheckBox>(window, "UseConditionSearchCheck").IsChecked = true;
             Field<TextBox>(window, "LiteralFindBox").Text = "";
             Require(!Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Empty literal must disable Find");
@@ -52,10 +55,18 @@ internal static class OmniSearchVerification
             Call(window, "Search_Click", window, new RoutedEventArgs());
             Require(window.SearchSessions.Last().Rows.Count == 2, "All Find did not create result rows");
 
+            var previousSessions = window.SearchSessions.Count;
             Call(window, "SearchOpenDocuments_Click", window, new RoutedEventArgs());
+            PumpUntil(() => window.SearchSessions.Count > previousSessions);
             Require(window.SearchSessions.Last().Rows.Count == 2 &&
-                window.SearchSessions.Last().Rows.All(row => row.Source?.Snapshot is not null),
+                window.SearchSessions.Last().Rows.All(row => row.Source?.Document == window.Documents[0] && row.Source.Snapshot is null),
                 "Open-document search lost snapshot/source");
+            var openResults = window.SearchSessions.Last();
+            window.Documents[0].Editor.ReplaceAll("modified");
+            Require(openResults.Rows[0].Text == "가😀 AAA" && openResults.Rows[1].Text == "AAA 끝" &&
+                openResults.Rows[0].Source!.DocumentRevision != window.Documents[0].ContentRevision,
+                "Matched-line snapshots must survive source edits without retaining the whole source");
+            window.Documents[0].Editor.Undo();
             var otherFolder = Path.Combine(directory, "selected-folder");
             Directory.CreateDirectory(otherFolder);
             File.WriteAllText(Path.Combine(otherFolder, "chosen.log"), "선택한 폴더 AAA", new UTF8Encoding(false));
@@ -87,6 +98,23 @@ internal static class OmniSearchVerification
             Call(window, "CopyAllResults_Click", window, new RoutedEventArgs());
             Require(System.Windows.Clipboard.GetText().Contains("다른 AAA", StringComparison.Ordinal),
                 "Folder result copy failed");
+            Field<CheckBox>(window, "FolderSearchCheck").IsChecked = false;
+            var largeText = string.Concat(Enumerable.Repeat("unmatched data 0123456789\n", 60000)) + "AAA retained 😀";
+            window.Documents[0].Editor.ReplaceAll(largeText);
+            previousSessions = window.SearchSessions.Count;
+            Call(window, "Search_Click", window, new RoutedEventArgs());
+            Require(window.SearchSessions.Count == previousSessions,
+                "Large single-document search blocked the initiating UI event");
+            Call(window, "CancelFolderSearch_Click", window, new RoutedEventArgs());
+            PumpUntil(() => typeof(MainWindow).GetField("_folderSearchCancellation", Private)!.GetValue(window) is null);
+            Require(window.SearchSessions.Count == previousSessions, "Cancelled search published incomplete results");
+            Call(window, "SearchOpenDocuments_Click", window, new RoutedEventArgs());
+            Require(window.SearchSessions.Count == previousSessions,
+                "Open-document search blocked the initiating UI event");
+            PumpUntil(() => window.SearchSessions.Count > previousSessions);
+            Require(window.SearchSessions.Last().Rows.Count == 1 && window.SearchSessions.Last().Rows[0].Text == "AAA retained 😀" &&
+                window.SearchSessions.Last().Rows[0].Source!.Snapshot is null,
+                "Large open-document scan lost match content or retained a full snapshot");
             Console.WriteLine("PASS startup file, Unicode ordinary find, All Find, open-file and folder results");
             return 0;
         }

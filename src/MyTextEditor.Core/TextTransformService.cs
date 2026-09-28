@@ -126,10 +126,13 @@ public sealed class TextTransformService
         ArgumentNullException.ThrowIfNull(newValue);
         ValidateNewLine(newLine);
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        return TransformEachLine(text, newLine, (line, _) =>
+        return ProcessLines(text, newLine, (_, line) =>
         {
-            var result = ReplaceAll(line, oldValue, newValue, comparison);
-            return (result, result == line ? TextChangeStatus.Unchanged : TextChangeStatus.Changed);
+            if (!line.Span.Contains(oldValue, comparison))
+                return (line, TextChangeStatus.Unchanged, true);
+            var result = ReplaceAll(line.ToString(), oldValue, newValue, comparison);
+            return (result.AsMemory(), result.AsSpan().SequenceEqual(line.Span)
+                ? TextChangeStatus.Unchanged : TextChangeStatus.Changed, true);
         });
     }
 
@@ -137,10 +140,12 @@ public sealed class TextTransformService
     {
         ArgumentNullException.ThrowIfNull(text);
         ValidateNewLine(newLine);
-        return TransformEachLine(text, newLine, (line, _) =>
+        return ProcessLines(text, newLine, (_, line) =>
         {
-            var result = line.Trim();
-            return (result, result == line ? TextChangeStatus.Unchanged : TextChangeStatus.Changed);
+            var trimmed = line.Span.Trim();
+            var start = line.Length - line.Span.TrimStart().Length;
+            return (line.Slice(start, trimmed.Length),
+                trimmed.Length == line.Length ? TextChangeStatus.Unchanged : TextChangeStatus.Changed, true);
         });
     }
 
@@ -149,16 +154,15 @@ public sealed class TextTransformService
     {
         ArgumentNullException.ThrowIfNull(text);
         ValidateNewLine(newLine);
-        var lines = TextLines.Split(text);
-        var seen = new HashSet<string>(matchCase ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
-        return FilterLines(lines, newLine, (_, line) => seen.Add(line));
+        var seen = new HashSet<ReadOnlyMemory<char>>(new LineMemoryComparer(matchCase));
+        return FilterLines(text, newLine, (_, line) => seen.Add(line));
     }
 
     public TextTransformResult RemoveBlankLines(string text, string newLine = "\r\n")
     {
         ArgumentNullException.ThrowIfNull(text);
         ValidateNewLine(newLine);
-        return FilterLines(TextLines.Split(text), newLine, (_, line) => !string.IsNullOrWhiteSpace(line));
+        return FilterLines(text, newLine, (_, line) => !line.Span.IsWhiteSpace());
     }
 
     public TextTransformResult RemoveLinesContaining(string text, string value, bool matchCase = false,
@@ -169,7 +173,7 @@ public sealed class TextTransformService
         ValidateNewLine(newLine);
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         return FilterLinesPreservingTerminalNewLine(text, newLine,
-            (_, line) => !line.Contains(value, comparison));
+            (_, line) => !line.Span.Contains(value, comparison));
     }
 
     public TextTransformResult CollapseBlankLines(string text, string newLine = "\r\n")
@@ -177,9 +181,9 @@ public sealed class TextTransformService
         ArgumentNullException.ThrowIfNull(text);
         ValidateNewLine(newLine);
         var previousWasBlank = false;
-        return FilterLines(TextLines.Split(text), newLine, (_, line) =>
+        return FilterLines(text, newLine, (_, line) =>
         {
-            var isBlank = string.IsNullOrWhiteSpace(line);
+            var isBlank = line.Span.IsWhiteSpace();
             var keep = !isBlank || !previousWasBlank;
             previousWasBlank = isBlank;
             return keep;
@@ -193,7 +197,7 @@ public sealed class TextTransformService
         ArgumentNullException.ThrowIfNull(oneBasedLineNumbers);
         ValidateNewLine(newLine);
         var selected = oneBasedLineNumbers.Where(number => number > 0).ToHashSet();
-        return FilterLines(TextLines.Split(text), newLine, (index, _) => !selected.Contains(index + 1));
+        return FilterLines(text, newLine, (index, _) => !selected.Contains(index + 1));
     }
 
     public TextTransformResult ExtractLines(string text, IEnumerable<int> oneBasedLineNumbers,
@@ -270,16 +274,11 @@ public sealed class TextTransformService
     private static TextTransformResult TransformEachLine(string text, string newLine,
         Func<string, int, (string Result, TextChangeStatus Status)> transform)
     {
-        var lines = TextLines.Split(text);
-        var results = new string[lines.Count];
-        var preview = new List<TextChangePreview>(lines.Count);
-        for (var index = 0; index < lines.Count; index++)
+        return ProcessLines(text, newLine, (index, line) =>
         {
-            var transformed = transform(lines[index], index);
-            results[index] = transformed.Result;
-            preview.Add(new TextChangePreview(index + 1, lines[index], transformed.Result, transformed.Status));
-        }
-        return BuildResult(string.Join(newLine, results), preview);
+            var transformed = transform(line.ToString(), index);
+            return (transformed.Result.AsMemory(), transformed.Status, true);
+        });
     }
 
     private static TextTransformResult AddToLines(string text, string value, bool addAsPrefix,
@@ -298,42 +297,88 @@ public sealed class TextTransformService
         });
     }
 
-    private static TextTransformResult FilterLines(IReadOnlyList<string> lines, string newLine,
-        Func<int, string, bool> shouldKeep)
-    {
-        var kept = new List<string>();
-        var preview = new List<TextChangePreview>(lines.Count);
-        for (var index = 0; index < lines.Count; index++)
-        {
-            var keep = shouldKeep(index, lines[index]);
-            if (keep) kept.Add(lines[index]);
-            preview.Add(new TextChangePreview(index + 1, lines[index], keep ? lines[index] : string.Empty,
-                keep ? TextChangeStatus.Unchanged : TextChangeStatus.Changed));
-        }
-        return BuildResult(string.Join(newLine, kept), preview);
-    }
+    private static TextTransformResult FilterLines(string text, string newLine,
+        Func<int, ReadOnlyMemory<char>, bool> shouldKeep) =>
+        ProcessLines(text, newLine, (index, line) => shouldKeep(index, line)
+            ? (line, TextChangeStatus.Unchanged, true)
+            : (ReadOnlyMemory<char>.Empty, TextChangeStatus.Changed, false));
 
     private static TextTransformResult FilterLinesPreservingTerminalNewLine(string text, string newLine,
-        Func<int, string, bool> shouldKeep)
+        Func<int, ReadOnlyMemory<char>, bool> shouldKeep) =>
+        ProcessLines(text, newLine, (index, line) => shouldKeep(index, line)
+            ? (line, TextChangeStatus.Unchanged, true)
+            : (ReadOnlyMemory<char>.Empty, TextChangeStatus.Changed, false), preserveTerminalNewLine: true);
+
+    private static TextTransformResult ProcessLines(string text, string newLine,
+        Func<int, ReadOnlyMemory<char>, (ReadOnlyMemory<char> Result, TextChangeStatus Status, bool Keep)> transform,
+        bool preserveTerminalNewLine = false)
     {
-        var lines = TextLines.Split(text);
-        var hasTerminalNewLine = TextLines.EndsWithNewLine(text);
-        var contentLineCount = hasTerminalNewLine ? lines.Count - 1 : lines.Count;
-        var kept = new List<string>(contentLineCount);
-        var preview = new List<TextChangePreview>(contentLineCount);
-
-        for (var index = 0; index < contentLineCount; index++)
+        var output = new System.Text.StringBuilder();
+        var ranges = new List<PreviewRange>();
+        var changed = 0;
+        var skipped = 0;
+        var empty = 0;
+        var kept = 0;
+        var terminal = preserveTerminalNewLine && TextLines.EndsWithNewLine(text);
+        var start = 0;
+        while (start <= text.Length && !(terminal && start == text.Length))
         {
-            var keep = shouldKeep(index, lines[index]);
-            if (keep) kept.Add(lines[index]);
-            preview.Add(new TextChangePreview(index + 1, lines[index], keep ? lines[index] : string.Empty,
-                keep ? TextChangeStatus.Unchanged : TextChangeStatus.Changed));
+            var relativeEnd = text.AsSpan(start).IndexOfAny('\r', '\n');
+            var end = relativeEnd < 0 ? text.Length : start + relativeEnd;
+            var transformed = transform(ranges.Count, text.AsMemory(start, end - start));
+            if (transformed.Keep && kept++ > 0) output.Append(newLine);
+            var resultStart = output.Length;
+            if (transformed.Keep) output.Append(transformed.Result.Span);
+            ranges.Add(new PreviewRange(start, end - start, resultStart,
+                transformed.Result.Length, transformed.Status));
+            if (transformed.Status == TextChangeStatus.Changed)
+            {
+                changed++;
+                if (transformed.Result.Length == 0) empty++;
+            }
+            else if (transformed.Status == TextChangeStatus.Skipped) skipped++;
+            if (end == text.Length) break;
+            start = end + (text[end] == '\r' && end + 1 < text.Length && text[end + 1] == '\n' ? 2 : 1);
         }
+        if (terminal && kept > 0) output.Append(newLine);
+        var result = output.ToString();
+        return new TextTransformResult(result, new RangePreview(text, result, ranges),
+            new TextTransformSummary(changed, skipped, empty));
+    }
 
-        var result = string.Join(newLine, kept);
-        if (hasTerminalNewLine && kept.Count > 0)
-            result += newLine;
-        return BuildResult(result, preview);
+    private readonly record struct PreviewRange(int OriginalStart, int OriginalLength,
+        int ResultStart, int ResultLength, TextChangeStatus Status);
+
+    // Keep offsets rather than a second set of strings for every line in large documents.
+    private sealed class RangePreview(string original, string result, List<PreviewRange> ranges)
+        : ITextChangePreviewList
+    {
+        public int Count => ranges.Count;
+        public TextChangeStatus GetStatus(int index) => ranges[index].Status;
+        public TextChangePreview this[int index]
+        {
+            get
+            {
+                var range = ranges[index];
+                return new TextChangePreview(index + 1,
+                    original.Substring(range.OriginalStart, range.OriginalLength),
+                    result.Substring(range.ResultStart, range.ResultLength), range.Status);
+            }
+        }
+        public IEnumerator<TextChangePreview> GetEnumerator()
+        {
+            for (var index = 0; index < Count; index++) yield return this[index];
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class LineMemoryComparer(bool matchCase) : IEqualityComparer<ReadOnlyMemory<char>>
+    {
+        private readonly StringComparison comparison = matchCase
+            ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        public bool Equals(ReadOnlyMemory<char> left, ReadOnlyMemory<char> right) =>
+            left.Span.Equals(right.Span, comparison);
+        public int GetHashCode(ReadOnlyMemory<char> value) => string.GetHashCode(value.Span, comparison);
     }
 
     private static TextTransformResult BuildResult(string text, IReadOnlyList<TextChangePreview> preview)

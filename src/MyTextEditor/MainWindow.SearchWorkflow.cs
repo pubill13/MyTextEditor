@@ -105,28 +105,55 @@ public partial class MainWindow
         StatusMessage.Text = wrapped ? "문서 끝에서 다시 검색했습니다." : $"{editor.CurrentLine + 1:N0}번째 줄에서 찾았습니다.";
     }
 
-    private void SearchOpenDocuments_Click(object sender, RoutedEventArgs e)
+    private async void SearchOpenDocuments_Click(object sender, RoutedEventArgs e)
     {
-        if (Documents.Count == 0) return;
+        if (Documents.Count == 0 || _folderSearchCancellation is not null) return;
+        using var cancellation = new CancellationTokenSource();
+        _folderSearchCancellation = cancellation;
+        CancelFolderSearchButton.Visibility = Visibility.Visible;
         try
         {
             var condition = ActiveSearchCondition();
             var options = CurrentSearchOptions();
+            var summary = ActiveSearchSummary();
+            var documents = Documents.ToArray();
             var groups = new List<(SearchResultSource, IReadOnlyList<SearchResult>)>();
-            foreach (var document in Documents)
+            UpdateConditionSummary();
+            for (var index = 0; index < documents.Length; index++)
             {
-                var snapshot = GetSearchSnapshot(document);
-                var results = _searchEngine.Search(snapshot.Text, condition, options);
-                groups.Add((new SearchResultSource { DisplayName = document.DisplayName, FilePath = document.FilePath, Snapshot = snapshot }, results));
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (_closingInProgress) return;
+                var document = documents[index];
+                if (!Documents.Contains(document)) continue;
+                StatusMessage.Text = $"열린 파일 검색 중 · {index + 1:N0}/{documents.Length:N0} · {document.DisplayName}";
+                var source = new SearchResultSource
+                {
+                    DisplayName = document.DisplayName, FilePath = document.FilePath,
+                    Document = document, DocumentRevision = document.ContentRevision
+                };
+                // Keep only matching lines, rather than a second full UTF-16 copy of every open file.
+                var text = document.Text;
+                var results = await Task.Run(() => SearchOpenDocumentMatches(text, condition, options, cancellation.Token), cancellation.Token);
+                groups.Add((source, results));
+                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
             }
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (_closingInProgress) return;
             var count = groups.Sum(group => group.Item2.Count);
-            AddMultiSourceSession($"열린 파일 · {count:N0}", $"열린 문서 {groups.Count:N0}개에서 {count:N0}개 일치 · 결과를 누르면 해당 문서로 이동", groups);
-            RecordRecentSearch(ActiveSearchSummary(), options);
+            await AddMultiSourceSessionAsync($"열린 파일 · {count:N0}", $"열린 문서 {groups.Count:N0}개에서 {count:N0}개 일치 · 결과를 누르면 해당 문서로 이동", groups, cancellation.Token);
+            RecordRecentSearch(summary, options);
             StatusMessage.Text = $"열린 파일에서 {count:N0}개를 찾았습니다.";
         }
+        catch (OperationCanceledException) { StatusMessage.Text = "열린 파일 검색을 중단했습니다."; }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             StatusMessage.Text = exception.Message;
+        }
+        finally
+        {
+            _folderSearchCancellation = null;
+            CancelFolderSearchButton.Visibility = Visibility.Collapsed;
+            UpdateConditionSummary();
         }
     }
 
@@ -180,8 +207,8 @@ public partial class MainWindow
                 (Source: new SearchResultSource { DisplayName = Path.GetFileName(file.FilePath), FilePath = file.FilePath,
                     FileLength = file.Length, LastWriteTimeUtc = file.LastWriteUtc }, Matches: file.Matches)).ToArray();
             var count = groups.Sum(group => group.Matches.Count);
-            AddMultiSourceSession($"폴더 · {count:N0}",
-                $"{folder} · 검사 {result.FilesScanned:N0}개 · 일치 {count:N0}개 · 실패 {result.Failures.Count:N0}개", groups);
+            await AddMultiSourceSessionAsync($"폴더 · {count:N0}",
+                $"{folder} · 검사 {result.FilesScanned:N0}개 · 일치 {count:N0}개 · 실패 {result.Failures.Count:N0}개", groups, cancellation.Token);
             if (result.Failures.Count > 0)
                 StatusMessage.Text = $"검색 완료 · {count:N0}개 일치 · 읽기 실패/변경 {result.Failures.Count:N0}개: {string.Join("; ", result.Failures.Take(3).Select(f => Path.GetFileName(f.FilePath) + " " + f.Message))}";
             else StatusMessage.Text = $"검색 완료 · {result.FilesScanned:N0}개 파일 · {count:N0}개 일치";
@@ -210,17 +237,36 @@ public partial class MainWindow
 
     private string ActiveSearchSummary() => UseConditionSearchCheck.IsChecked == true ? ConditionSummaryText.Text : LiteralFindBox.Text;
 
-    private SearchSnapshot GetSearchSnapshot(DocumentViewModel document)
+    private IReadOnlyList<SearchResult> SearchOpenDocumentMatches(string text, ConditionNode condition,
+        SearchOptions options, CancellationToken cancellationToken)
     {
-        var key = (document, document.ContentRevision);
-        if (!_searchSnapshots.TryGetValue(key, out var snapshot))
-            _searchSnapshots[key] = snapshot = new SearchSnapshot(document, document.ContentRevision, document.Text, document.NewLine);
-        return snapshot;
+        // Multi-file results show matches only. Do not allocate unused context strings (including
+        // a second copy of every matching line) via the compatibility Search API.
+        var ranges = _searchEngine.SearchRanges(text, condition, options with { ContextLines = 0 }, cancellationToken);
+        var matches = new List<SearchResult>(ranges.Count);
+        foreach (var range in ranges)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            matches.Add(new SearchResult(range.LineNumber, text.Substring(range.Range.Start, range.Range.Length), []));
+        }
+        return matches;
     }
 
     private async Task NavigateExternalResultAsync(ListBox list, SearchResultRow row)
     {
         if (row.Source is not { } source) return;
+        if (source.Document is { } document)
+        {
+            if (!Documents.Contains(document) || document.ContentRevision != source.DocumentRevision)
+            {
+                StatusMessage.Text = "원본 문서가 바뀌거나 닫혀 이동할 수 없습니다.";
+                return;
+            }
+            SelectDocument(document);
+            document.Editor.GoToLine(row.LineNumber, focusEditor: false);
+            list.Focus();
+            return;
+        }
         if (source.Snapshot is { } snapshot)
         {
             if (!IsSnapshotCurrent(snapshot))
@@ -261,13 +307,21 @@ public partial class MainWindow
         }
     }
 
-    private void AddMultiSourceSession(string title, string description, IEnumerable<(SearchResultSource Source, IReadOnlyList<SearchResult> Matches)> groups)
+    private async Task AddMultiSourceSessionAsync(string title, string description, IEnumerable<(SearchResultSource Source, IReadOnlyList<SearchResult> Matches)> groups, CancellationToken cancellationToken)
     {
         var session = new SearchResultSession { Title = title, ToolTip = description, ConditionSummary = title, Description = description };
         foreach (var (source, matches) in groups)
         {
             foreach (var match in matches)
+            {
                 session.Rows.Add(new SearchResultRow(match.LineNumber, match.Text) { Source = source });
+                if (session.Rows.Count % 2048 == 0)
+                {
+                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_closingInProgress) return;
+                }
+            }
             if (source.Snapshot is { } snapshot) snapshot.ReferenceCount++;
         }
         SearchSessions.Add(session);
