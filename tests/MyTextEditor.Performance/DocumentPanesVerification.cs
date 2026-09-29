@@ -36,10 +36,12 @@ internal static class DocumentPanesVerification
             var second = window.Documents[1];
             second.Editor.LoadUtf8(Encoding.UTF8.GetBytes("오른쪽 문서"));
             second.Editor.ReplaceAll("오른쪽 수정");
+            VerifyHeaderClicks(window, first, second);
             Field<MenuItem>(window, "SplitDocumentsMenuItem").IsChecked = true;
             Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs()); Pump();
             Check(window.LeftDocuments.SequenceEqual(new[] { first }) && window.RightDocuments.SequenceEqual(new[] { second }), "Split did not move current document right");
             Check(first.Editor.IsVisible && second.Editor.IsVisible, "Both native editors must be visible");
+            VerifyHeaderClicks(window, first, second);
             first.Editor.FocusEditor(); Pump();
             Call(window, "Undo_Click", window, new RoutedEventArgs());
             Check(second.Text == "오른쪽 수정", "Left Undo affected right document");
@@ -100,6 +102,29 @@ internal static class DocumentPanesVerification
         Field<MenuItem>(window, "SplitDocumentsMenuItem").IsChecked = false;
         Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs()); Pump();
         Console.WriteLine("PASS tab drag edge targeting, native preview, cancellation, bidirectional move and Undo preservation");
+    }
+
+    private static void VerifyHeaderClicks(MainWindow window, params DocumentViewModel[] documents)
+    {
+        for (var repeat = 0; repeat < 4; repeat++)
+        foreach (var document in documents)
+        {
+            var tabs = Field<TabControl>(window, window.RightDocuments.Contains(document) ? "RightDocumentTabs" : "DocumentTabs");
+            var old = tabs.SelectedItem as DocumentViewModel;
+            old?.Editor.FocusEditor(); Pump();
+            var header = (System.Windows.Controls.TabItem)tabs.ItemContainerGenerator.ContainerFromItem(document);
+            var point = header.PointToScreen(new Point(18, header.ActualHeight / 2));
+            SetCursorPos((int)point.X, (int)point.Y); Pump();
+            mouse_event(2, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(30); Pump();
+            mouse_event(4, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(30); Pump();
+            Check(tabs.SelectedItem == document, "Header click failed to select requested document");
+            Check(typeof(MainWindow).GetProperty("CurrentDocument", Private)!.GetValue(window) == document,
+                "Header click did not activate the requested pane");
+            Check(document.Editor.IsVisible && (old == document || old is null || !old.Editor.IsVisible),
+                "Header selection and visible native editor disagree");
+            Check(System.Windows.Input.Mouse.Captured is null, "Plain tab click left mouse captured");
+        }
+        Console.WriteLine("PASS repeated physical tab clicks from native editor focus");
     }
 
     private static void DragTab(MainWindow window, DocumentViewModel document, Point destination)

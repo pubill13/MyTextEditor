@@ -42,6 +42,9 @@ public partial class MainWindow
             if (node is ButtonBase) return;
             if (node is TabItem { DataContext: DocumentViewModel document })
             {
+                // Capturing in the preview event can reroute TabItem's normal mouse-down.
+                // Select first so a plain click still switches the native editor.
+                SelectDocument(document);
                 _dragDocument = document;
                 _tabDragStart = e.GetPosition(DocumentPanesGrid);
                 // Capture before the pointer can cross into the native editor between mouse messages.
