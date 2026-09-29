@@ -1,5 +1,9 @@
 # OmniEdit 작업 인수인계
 
+## v1.9.6 릴리즈
+
+탭 클릭 전환 수정 커밋 f8ef71b를 포함해 1.9.6으로 배포한다. artifacts/v1.9.6의 자체 포함 EXE/ZIP 및 UTF-8 릴리즈 설명을 사용한다. 실제 탭 클릭·분할·드래그·Undo·연속 닫기와 빈 화면 두 파일 열기 회귀 통과, 배포 EXE 1.9.6.0 시작·정상 종료 확인. 아래 탭 클릭 수정의 로컬/미배포 표시는 이번 릴리즈 이전 기록이다. 사용자 .gitignore 변경은 포함하지 않는다.
+
 ## 2026-09-29 탭 클릭 전환 수정 (로컬, 미배포)
 
 탭 드래그의 PreviewMouseLeftButtonDown에서 Grid가 마우스를 캡처하면 TabItem의 기본 선택 처리가 누락되는 문제를 실제 mouse_event 클릭으로 재현했다. `MainWindow.DocumentTabDrag.cs`에서 캡처 전에 클릭한 문서를 SelectDocument로 선택한다. 닫기 버튼은 기존 ButtonBase 제외 규칙을 유지한다. `DocumentPanesVerification`에 네이티브 편집기 포커스에서 반복 클릭 시 SelectedItem·CurrentDocument·편집기 표시·캡처 해제를 검증하고 분할 양쪽에도 적용했다. 수정 전 실패, 수정 후 통과. 기존 실제 드래그 양방향 분할·Undo·Ctrl+W 및 `--tab-visibility` 회귀 통과. Release 빌드 0경고/0오류. 실행 파일은 `src/MyTextEditor/bin/TabFix/OmniEdit.exe`. 버전은 1.9.5 유지, 공개 v1.9.5 바이너리에는 이 수정이 아직 없다.
