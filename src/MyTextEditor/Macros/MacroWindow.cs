@@ -56,7 +56,7 @@ public sealed class MacroWindow : Window
     public MacroWindow(MacroWindowCallbacks callbacks, MacroStore? store = null)
     {
         _callbacks = callbacks; _store = store ?? new MacroStore();
-        Title = "작업 매크로 — OmniEdit(옴니에딧)"; Width = 1180; Height = 800; MinWidth = 900; MinHeight = 600;
+        Title = "작업 매크로 — OmniEdit"; Width = 1180; Height = 800; MinWidth = 900; MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SetResourceReference(BackgroundProperty, "WindowBrush");
         SetResourceReference(ForegroundProperty, "TextBrush");

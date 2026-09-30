@@ -12,9 +12,16 @@ public partial class MainWindow
 
     private void OpenDiff_Click(object sender, RoutedEventArgs e)
     {
+        var createTab = _diffWorkspaceWindow is null;
         var workspace = EnsureDiffWorkspace();
-        workspace.OpenEmptyTab(reuseExisting: true);
+        if (createTab) workspace.OpenEmptyTab(reuseExisting: true);
         ActivateDiffWorkspace(workspace);
+    }
+
+    private void ToggleDiff_Click(object sender, RoutedEventArgs e)
+    {
+        if (DiffToggleButton.IsChecked == true) OpenDiff_Click(sender, e);
+        else _diffWorkspaceWindow?.Hide();
     }
 
     private void CompareClipboard_Click(object sender, RoutedEventArgs e)
@@ -92,12 +99,14 @@ public partial class MainWindow
         workspace.ResourcesReleased += DiffWorkspace_ResourcesReleased;
         workspace.Closed += DiffWorkspace_Closed;
         _diffWorkspaceWindow = workspace;
+        workspace.IsVisibleChanged += (_, _) => DiffToggleButton.IsChecked = workspace.IsVisible;
         workspace.Show();
         return workspace;
     }
 
     private static void ActivateDiffWorkspace(DiffWorkspaceWindow workspace)
     {
+        workspace.Show();
         if (workspace.WindowState == WindowState.Minimized)
             workspace.WindowState = WindowState.Normal;
         workspace.Activate();
@@ -118,6 +127,7 @@ public partial class MainWindow
 
     private void DiffWorkspace_Closed(object? sender, EventArgs e)
     {
+        DiffToggleButton.IsChecked = false;
         if (sender is DiffWorkspaceWindow workspace)
         {
             workspace.ResourcesReleased -= DiffWorkspace_ResourcesReleased;

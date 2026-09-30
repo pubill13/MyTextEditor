@@ -37,6 +37,9 @@ internal static class Program
         if (args.Length > 0 && args[0] == "--native-buffer-memory")
             return LargeWorkspaceVerification.RunNativeMemory(args.Length > 1 ? int.Parse(args[1]) : 30, args.Contains("--default-styles"));
         if (args.Contains("--transform-work")) return TransformWorkVerification.Run();
+        if (args.Contains("--ux197")) return Ux197Verification.Run();
+        if (args.Contains("--verify-tools-window")) return ToolsWindowVerification.Run();
+        if (args.Contains("--results-close")) return ResultsCloseVerification.Run();
         if (args.Contains("--tab-visibility")) return TabVisibilityVerification.Run();
         if (args.Contains("--selection-ux")) return SelectionUxVerification.Run();
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();

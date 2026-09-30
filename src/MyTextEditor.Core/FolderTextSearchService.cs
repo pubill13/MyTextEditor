@@ -4,7 +4,12 @@ using MyTextEditor.Core.Models;
 namespace MyTextEditor.Core;
 
 public sealed record FolderSearchOptions(bool IncludeSubdirectories = true,
-    string FilePatterns = "*.txt;*.log;*.csv;*.md;*.json;*.xml;*.yaml;*.yml;*.ini;*.cfg;*.cs;*.py;*.js;*.ts;*.sql;*.out");
+    string FilePatterns = FolderSearchOptions.DefaultFilePatterns)
+{
+    public const string DefaultFilePatterns = "*.txt;*.log;*.csv;*.md;*.json;*.xml;*.yaml;*.yml;*.ini;*.cfg;*.cs;*.py;*.js;*.ts;*.sql;*.out";
+    public static string NormalizeEmptyPatterns(string value) =>
+        value.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Length == 0 ? DefaultFilePatterns : value;
+}
 public sealed record FolderSearchFileResult(string FilePath, string NewLine, long Length,
     DateTime LastWriteUtc, IReadOnlyList<SearchResult> Matches);
 public sealed record FolderSearchFailure(string FilePath, string Message);

@@ -10,9 +10,9 @@
     <AssemblyName>OmniEdit</AssemblyName>
     <RootNamespace>MyTextEditor</RootNamespace>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>1.9.6</Version>
-    <AssemblyVersion>1.9.6.0</AssemblyVersion>
-    <FileVersion>1.9.6.0</FileVersion>
+    <Version>1.9.7</Version>
+    <AssemblyVersion>1.9.7.0</AssemblyVersion>
+    <FileVersion>1.9.7.0</FileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <PublishSingleFile>true</PublishSingleFile>
@@ -20,6 +20,7 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets\AppIcon.ico" />
     <ProjectReference Include="..\MyTextEditor.Core\MyTextEditor.Core.csproj" />
     <PackageReference Include="Scintilla5.NET" Version="7.0.0" />
     <EmbeddedResource Include="$(NuGetPackageRoot)\scintilla5.net\7.0.0\runtimes\win-x64\native\Scintilla.dll" LogicalName="MyTextEditor.Native.win-x64.Scintilla.dll" />

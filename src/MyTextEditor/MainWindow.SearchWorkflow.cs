@@ -83,7 +83,21 @@ public partial class MainWindow
 
     private void SearchMode_Changed(object sender, RoutedEventArgs e)
     {
-        if (ConditionInputsPanel is not null) UpdateConditionSummary();
+        if (ConditionInputsPanel is not null)
+        {
+            UpdateConditionSummary();
+            if (UseConditionSearchCheck.IsChecked == true) SimpleAllBox.Focus();
+        }
+    }
+
+    private void FolderPattern_LostFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e) => NormalizeFolderPattern();
+
+    private void NormalizeFolderPattern()
+    {
+        var normalized = FolderSearchOptions.NormalizeEmptyPatterns(FolderPatternBox.Text);
+        if (normalized == FolderPatternBox.Text) return;
+        FolderPatternBox.Text = normalized;
+        StatusMessage.Text = "파일 형식이 비어 있어 기본 목록으로 복원했습니다.";
     }
 
     private void LiteralFindBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -183,6 +197,7 @@ public partial class MainWindow
 
     private async void SearchFolder_Click(object sender, RoutedEventArgs e)
     {
+        NormalizeFolderPattern();
         if (_folderSearchCancellation is not null) return;
         var folder = SearchFolderPathBox.Text;
         if (!Directory.Exists(folder))

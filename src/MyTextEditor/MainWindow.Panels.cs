@@ -45,6 +45,24 @@ public partial class MainWindow
 
     private void SetToolsVisible(bool show, bool focusEditor = false)
     {
+        if (_toolsWindow is { } detached)
+        {
+            if (!show) ++_panelFocusGeneration;
+            ToolPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            if (show)
+            {
+                detached.Show();
+                if (detached.WindowState == WindowState.Minimized) detached.WindowState = WindowState.Normal;
+                detached.Activate();
+            }
+            else detached.Hide();
+            ToolsMenuItem.IsChecked = show;
+            ToolsToggleButton.IsChecked = show;
+            _settings.ToolPanelVisible = show;
+            MarkSettingsDirty();
+            if (!show && focusEditor) { Activate(); CurrentEditor?.FocusEditor(); }
+            return;
+        }
         if (!show)
         {
             ++_panelFocusGeneration;

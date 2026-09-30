@@ -460,6 +460,7 @@ public partial class MainWindow : Window
     private void CompleteShutdown()
     {
         _folderSearchCancellation?.Cancel();
+        CloseToolsWindowForShutdown();
         StopFileSync();
         _settingsSaveTimer.Stop();
         Hide();
@@ -496,6 +497,7 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (TryHandleResultsShortcut(e)) return;
         if (!TryMapShortcut(e.Key, Keyboard.Modifiers, out var shortcut)) return;
         if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase &&
             shortcut is EditorShortcut.ZoomIn or EditorShortcut.ZoomOut or EditorShortcut.ZoomReset or EditorShortcut.GoToLine) return;
@@ -602,7 +604,7 @@ public partial class MainWindow : Window
 
     private void ShowSearchInput()
     {
-        if (CurrentEditor is { IsEditorFocused: true, HasSelection: true } editor &&
+        if (UseConditionSearchCheck.IsChecked != true && CurrentEditor is { IsEditorFocused: true, HasSelection: true } editor &&
             !editor.SelectedText.Contains('\n') && !editor.SelectedText.Contains('\r'))
         {
             UseConditionSearchCheck.IsChecked = false;
@@ -648,6 +650,7 @@ public partial class MainWindow : Window
         var canUndo = editor?.CanUndo == true;
         UndoButton.IsEnabled = UndoMenuItem.IsEnabled = ToolsUndoButton.IsEnabled = PreviewUndoButton.IsEnabled = canUndo;
         _macroWindow?.RefreshDocumentState();
+        RefreshToolsTarget();
         if (document is null)
         {
             CaretStatus.Text = "줄 -, 열 -"; LineCountStatus.Text = "0줄"; EncodingStatus.Text = "-"; NewLineStatus.Text = "-"; return;
@@ -691,7 +694,9 @@ public partial class MainWindow : Window
             ? !valid ? "검색 조건을 입력하세요." : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다."
             : string.IsNullOrEmpty(LiteralFindBox.Text) ? "찾을 텍스트를 입력하세요." : $"'{LiteralFindBox.Text}'을(를) 찾습니다.";
         ConditionInputsPanel.Visibility = UseConditionSearchCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        SearchButton.IsEnabled = !string.IsNullOrEmpty(LiteralFindBox.Text);
+        LiteralFindBox.IsEnabled = UseConditionSearchCheck.IsChecked != true;
+        LiteralFindBox.ToolTip = LiteralFindBox.IsEnabled ? "단어 또는 문장을 입력하고 Enter로 다음 위치를 찾습니다." : "포함·제외 조건 사용 중입니다. 아래 조건으로 검색합니다.";
+        SearchButton.IsEnabled = LiteralFindBox.IsEnabled && !string.IsNullOrEmpty(LiteralFindBox.Text);
         var canSearch = UseConditionSearchCheck.IsChecked == true ? valid : !string.IsNullOrEmpty(LiteralFindBox.Text);
         var inFolder = FolderSearchCheck.IsChecked == true;
         SearchOpenButton.IsEnabled = canSearch;
@@ -1036,18 +1041,6 @@ public partial class MainWindow : Window
     private void SearchResultClose_Click(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is SearchResultSession session) CloseSearchSession(session); e.Handled = true; }
     private void CloseOtherResults_Click(object sender, RoutedEventArgs e) { if (ActiveSearchSession is not { } keep) return; foreach (var session in SearchSessions.Where(x => x != keep).ToArray()) CloseSearchSession(session); }
     private void CloseAllResults_Click(object sender, RoutedEventArgs e) { foreach (var session in SearchSessions.ToArray()) CloseSearchSession(session); HideResultPanelIfEmpty(); }
-    private void CloseSearchSession(SearchResultSession session)
-    {
-        SearchSessions.Remove(session);
-        var snapshots = session.Snapshot is { } single ? new[] { single } : session.Rows.Select(row => row.Source?.Snapshot).OfType<SearchSnapshot>().Distinct();
-        foreach (var snapshot in snapshots)
-        {
-            snapshot.ReferenceCount--;
-            if (snapshot.ReferenceCount == 0) _searchSnapshots.Remove((snapshot.Source, snapshot.Revision));
-        }
-        RefreshSearchSessionState(); HideResultPanelIfEmpty();
-    }
-
     private void TrimOperationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (EndMarkerPanel is null) return;
@@ -1603,9 +1596,9 @@ public partial class MainWindow : Window
         _settings.WindowLeft = RestoreBounds.Left;
         _settings.WindowTop = RestoreBounds.Top;
         _settings.WindowState = WindowState == WindowState.Maximized ? "Maximized" : "Normal";
-        _settings.ToolPanelVisible = ToolPanel.Visibility == Visibility.Visible;
+        _settings.ToolPanelVisible = IsToolsVisible;
         _settings.ResultPanelVisible = !_resultsMinimized && ResultPanel.Visibility == Visibility.Visible;
-        if (ToolColumn.Width.Value > 0) _settings.ToolPanelWidth = ToolColumn.ActualWidth;
+        if (_toolsWindow is null && ToolColumn.Width.Value > 0) _settings.ToolPanelWidth = ToolColumn.ActualWidth;
         RememberResultHeight();
         var serialized = JsonSerializer.Serialize(_settings);
         if (serialized == _settingsSnapshot) return true;

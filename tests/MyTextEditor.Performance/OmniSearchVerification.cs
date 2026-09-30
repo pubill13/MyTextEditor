@@ -46,7 +46,9 @@ internal static class OmniSearchVerification
             Field<TextBox>(window, "LiteralFindBox").Text = "";
             Require(!Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Empty literal must disable Find");
             Field<TextBox>(window, "LiteralFindBox").Text = "AAA";
-            Require(Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Saved condition mode must not disable literal Find");
+            Require(!Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Condition mode must disable literal Find");
+            Field<CheckBox>(window, "UseConditionSearchCheck").IsChecked = false;
+            Require(Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Leaving condition mode must restore literal Find");
             Call(window, "FindOccurrence_Click", window, new RoutedEventArgs());
             Require(window.Documents[0].Editor.SelectedText == "AAA" && window.SearchSessions.Count == 0,
                 "Ordinary find must select one occurrence without creating results");

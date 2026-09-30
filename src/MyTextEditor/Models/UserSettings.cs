@@ -9,6 +9,10 @@ public sealed class UserSettings
     public double WindowWidth { get; set; } = 1380;
     public double WindowHeight { get; set; } = 860;
     public double ToolPanelWidth { get; set; } = 360;
+    public double ToolsWindowWidth { get; set; } = 420;
+    public double ToolsWindowHeight { get; set; } = 760;
+    public double? ToolsWindowLeft { get; set; }
+    public double? ToolsWindowTop { get; set; }
     public double ResultPanelHeight { get; set; } = 220;
     public bool ToolPanelVisible { get; set; } = true;
     public string LastSearchField { get; set; } = "All";

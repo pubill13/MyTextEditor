@@ -1,5 +1,13 @@
 # OmniEdit 작업 인수인계
 
+## v1.9.7 화면·검색·창 조작
+
+메인 제목 OmniEdit 및 창 ICO 명시 연결(App 시작 시 모든 Window Loaded에 공유 아이콘 적용). 기존 ICO는 16/24/32/48/64/128/256 프레임 포함. Merge gutter는 벡터 방향 아이콘과 방향/범위/Alt 단축키 툴팁. OneDark B0B7C4, SolarizedLight 536970 본문색 적용. 상단 비교/매크로 메뉴 대신 부가 기능 토글: OFF는 숨김, ON은 기존 창 표시, X는 기존 저장 확인. F1 기능은 유지하고 메뉴 옆 표기만 제거했다.
+
+MainWindow.ToolsWindow.cs는 동일 ToolPanel 재부모화, 대상 표시, 창 위치/크기 보존, X 도킹, Esc 숨김 및 CtrlF/H 복원을 담당한다. 입력/탭/스크롤은 그대로 유지한다. 재실행은 도킹 상태이며 새 설정은 geometry만 추가했다. MainWindow.Results.cs는 결과 포커스의 CtrlW/ShiftW를 일반 문서보다 먼저 소비하고 오른쪽/왼쪽 이웃 선택, 연속 닫기, 마지막 편집기 복귀를 처리한다. Core FolderSearchOptions.DefaultFilePatterns와 NormalizeEmptyPatterns를 UI가 공유하며 빈 값만 복원한다. 조건 검색은 LiteralFindBox와 일반 찾기 버튼을 비활성화하고 값은 유지한다.
+
+검증: Release 빌드 0오류/0경고, Core40/40, --verify-tools-window(프로그램적 창 분리/복원/종료), --results-close(실제 Windows 키보드, 도킹/분리 CtrlW/ShiftW, 포커스, 원문 보존), --ux197(테마/패턴/조건/토글 창 재사용), --panel-ux(최소폭/5개 테마/검색 포커스), --omni-search, 기본 Performance(Undo/Merge/매크로/30MB 중앙값0.213초) 통과. 조건 모드에서는 일반 찾기를 비활성화하는 새 요구에 맞춰 기존 테스트를 변경했다. 실제 DPI100%; 물리 IME와 125/150%는 미검증. 작업표시줄/AltTab의 셸 캐시 표시까지 자동 검증한 것으로 보고하지 말 것. 사용자 .gitignore 변경은 제외한다.
+
 ## v1.9.6 릴리즈
 
 탭 클릭 전환 수정 커밋 f8ef71b를 포함해 1.9.6으로 배포한다. artifacts/v1.9.6의 자체 포함 EXE/ZIP 및 UTF-8 릴리즈 설명을 사용한다. 실제 탭 클릭·분할·드래그·Undo·연속 닫기와 빈 화면 두 파일 열기 회귀 통과, 배포 EXE 1.9.6.0 시작·정상 종료 확인. 아래 탭 클릭 수정의 로컬/미배포 표시는 이번 릴리즈 이전 기록이다. 사용자 .gitignore 변경은 포함하지 않는다.

@@ -100,6 +100,10 @@ public static class SettingsService
         settings.WindowWidth = double.IsFinite(settings.WindowWidth) ? Math.Max(1040, settings.WindowWidth) : 1380;
         settings.WindowHeight = double.IsFinite(settings.WindowHeight) ? Math.Max(680, settings.WindowHeight) : 860;
         settings.ToolPanelWidth = double.IsFinite(settings.ToolPanelWidth) ? Math.Max(280, settings.ToolPanelWidth) : 360;
+        settings.ToolsWindowWidth = double.IsFinite(settings.ToolsWindowWidth) ? Math.Max(360, settings.ToolsWindowWidth) : 420;
+        settings.ToolsWindowHeight = double.IsFinite(settings.ToolsWindowHeight) ? Math.Max(420, settings.ToolsWindowHeight) : 760;
+        if (settings.ToolsWindowLeft is double toolsLeft && !double.IsFinite(toolsLeft)) settings.ToolsWindowLeft = null;
+        if (settings.ToolsWindowTop is double toolsTop && !double.IsFinite(toolsTop)) settings.ToolsWindowTop = null;
         settings.ResultPanelHeight = double.IsFinite(settings.ResultPanelHeight) ? Math.Max(120, settings.ResultPanelHeight) : 220;
         if (settings.WindowLeft is not null && !double.IsFinite(settings.WindowLeft.Value)) settings.WindowLeft = null;
         if (settings.WindowTop is not null && !double.IsFinite(settings.WindowTop.Value)) settings.WindowTop = null;

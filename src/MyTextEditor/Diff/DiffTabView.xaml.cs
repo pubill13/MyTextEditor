@@ -482,8 +482,10 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             left.Height = right.Height = Math.Clamp(lineHeight, 10, 25);
             left.FontSize = right.FontSize = Math.Clamp(lineHeight - 2, 7, 14);
             left.Tag = right.Tag = index;
-            left.ToolTip = DescribeMerge(block, DiffSide.Right) + "\nCtrl+Z로 되돌리기";
-            right.ToolTip = DescribeMerge(block, DiffSide.Left) + "\nCtrl+Z로 되돌리기";
+            left.ToolTip = DescribeMerge(block, DiffSide.Right) + "\nAlt+← · Ctrl+Z로 되돌리기";
+            right.ToolTip = DescribeMerge(block, DiffSide.Left) + "\nAlt+→ · Ctrl+Z로 되돌리기";
+            System.Windows.Automation.AutomationProperties.SetName(left, DescribeMerge(block, DiffSide.Right));
+            System.Windows.Automation.AutomationProperties.SetName(right, DescribeMerge(block, DiffSide.Left));
             left.IsEnabled = !_leftEditor.IsReadOnly;
             right.IsEnabled = !_rightEditor.IsReadOnly;
             Canvas.SetTop(panel, top);
@@ -515,8 +517,9 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         System.Windows.Controls.Panel.SetZIndex(connector, -1);
         MergeGutterCanvas.Children.Add(connector);
         _gutterConnections.Add(connector);
-        var left = new WpfButton { Content = "← 반영", Width = 49, Height = 25, Padding = new Thickness(0), ToolTip = "오른쪽 블록을 왼쪽으로 병합" };
-        var right = new WpfButton { Content = "반영 →", Width = 49, Height = 25, Margin = new Thickness(4, 0, 0, 0), Padding = new Thickness(0), ToolTip = "왼쪽 블록을 오른쪽으로 병합" };
+        var left = CreateMergeArrowButton(toLeft: true);
+        var right = CreateMergeArrowButton(toLeft: false);
+        right.Margin = new Thickness(4, 0, 0, 0);
         left.MouseEnter += GutterButton_MouseEnter;
         right.MouseEnter += GutterButton_MouseEnter;
         left.Click += MergeBlockToLeft_Click;
@@ -525,6 +528,34 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         Canvas.SetLeft(panel, 4);
         MergeGutterCanvas.Children.Add(panel);
         return panel;
+    }
+
+    private static WpfButton CreateMergeArrowButton(bool toLeft)
+    {
+        var arrow = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse(toLeft ? "M 13,2 L 7,8 L 13,14 M 7,8 L 21,8" : "M 15,2 L 21,8 L 15,14 M 7,8 L 21,8"),
+            StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            Width = 16,
+            Height = 12,
+            Stretch = Stretch.Uniform,
+            IsHitTestVisible = false
+        };
+        arrow.SetBinding(System.Windows.Shapes.Shape.StrokeProperty, new System.Windows.Data.Binding(nameof(WpfButton.Foreground))
+        {
+            RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.FindAncestor, typeof(WpfButton), 1)
+        });
+        return new WpfButton
+        {
+            Content = new Viewbox { Child = arrow, MaxWidth = 16, MaxHeight = 12, StretchDirection = StretchDirection.DownOnly },
+            Width = 49,
+            Height = 25,
+            Padding = new Thickness(0),
+            ToolTip = toLeft ? "오른쪽 블록을 왼쪽으로 병합 (Alt+←)" : "왼쪽 블록을 오른쪽으로 병합 (Alt+→)"
+        };
     }
 
     private void GutterButton_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)

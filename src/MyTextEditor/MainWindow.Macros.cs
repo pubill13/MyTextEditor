@@ -7,10 +7,17 @@ public partial class MainWindow
 {
     private MacroWindow? _macroWindow;
 
+    private void ToggleMacro_Click(object sender, RoutedEventArgs e)
+    {
+        if (MacroToggleButton.IsChecked == true) OpenMacro_Click(sender, e);
+        else _macroWindow?.Hide();
+    }
+
     private void OpenMacro_Click(object sender, RoutedEventArgs e)
     {
         if (_macroWindow is { } existing)
         {
+            existing.Show();
             if (existing.WindowState == WindowState.Minimized) existing.WindowState = WindowState.Normal;
             existing.Activate();
             return;
@@ -37,7 +44,8 @@ public partial class MainWindow
             ReportStatus = message => StatusMessage.Text = message,
             ShowHelp = () => ShowHelpTopic("macros")
         }) { Owner = this };
-        window.Closed += (_, _) => { if (ReferenceEquals(_macroWindow, window)) _macroWindow = null; };
+        window.IsVisibleChanged += (_, _) => MacroToggleButton.IsChecked = window.IsVisible;
+        window.Closed += (_, _) => { if (ReferenceEquals(_macroWindow, window)) _macroWindow = null; MacroToggleButton.IsChecked = false; };
         _macroWindow = window;
         window.Show();
     }
