@@ -60,14 +60,20 @@ public sealed class MacroWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SetResourceReference(BackgroundProperty, "WindowBrush");
         SetResourceReference(ForegroundProperty, "TextBrush");
-        var root = new DockPanel { Margin = new Thickness(12) }; Content = root;
+        var compactButton = new Style(typeof(Button), (Style)FindResource(typeof(Button)));
+        compactButton.Setters.Add(new Setter(HeightProperty, 26d));
+        compactButton.Setters.Add(new Setter(PaddingProperty, new Thickness(8, 2, 8, 2)));
+        Resources.Add(typeof(Button), compactButton);
+        _name.Height = 26;
+        _name.Padding = new Thickness(5, 2, 5, 2);
+        var root = new DockPanel { Margin = new Thickness(10) }; Content = root;
         var header = new StackPanel(); DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
         header.Children.Add(new TextBlock { Text = "작업 매크로", FontSize = 22, FontWeight = FontWeights.SemiBold });
-        header.Children.Add(new TextBlock { Text = "동작을 순서대로 조립하세요. 검색한 줄은 다음 검색 전까지 추적하며, 실행 전체를 Ctrl+Z 한 번으로 되돌릴 수 있습니다.", Margin = new Thickness(0, 6, 0, 10), TextWrapping = TextWrapping.Wrap });
+        header.Children.Add(new TextBlock { Text = "동작을 순서대로 조립하세요. 검색한 줄은 다음 검색 전까지 추적하며, 실행 전체를 Ctrl+Z 한 번으로 되돌릴 수 있습니다.", Margin = new Thickness(0, 4, 0, 4), TextWrapping = TextWrapping.Wrap });
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         footer.Children.Add(_targetDocument);
         var commands = Row(); footer.Children.Add(commands);
-        foreach (var button in new[] { _preview, _run, _apply, _cancel, _undo }) { button.Margin = new Thickness(0, 8, 8, 8); commands.Children.Add(button); }
+        foreach (var button in new[] { _preview, _run, _apply, _cancel, _undo }) { button.Margin = new Thickness(0, 4, 8, 4); commands.Children.Add(button); }
         footer.Children.Add(_status);
         _preview.Click += async (_, _) => await ExecuteAsync(false); _run.Click += async (_, _) => await ExecuteAsync(true);
         _apply.Click += (_, _) => Apply(); _cancel.Click += (_, _) => _execution?.Cancel();
@@ -85,8 +91,13 @@ public sealed class MacroWindow : Window
         libraryPanel.Children.Add(_library); _library.DisplayMemberPath = "Name";
         _library.SelectionChanged += (_, _) => { if (!_binding && _library.SelectedItem is MacroDefinition selected) SwitchTo(selected); };
         var work = new Grid(); Grid.SetColumn(work, 1); layout.Children.Add(work);
-        work.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); work.RowDefinitions.Add(new RowDefinition()); work.RowDefinitions.Add(new RowDefinition { Height = new GridLength(220) });
-        var nameRow = new DockPanel { Margin = new Thickness(0, 0, 0, 8) }; work.Children.Add(nameRow);
+        work.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); work.RowDefinitions.Add(new RowDefinition { MinHeight = 100 });
+        work.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
+        work.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180), MinHeight = 70 });
+        var previewSplitter = new GridSplitter { Height = 5, HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch, VerticalAlignment = System.Windows.VerticalAlignment.Stretch, ResizeDirection = GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext };
+        previewSplitter.SetResourceReference(BackgroundProperty, "BorderBrush");
+        Grid.SetRow(previewSplitter, 2); work.Children.Add(previewSplitter);
+        var nameRow = new DockPanel { Margin = new Thickness(0, 0, 0, 4) }; work.Children.Add(nameRow);
         var save = new Button { Content = "매크로 저장", Margin = new Thickness(8,0,0,0) }; DockPanel.SetDock(save, Dock.Right); nameRow.Children.Add(save); save.Click += (_, _) => Save(); nameRow.Children.Add(_name);
         _name.TextChanged += (_, _) => { if (!_binding) _draft.Name = _name.Text; };
         var editor = new Grid(); Grid.SetRow(editor, 1); work.Children.Add(editor); editor.ColumnDefinitions.Add(new ColumnDefinition()); editor.ColumnDefinitions.Add(new ColumnDefinition());
@@ -98,7 +109,7 @@ public sealed class MacroWindow : Window
         AddButton(stepCommands, "↑", () => Move(-1)); AddButton(stepCommands, "↓", () => Move(1));
         stepPanel.Children.Add(_steps); _steps.SelectionChanged += (_, _) => ShowFields();
         var scroll = new ScrollViewer { Content = _fields, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetColumn(scroll, 1); editor.Children.Add(scroll);
-        var resultPanel = new Grid { Margin = new Thickness(0, 10, 0, 0) }; Grid.SetRow(resultPanel, 2); work.Children.Add(resultPanel);
+        var resultPanel = new Grid { Margin = new Thickness(0, 4, 0, 0) }; Grid.SetRow(resultPanel, 3); work.Children.Add(resultPanel);
         resultPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) }); resultPanel.ColumnDefinitions.Add(new ColumnDefinition()); resultPanel.ColumnDefinitions.Add(new ColumnDefinition());
         resultPanel.Children.Add(_statistics);
         var beforePanel = new DockPanel(); var afterPanel = new DockPanel();
@@ -195,12 +206,12 @@ public sealed class MacroWindow : Window
         _fields.Children.Clear(); int index = _steps.SelectedIndex; if (index < 0 || index >= _draft.Steps.Count) return;
         var step = _draft.Steps[index];
         void Update() => UpdateLabels();
-        void Toggle(string label, bool value, Action<bool> setter) { var c = new CheckBox { Content = label, IsChecked = value, Margin = new Thickness(0,5,0,5) }; _fields.Children.Add(c); c.Click += (_,_) => setter(c.IsChecked == true); }
-        void Input(string label, string value, Action<string> setter, bool multiline = false) { _fields.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0,8,0,3) }); var t = new TextBox { Text = value, AcceptsReturn = multiline, MinHeight = multiline ? 58 : 28, ToolTip = label }; _fields.Children.Add(t); t.TextChanged += (_,_) => { setter(t.Text); UpdateLabels(); }; }
+        void Toggle(string label, bool value, Action<bool> setter) { var c = new CheckBox { Content = label, IsChecked = value, Margin = new Thickness(0,2,0,2) }; _fields.Children.Add(c); c.Click += (_,_) => setter(c.IsChecked == true); }
+        void Input(string label, string value, Action<string> setter, bool multiline = false) { _fields.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0,4,0,2) }); var t = new TextBox { Text = value, AcceptsReturn = multiline, MinHeight = multiline ? 58 : 26, Height = multiline ? double.NaN : 26, Padding = new Thickness(5, 2, 5, 2), ToolTip = label }; _fields.Children.Add(t); t.TextChanged += (_,_) => { setter(t.Text); UpdateLabels(); }; }
         Toggle("이 단계 사용", step.Enabled, v => { step.Enabled = v; Update(); });
-        var operation = new ComboBox { ItemsSource = Names, DisplayMemberPath = "Value", SelectedValuePath = "Key", SelectedValue = step.Operation, Margin = new Thickness(0,5,0,5) }; _fields.Children.Add(operation);
+        var operation = new ComboBox { Height = 26, Padding = new Thickness(5, 2, 5, 2), ItemsSource = Names, DisplayMemberPath = "Value", SelectedValuePath = "Key", SelectedValue = step.Operation, Margin = new Thickness(0,2,0,2) }; _fields.Children.Add(operation);
         operation.SelectionChanged += (_,_) => { if (operation.SelectedValue is MacroOperation o) { step.Operation = o; RefreshSteps(index); } };
-        var targets = new[] { "전체 문서", "최근 검색에서 찾은 줄" }; var target = new ComboBox { ItemsSource = targets, SelectedIndex = step.Target == MacroTarget.WholeDocument ? 0 : 1, Margin = new Thickness(0,5,0,5) }; _fields.Children.Add(target);
+        var targets = new[] { "전체 문서", "최근 검색에서 찾은 줄" }; var target = new ComboBox { Height = 26, Padding = new Thickness(5, 2, 5, 2), ItemsSource = targets, SelectedIndex = step.Target == MacroTarget.WholeDocument ? 0 : 1, Margin = new Thickness(0,2,0,2) }; _fields.Children.Add(target);
         target.SelectionChanged += (_,_) => { step.Target = target.SelectedIndex == 0 ? MacroTarget.WholeDocument : MacroTarget.MatchedLines; Update(); };
         var op = step.Operation;
         if (op == MacroOperation.Search)

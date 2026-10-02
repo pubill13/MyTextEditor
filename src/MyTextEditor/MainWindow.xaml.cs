@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -139,6 +139,7 @@ public partial class MainWindow : Window
         SelectDocument(document);
         EmptyDocumentState.Visibility = Visibility.Collapsed;
         StatusMessage.Text = "새 문서를 만들었습니다.";
+        FocusCurrentDocumentAfterLayout();
     }
 
     private async void Open_Click(object sender, RoutedEventArgs e)
@@ -199,6 +200,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        var focusGeneration = _documentFocusGeneration;
         var errors = new List<string>();
         var stopwatch = Stopwatch.StartNew();
         DocumentViewModel? lastOpened = null;
@@ -224,7 +226,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            if (lastOpened is not null) SelectDocument(lastOpened);
+            if (lastOpened is not null)
+            {
+                SelectDocument(lastOpened);
+                if (focusGeneration == _documentFocusGeneration) FocusCurrentDocumentAfterLayout();
+            }
             stopwatch.Stop();
             Mouse.OverrideCursor = null;
         }
@@ -1148,7 +1154,7 @@ public partial class MainWindow : Window
         {
             var tool = TextTools.FirstOrDefault(item => item.Id == id);
             if (tool is null) continue;
-            var button = new Button { Content = tool.DisplayName, ToolTip = $"즐겨찾기: {tool.DisplayName}", Height = 28, Padding = new Thickness(8, 2, 8, 2), Tag = tool };
+            var button = new Button { Content = tool.DisplayName, ToolTip = $"즐겨찾기: {tool.DisplayName}", Height = 26, Padding = new Thickness(8, 2, 8, 2), Tag = tool };
             button.Click += FavoriteTool_Click;
             FavoriteToolsPanel.Children.Add(button);
         }

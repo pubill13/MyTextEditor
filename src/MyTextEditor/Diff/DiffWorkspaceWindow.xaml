@@ -6,19 +6,26 @@
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop"
         Closing="Window_Closing" LocationChanged="Window_PlacementChanged" SizeChanged="Window_PlacementChanged"
         KeyDown="Window_KeyDown" PreviewKeyDown="Window_PreviewKeyDown" DpiChanged="Window_DpiChanged">
+    <Window.Resources>
+        <Style x:Key="CompactCommandButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="Margin" Value="2,1"/>
+        </Style>
+    </Window.Resources>
     <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="8,6" Background="{DynamicResource SurfaceBrush}"
+        <Border DockPanel.Dock="Top" Padding="8,3" Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Content="다른 비교 닫기" Click="CloseOthers_Click"/>
-                    <Button Margin="6,0,0,0" Content="모든 비교 닫기" Click="CloseAll_Click"/>
-                    <Button Margin="6,0,0,0" Content="도움말" Click="Help_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" Content="다른 비교 닫기" Click="CloseOthers_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="모든 비교 닫기" Click="CloseAll_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="도움말" Click="Help_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <Button Width="30" Height="28" Padding="0" Content="＋" ToolTip="새 비교 탭" Click="AddTab_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" Width="30" Height="26" Padding="0" Content="＋" ToolTip="새 비교 탭" Click="AddTab_Click"/>
                     <TextBlock Margin="10,0,6,0" VerticalAlignment="Center" Text="비교 글자 크기"/>
-                    <ComboBox x:Name="DiffFontSizeCombo" Width="64" Height="28" Padding="4,2" IsEditable="True"
+                    <ComboBox x:Name="DiffFontSizeCombo" Width="64" Height="26" Padding="4,2" IsEditable="True"
                               ToolTip="6~72pt · Ctrl+휠로 조절 · Ctrl+0은 11pt"
                               SelectionChanged="DiffFontSize_SelectionChanged" LostKeyboardFocus="DiffFontSize_LostKeyboardFocus"
                               PreviewKeyDown="DiffFontSize_PreviewKeyDown"/>

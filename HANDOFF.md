@@ -1,4 +1,16 @@
-# OmniEdit 작업 인수인계
+﻿# OmniEdit 작업 인수인계
+
+## v1.9.8 창 조작·화면 밀도
+
+검색·정리 분리/복귀는 테마 벡터 아이콘(16px, 클릭28px). 별도 창 X는 Closing을 취소하고 숨겨 입력/탭/스크롤을 보존한다. 전용 복귀 아이콘만 패널을 도킹하고 해당 Window를 실제 Close한다. 앱 종료는 기존 종료 플래그로 실제 해제한다. 재실행은 도킹 상태다. 이전 v1.9.7의 X 도킹 설명은 이 버전에서 대체된다.
+
+문서 생성/배치 파일 열기 완료 때만 지연 포커스를 요청한다. SelectDocument는 그대로 유지해 검색 결과 클릭 포커스를 보존한다. 사용자 입력/입력칸 포커스/창 비활성화 generation으로 오래된 요청을 취소한다. MainWindow.DocumentPanes.cs와 ToolsWindow.cs가 관련 경로다.
+
+메인 명령 버튼26px/실측 toolbar30px, 문서·Merge 탭28px/닫기24px. Merge source header는 좁은 창에서 wrap한다. Macro 명령/입력26px, 미리보기180px와 분할선. 공통 전역 스타일은 축소하지 않았다. 새 설정/의존성 없음.
+
+검증: Release 0경고/0오류, Core40/40, --verify-tools-window, --panel-ux, --document-panes(실제 마우스·키보드), --ux198(Windows 키 이벤트 초기/새문서/다중/중복파일 입력 및 로딩 중 포커스 취소), --results-close, 기본 Performance(Merge/매크로 Undo, 30MB 중앙값0.205초), --density198(5테마×최소/넓은 창) 통과. 현재 main 본문 높이1040×680에서521px,1600×900에서741px. 변경 전 동일 조건 실측은 미수행. WPF PNG는 artifacts/v1.9.8/verify이며 native 본문은 포함하지 않는다. 실제 DPI100%;125/150%와 물리 한글 IME는 미검증. 자체 포함 EXE1.9.8.0 시작/정상 종료0 확인. 사용자 .gitignore 변경은 제외한다.
+
+배포: main/v1.9.8와 EXE/ZIP 게시. EXE SHA256 9A83CD90D47AACA61ED8FB46C639B52EDB705F8CA129DDBC1B43053A5F64CEE0, ZIP 7461DA6F2338E31F997D5466368C2060D1FDDD541D287CB2999E6C87B23D42CB. 다음 작업은 사용 환경에서 물리 IME와 추가 DPI 확인이다.
 
 ## v1.9.7 화면·검색·창 조작
 

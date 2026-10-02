@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,9 +16,20 @@ public partial class MainWindow
     private TabControl? _activeDocumentTabs;
     private TabControl ActiveDocumentTabs => _activeDocumentTabs ?? DocumentTabs;
 
+    private long _documentFocusGeneration;
+
     private void InitializeDocumentPanes()
     {
         InitializeDocumentTabDrag();
+        Deactivated += (_, _) => ++_documentFocusGeneration;
+        PreviewMouseDown += (_, _) => ++_documentFocusGeneration;
+        PreviewKeyDown += (_, _) => ++_documentFocusGeneration;
+        GotKeyboardFocus += (_, e) =>
+        {
+            if (e.NewFocus is System.Windows.Controls.Primitives.TextBoxBase or System.Windows.Controls.ComboBox)
+                ++_documentFocusGeneration;
+        };
+        Loaded += (_, _) => FocusCurrentDocumentAfterLayout();
         Documents.CollectionChanged += (_, e) =>
         {
             if (e.Action == NotifyCollectionChangedAction.Reset) { LeftDocuments.Clear(); RightDocuments.Clear(); }
@@ -99,10 +110,18 @@ public partial class MainWindow
 
     private void FocusCurrentDocumentAfterLayout()
     {
+        var generation = ++_documentFocusGeneration;
+        var expectedDocument = CurrentDocument;
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
         {
-            if (_closingInProgress || _closingAllDocuments) return;
-            if (CurrentDocument is { } document) document.Editor.FocusEditor();
+            if (_closingInProgress || _closingAllDocuments || generation != _documentFocusGeneration ||
+                !ReferenceEquals(expectedDocument, CurrentDocument)) return;
+            if (CurrentDocument is { } document)
+            {
+                ActiveDocumentTabs.UpdateLayout();
+                document.Editor.Focus();
+                document.Editor.FocusEditor();
+            }
             else { Focus(); Keyboard.Focus(this); }
         }));
     }

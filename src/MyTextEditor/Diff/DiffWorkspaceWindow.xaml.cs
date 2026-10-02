@@ -102,11 +102,11 @@ public partial class DiffWorkspaceWindow : Window
     {
         var view = new DiffTabView(left, right, _defaults, _callbacks, _appearance);
         view.SetHighlightColor(_highlightColor);
-        var headerText = new TextBlock { Text = view.TabTitle, MaxWidth = 260, TextTrimming = TextTrimming.CharacterEllipsis };
-        var close = new System.Windows.Controls.Button { Content = "×", Width = 23, Height = 23, Padding = new Thickness(0), Margin = new Thickness(7, 0, 0, 0), ToolTip = "비교 탭 닫기" };
+        var headerText = new TextBlock { Text = view.TabTitle, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 260, TextTrimming = TextTrimming.CharacterEllipsis };
+        var close = new System.Windows.Controls.Button { Content = "×", Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(7, 0, 0, 0), ToolTip = "비교 탭 닫기" };
         var header = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
         header.Children.Add(headerText); header.Children.Add(close);
-        var item = new TabItem { Header = header, Content = view, Tag = headerText };
+        var item = new TabItem { Header = header, Content = view, Tag = headerText, Height = 28, Padding = new Thickness(8, 1, 8, 1) };
         var tabMenu = new ContextMenu { DataContext = item };
         var closeTabMenu = new MenuItem { Header = "비교 탭 닫기" };
         closeTabMenu.Click += async (_, _) => await CloseTabAsync(item);

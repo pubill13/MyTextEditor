@@ -3,32 +3,39 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Background="{DynamicResource WindowBrush}" Loaded="Window_Loaded"
         PreviewKeyDown="Window_PreviewKeyDown" AllowDrop="True" Drop="Root_Drop" DragOver="Root_DragOver">
+    <UserControl.Resources>
+        <Style x:Key="CompactCommandButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="Margin" Value="2,1"/>
+        </Style>
+    </UserControl.Resources>
     <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="10,7" Background="{DynamicResource SurfaceBrush}"
+        <Border DockPanel.Dock="Top" Padding="10,3" Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="PreviousButton" Content="↑ 이전 (F7)" ToolTip="이전 차이 (F7 / Alt+↑)" Click="Previous_Click"/>
-                    <Button x:Name="NextButton" Margin="6,0,0,0" Content="↓ 다음 (F8)" ToolTip="다음 차이 (F8 / Alt+↓)" Click="Next_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" x:Name="PreviousButton" Content="↑ 이전 (F7)" ToolTip="이전 차이 (F7 / Alt+↑)" Click="Previous_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" x:Name="NextButton" Margin="6,0,0,0" Content="↓ 다음 (F8)" ToolTip="다음 차이 (F8 / Alt+↓)" Click="Next_Click"/>
                     <TextBlock x:Name="PositionText" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="0 / 0"/>
                     <TextBlock x:Name="StatisticsText" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"/>
                 </StackPanel>
-                <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,8,0,0" Orientation="Horizontal" HorizontalAlignment="Center">
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,4,0,0" Orientation="Horizontal" HorizontalAlignment="Center">
                     <CheckBox x:Name="IgnoreWhitespaceCheck" Content="공백 무시" Checked="Option_Changed" Unchecked="Option_Changed"/>
                     <CheckBox x:Name="IgnoreCaseCheck" Margin="14,0,0,0" Content="대소문자 무시" Checked="Option_Changed" Unchecked="Option_Changed"/>
                     <CheckBox x:Name="IgnoreEmptyLinesCheck" Margin="14,0,0,0" Content="빈 줄 무시" Checked="Option_Changed" Unchecked="Option_Changed"/>
                     <CheckBox x:Name="ScrollSyncCheck" Margin="14,0,0,0" Content="스크롤 동기화" Checked="ScrollSync_Changed" Unchecked="ScrollSync_Changed"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button x:Name="CompareSelectionsButton" Content="선택 영역 비교" Click="CompareSelections_Click"/>
-                    <Button x:Name="SwapButton" Margin="6,0,0,0" Content="⇄ 좌우 교환" Click="Swap_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" x:Name="CompareSelectionsButton" Content="선택 영역 비교" Click="CompareSelections_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" x:Name="SwapButton" Margin="6,0,0,0" Content="⇄ 좌우 교환" Click="Swap_Click"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <Border DockPanel.Dock="Top" Padding="10,5" Background="{DynamicResource SurfaceAltBrush}">
+        <Border DockPanel.Dock="Top" Padding="10,3" Background="{DynamicResource SurfaceAltBrush}">
             <StackPanel>
                 <WrapPanel>
                     <TextBlock Text="색상 기준: 왼쪽 → 오른쪽" Margin="0,0,14,0" Foreground="{DynamicResource MutedBrush}"/>
@@ -46,8 +53,8 @@
                 Background="{DynamicResource SelectionBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Content="원본 다시 불러오기" Click="ReloadStale_Click"/>
-                    <Button Margin="6,0,0,0" Content="현재 Diff 내용으로 교체" Click="ForceApplyStale_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" Content="원본 다시 불러오기" Click="ReloadStale_Click"/>
+                    <Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="현재 Diff 내용으로 교체" Click="ForceApplyStale_Click"/>
                 </StackPanel>
                 <TextBlock x:Name="StaleText" VerticalAlignment="Center" Text="연결된 원본 문서가 변경되었습니다."/>
             </DockPanel>
@@ -62,23 +69,23 @@
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="112"/><ColumnDefinition/></Grid.ColumnDefinitions>
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
-                <Border Padding="10,7" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,1">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel>
+                <Border Padding="10,3" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,1">
+                    <WrapPanel>
+                        <StackPanel Width="160" Margin="0,0,6,0">
                             <TextBlock x:Name="LeftTitleText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                             <TextBlock x:Name="LeftMetaText" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button Content="소스 ▾" Click="LeftSourceMenu_Click"/>
+                        <WrapPanel VerticalAlignment="Center">
+                            <Button Style="{StaticResource CompactCommandButton}" Content="소스 ▾" Click="LeftSourceMenu_Click"/>
                             <CheckBox x:Name="LeftReadOnlyCheck" Content="읽기 전용" Checked="ReadOnly_Changed" Unchecked="ReadOnly_Changed"/>
-                            <Button x:Name="ApplyLeftSourceButton" Margin="8,0,0,0" Content="원본 반영" Click="ApplyLeftSource_Click"/>
-                            <Button Margin="5,0,0,0" Content="새 문서" Click="ExtractLeft_Click"/>
-                            <Button Margin="5,0,0,0" Content="저장" Click="SaveLeft_Click"/>
-                        </StackPanel>
-                    </Grid>
+                            <Button Style="{StaticResource CompactCommandButton}" x:Name="ApplyLeftSourceButton" Margin="8,0,0,0" Content="원본 반영" Click="ApplyLeftSource_Click"/>
+                            <Button Style="{StaticResource CompactCommandButton}" Margin="5,0,0,0" Content="새 문서" Click="ExtractLeft_Click"/>
+                            <Button Style="{StaticResource CompactCommandButton}" Margin="5,0,0,0" Content="저장" Click="SaveLeft_Click"/>
+                        </WrapPanel>
+                    </WrapPanel>
                 </Border>
                 <Border Grid.Row="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
-                    <Grid AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><ContentControl Grid.Row="1" x:Name="LeftEditorContainer"/><Border x:Name="LeftDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="4" Margin="6" Padding="6" AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="왼쪽: 아래에 직접 입력하거나 파일을 놓으세요" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="파일·열린 문서·클립보드로도 비교할 수 있습니다" Margin="0,3,0,5" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="파일 선택" Click="ChooseLeftFile_Click"/><Button Margin="6,0,0,0" Content="열린 문서" Click="ChooseLeftDocument_Click"/><Button Margin="6,0,0,0" Content="클립보드" Click="UseLeftClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
+                    <Grid AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><ContentControl Grid.Row="1" x:Name="LeftEditorContainer"/><Border x:Name="LeftDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="4" Margin="6" Padding="6" AllowDrop="True" DragOver="Left_DragOver" Drop="Left_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="왼쪽: 아래에 직접 입력하거나 파일을 놓으세요" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="파일·열린 문서·클립보드로도 비교할 수 있습니다" Margin="0,3,0,5" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Style="{StaticResource CompactCommandButton}" Content="파일 선택" Click="ChooseLeftFile_Click"/><Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="열린 문서" Click="ChooseLeftDocument_Click"/><Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="클립보드" Click="UseLeftClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
                 </Border>
             </Grid>
 
@@ -87,32 +94,32 @@
                     <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <Canvas x:Name="MergeGutterCanvas" ClipToBounds="True" SizeChanged="MergeGutter_SizeChanged"/>
                     <StackPanel Grid.Row="1" VerticalAlignment="Bottom" Margin="5,0,5,10">
-                        <Button x:Name="CopyAllLeftButton" Content="← 전체" ToolTip="오른쪽 전체를 왼쪽으로 복사" Click="CopyAllToLeft_Click"/>
-                        <Button x:Name="CopyAllRightButton" Margin="0,5,0,0" Content="전체 →" ToolTip="왼쪽 전체를 오른쪽으로 복사" Click="CopyAllToRight_Click"/>
+                        <Button Style="{StaticResource CompactCommandButton}" x:Name="CopyAllLeftButton" Content="← 전체" ToolTip="오른쪽 전체를 왼쪽으로 복사" Click="CopyAllToLeft_Click"/>
+                        <Button Style="{StaticResource CompactCommandButton}" x:Name="CopyAllRightButton" Margin="0,5,0,0" Content="전체 →" ToolTip="왼쪽 전체를 오른쪽으로 복사" Click="CopyAllToRight_Click"/>
                         <Separator Margin="0,7"/>
-                        <Button x:Name="CopyDifferenceButton" Content="차이 복사 ▾" Click="CopyDifference_Click"/>
+                        <Button Style="{StaticResource CompactCommandButton}" x:Name="CopyDifferenceButton" Content="차이 복사 ▾" Click="CopyDifference_Click"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
-                <Border Padding="10,7" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel>
+                <Border Padding="10,3" Background="{DynamicResource SurfaceAltBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <WrapPanel>
+                        <StackPanel Width="160" Margin="0,0,6,0">
                             <TextBlock x:Name="RightTitleText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                             <TextBlock x:Name="RightMetaText" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button Content="소스 ▾" Click="RightSourceMenu_Click"/>
+                        <WrapPanel VerticalAlignment="Center">
+                            <Button Style="{StaticResource CompactCommandButton}" Content="소스 ▾" Click="RightSourceMenu_Click"/>
                             <CheckBox x:Name="RightReadOnlyCheck" Content="읽기 전용" Checked="ReadOnly_Changed" Unchecked="ReadOnly_Changed"/>
-                            <Button x:Name="ApplyRightSourceButton" Margin="8,0,0,0" Content="원본 반영" Click="ApplyRightSource_Click"/>
-                            <Button Margin="5,0,0,0" Content="새 문서" Click="ExtractRight_Click"/>
-                            <Button Margin="5,0,0,0" Content="저장" Click="SaveRight_Click"/>
-                        </StackPanel>
-                    </Grid>
+                            <Button Style="{StaticResource CompactCommandButton}" x:Name="ApplyRightSourceButton" Margin="8,0,0,0" Content="원본 반영" Click="ApplyRightSource_Click"/>
+                            <Button Style="{StaticResource CompactCommandButton}" Margin="5,0,0,0" Content="새 문서" Click="ExtractRight_Click"/>
+                            <Button Style="{StaticResource CompactCommandButton}" Margin="5,0,0,0" Content="저장" Click="SaveRight_Click"/>
+                        </WrapPanel>
+                    </WrapPanel>
                 </Border>
-                <Grid Grid.Row="1" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><ContentControl Grid.Row="1" x:Name="RightEditorContainer"/><Border x:Name="RightDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="4" Margin="6" Padding="6" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="오른쪽: 아래에 직접 입력하거나 파일을 놓으세요" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="파일·열린 문서·클립보드로도 비교할 수 있습니다" Margin="0,3,0,5" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="파일 선택" Click="ChooseRightFile_Click"/><Button Margin="6,0,0,0" Content="열린 문서" Click="ChooseRightDocument_Click"/><Button Margin="6,0,0,0" Content="클립보드" Click="UseRightClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
+                <Grid Grid.Row="1" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><ContentControl Grid.Row="1" x:Name="RightEditorContainer"/><Border x:Name="RightDropZone" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="4" Margin="6" Padding="6" AllowDrop="True" DragOver="Right_DragOver" Drop="Right_Drop"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="오른쪽: 아래에 직접 입력하거나 파일을 놓으세요" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="파일·열린 문서·클립보드로도 비교할 수 있습니다" Margin="0,3,0,5" Foreground="{DynamicResource MutedBrush}"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Style="{StaticResource CompactCommandButton}" Content="파일 선택" Click="ChooseRightFile_Click"/><Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="열린 문서" Click="ChooseRightDocument_Click"/><Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="클립보드" Click="UseRightClipboard_Click"/></StackPanel></StackPanel></Border></Grid>
             </Grid>
         </Grid>
     </DockPanel>

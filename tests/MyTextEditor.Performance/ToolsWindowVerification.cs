@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -49,7 +49,12 @@ internal static class ToolsWindowVerification
             Call(window, "ShowReplaceInput"); Pump();
             Check(from.SelectionLength == from.Text.Length, "Detached replacement input not selected");
             detached.Close(); Pump();
-            Check(ReferenceEquals(panel.Parent, Field<Grid>(window, "MainContentGrid")), "Close did not dock panel");
+            Check(!detached.IsVisible && ReferenceEquals(detached.Content, panel), "X should hide the same detached window");
+            Check(Field<ColumnDefinition>(window, "ToolColumn").ActualWidth == 0, "X reopened dock column");
+            Call(window, "ShowReplaceInput"); Pump();
+            Check(ReferenceEquals(Field<Window>(window, "_toolsWindow"), detached) && detached.IsVisible, "Reopen did not reuse detached window");
+            Call(window, "DetachTools_Click", window, new RoutedEventArgs()); Pump();
+            Check(ReferenceEquals(panel.Parent, Field<Grid>(window, "MainContentGrid")), "Dock icon did not dock panel");
             Check(Math.Abs(Field<ColumnDefinition>(window, "ToolColumn").ActualWidth - width) < 2, "Panel width not restored");
             Check(literal.Text == "한글 검색" && replace.Text == "보존", "Inputs changed on dock");
             Call(window, "DetachTools_Click", window, new RoutedEventArgs()); Pump();
