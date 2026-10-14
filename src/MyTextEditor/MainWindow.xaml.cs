@@ -423,44 +423,50 @@ public partial class MainWindow : Window
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (_allowClose) return;
-        if (_closingInProgress) { e.Cancel = true; return; }
-        if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || _pendingFileOpens > 0)
+        if (_checkingShutdown) { e.Cancel = true; return; }
+        _checkingShutdown = true;
+        try
         {
+            if (_closingInProgress) { e.Cancel = true; return; }
+            if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || _pendingFileOpens > 0)
+            {
+                e.Cancel = true;
+                StatusMessage.Text = "진행 중인 파일 열기·저장·닫기가 끝난 뒤 다시 시도하세요.";
+                return;
+            }
+            if (_macroWindow is not null && !_macroWindow.PrepareClose())
+            {
+                e.Cancel = true;
+                return;
+            }
+            if (_diffWorkspaceWindow is null && !Documents.Any(document => document.IsModified))
+            {
+                _closingInProgress = true;
+                CompleteShutdown();
+                return;
+            }
             e.Cancel = true;
-            StatusMessage.Text = "진행 중인 파일 열기·저장·닫기가 끝난 뒤 다시 시도하세요.";
-            return;
-        }
-        if (_macroWindow is not null && !_macroWindow.PrepareClose())
-        {
-            e.Cancel = true;
-            return;
-        }
-        if (_diffWorkspaceWindow is null && !Documents.Any(document => document.IsModified))
-        {
+            if (_closingInProgress) return;
             _closingInProgress = true;
-            CompleteShutdown();
-            return;
-        }
-        e.Cancel = true;
-        if (_closingInProgress) return;
-        _closingInProgress = true;
-        if (!await ConfirmCloseDiffWindowsAsync())
-        {
-            _macroWindow?.CancelPreparedClose();
-            _closingInProgress = false;
-            return;
-        }
-        if (!await ConfirmCloseAllAsync())
-        {
-            ResetDiffCloseApprovals();
-            _macroWindow?.CancelPreparedClose();
-            _closingInProgress = false;
-            return;
-        }
+            if (!await ConfirmCloseDiffWindowsAsync())
+            {
+                _macroWindow?.CancelPreparedClose();
+                _closingInProgress = false;
+                return;
+            }
+            if (!await ConfirmCloseAllAsync())
+            {
+                ResetDiffCloseApprovals();
+                _macroWindow?.CancelPreparedClose();
+                _closingInProgress = false;
+                return;
+            }
 
-        CompleteShutdown();
-        _allowClose = true;
-        Close();
+            CompleteShutdown();
+            _allowClose = true;
+            Close();
+        }
+        finally { _checkingShutdown = false; }
     }
 
     private void CompleteShutdown()

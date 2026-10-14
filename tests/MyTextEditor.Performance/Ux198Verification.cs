@@ -44,6 +44,16 @@ internal static class Ux198Verification
         }
     }
 
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            yield return child;
+            foreach (var descendant in Descendants(child)) yield return descendant;
+        }
+    }
+
     public static int Run()
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -63,7 +73,19 @@ internal static class Ux198Verification
         {
             window.Show(); window.Activate(); Pump();
             TypeIntoCurrent(window, "initial");
-            Call(window, "NewDocument", "", null); Pump(); TypeIntoCurrent(window, "newdoc");
+            var initialCount = window.Documents.Count;
+            keybd_event(0x11, 0, 0, UIntPtr.Zero);
+            try { TypeKeys("n"); }
+            finally { keybd_event(0x11, 0, 2, UIntPtr.Zero); Pump(); }
+            Check(window.Documents.Count == initialCount + 1, "Native Ctrl+N did not create a document");
+            TypeIntoCurrent(window, "shortcut");
+            var toolbar = Field<Grid>(window, "MainToolbarGrid");
+            var newButton = Descendants(toolbar).OfType<System.Windows.Controls.Button>().Single(b => Equals(b.Content, "새 문서"));
+            newButton.Focus();
+            newButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Pump();
+            Check(window.Documents.Count == initialCount + 2, "Toolbar new command did not create a document");
+            TypeIntoCurrent(window, "toolbar");
             Wait((Task)Call(window, "OpenFilesAsync", new object[] { new[] { left, right } })!);
             Check(Current(window).FilePath == right, "Multi-file open did not select final file"); TypeIntoCurrent(window, "multiple");
             var count = window.Documents.Count;
@@ -96,7 +118,7 @@ internal static class Ux198Verification
                     Check(Field<Grid>(window, "MainToolbarGrid").ActualHeight <= 34, "Main toolbar exceeded compact height");
                 }
             }
-            Console.WriteLine("PASS v1.9.8 native typing: initial/new/multiple/duplicate file focus and load-time focus cancellation; compact main toolbar/document tabs across five palettes and two widths");
+            Console.WriteLine("PASS v1.9.9 native typing: initial/Ctrl+N/toolbar/multiple/duplicate file focus and load-time focus cancellation; compact main toolbar/document tabs across five palettes and two widths");
             Console.WriteLine($"Actual DPI: {VisualTreeHelper.GetDpi(window).PixelsPerInchX:0}; physical IME, drag/drop and alternate OS DPI not covered by this test.");
             return 0;
         }

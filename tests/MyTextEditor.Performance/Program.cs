@@ -32,6 +32,7 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (args.Length >= 2 && args[0] == "--instance199") return Instance199Verification.Run(args[1]);
         if (args.Length > 0 && args[0] == "--large-workspace")
             return LargeWorkspaceVerification.Run(args.Length > 1 ? int.Parse(args[1]) : 4, args.Length > 2 ? int.Parse(args[2]) : 8);
         if (args.Length > 0 && args[0] == "--native-buffer-memory")
