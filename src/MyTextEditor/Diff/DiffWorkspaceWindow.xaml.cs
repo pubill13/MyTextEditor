@@ -122,7 +122,6 @@ public partial class DiffWorkspaceWindow : Window
         close.Click += async (_, e) => { e.Handled = true; await CloseTabAsync(item); };
         view.StateChanged += (_, _) => headerText.Text = view.TabTitle;
         view.OptionsChanged += (_, _) => UpdateDefaults(view.GetOptions());
-        view.NewComparisonRequested += (_, e) => OpenComparison(e.Left, e.Right);
         view.FilesDropped += async (_, e) => await LoadDroppedFilesAsync(e.Paths);
         view.CloseRequested += async (_, _) => await CloseTabAsync(item);
         view.CloseWorkspaceRequested += (_, _) => Close();
@@ -284,6 +283,12 @@ public partial class DiffWorkspaceWindow : Window
     {
         var modifiers = Keyboard.Modifiers;
         if (e.Handled) return;
+        if (modifiers == ModifierKeys.None && e.Key == Key.F5)
+        {
+            CurrentView?.RequestComparison();
+            e.Handled = true;
+            return;
+        }
         if (modifiers == ModifierKeys.None && e.Key is Key.F7 or Key.F8)
         {
             CurrentView?.NavigateDifference(e.Key == Key.F7 ? -1 : 1);

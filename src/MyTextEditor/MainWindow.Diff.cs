@@ -47,36 +47,6 @@ public partial class MainWindow
         });
     }
 
-    private void CompareSelectionClipboard_Click(object sender, RoutedEventArgs e)
-    {
-        if (CurrentDocument is null || CurrentEditor?.HasSelection != true)
-        {
-            StatusMessage.Text = "현재 문서에서 비교할 영역을 먼저 선택하세요.";
-            return;
-        }
-        if (!System.Windows.Clipboard.ContainsText())
-        {
-            StatusMessage.Text = "클립보드에 비교할 텍스트가 없습니다.";
-            return;
-        }
-
-        OpenDiffComparison(new DiffEndpoint
-        {
-            Kind = DiffEndpointKind.Selection,
-            DisplayName = $"{CurrentDocument.DisplayName} 선택 영역",
-            Text = CurrentEditor.SelectedText,
-            IsReadOnly = true,
-            NewLine = CurrentDocument.NewLine
-        }, new DiffEndpoint
-        {
-            Kind = DiffEndpointKind.Clipboard,
-            DisplayName = "클립보드",
-            Text = System.Windows.Clipboard.GetText(),
-            IsReadOnly = true,
-            NewLine = CurrentDocument.NewLine
-        });
-    }
-
     private static DiffEndpoint CreateDocumentEndpoint(DocumentViewModel document) => new()
     {
         Kind = DiffEndpointKind.OpenDocument,

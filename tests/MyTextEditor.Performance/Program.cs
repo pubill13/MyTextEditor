@@ -54,6 +54,8 @@ internal static class Program
         if (args.Contains("--document-panes")) return DocumentPanesVerification.Run();
         if (args.Contains("--file-sync")) return FileSyncVerification.Run();
         if (args.Contains("--merge-clarity")) return MergeClarityVerification.Run();
+        if (args.Contains("--result-font")) return SearchResultFontVerification.Run();
+        if (args.Contains("--merge-110")) return Merge110Verification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))
@@ -228,11 +230,12 @@ internal static class Program
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.ToolWindow
         };
+        view.SetActive(true);
         window.Show();
 
         var resultField = typeof(DiffTabView).GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!;
         PumpDispatcherUntil(() => resultField.GetValue(view) is TextDiffResult, TimeSpan.FromSeconds(3));
-        var copyDifferenceButton = (System.Windows.Controls.Button)typeof(DiffTabView)
+        var copyDifferenceButton = (System.Windows.UIElement)typeof(DiffTabView)
             .GetField("CopyDifferenceButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
         if (!copyDifferenceButton.IsEnabled)
             throw new InvalidOperationException("최초 비교 뒤 차이 복사 버튼이 활성화되지 않았습니다.");
@@ -247,7 +250,7 @@ internal static class Program
             throw new InvalidOperationException("Diff 블록 병합이 한 번의 Undo로 복원되지 않았습니다.");
         var rightReadOnly = (System.Windows.Controls.CheckBox)typeof(DiffTabView)
             .GetField("RightReadOnlyCheck", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
-        var copyAllRight = (System.Windows.Controls.Button)typeof(DiffTabView)
+        var copyAllRight = (System.Windows.UIElement)typeof(DiffTabView)
             .GetField("CopyAllRightButton", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
         rightReadOnly.IsChecked = true;
         if (copyAllRight.IsEnabled)

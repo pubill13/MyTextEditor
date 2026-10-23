@@ -7,6 +7,7 @@
         Closing="Window_Closing" KeyDown="Window_KeyDown" SizeChanged="Window_SizeChanged"
         AllowDrop="True" PreviewDragOver="Window_PreviewDragOver" Drop="Window_Drop" DpiChanged="Window_DpiChanged">
     <Window.Resources>
+        <models:PointsToDipsConverter x:Key="PointsToDips"/>
         <Style x:Key="CompactToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Height" Value="26"/><Setter Property="Padding" Value="9,2"/><Setter Property="Margin" Value="2"/>
         </Style>
@@ -40,11 +41,11 @@
             <Setter Property="Height" Value="28"/><Setter Property="Padding" Value="8,1"/>
         </Style>
         <DataTemplate x:Key="SearchResultRowTemplate" DataType="{x:Type models:SearchResultRow}">
-            <Grid Margin="4,2"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="94"/><ColumnDefinition Width="128"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid Margin="4,2" TextElement.FontFamily="{DynamicResource EditorFontFamily}" TextElement.FontSize="{DynamicResource EditorFontSize}"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="Auto" MinWidth="94" SharedSizeGroup="ResultLineNumberColumn"/><ColumnDefinition Width="128"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="ResultMarker" Text="●" Foreground="{DynamicResource AccentBrush}" FontSize="9" />
-                <TextBlock x:Name="ResultLineNumber" Grid.Column="1" Text="{Binding LineNumber}" Foreground="{DynamicResource AccentBrush}" FontFamily="Cascadia Mono, Consolas" />
-                <TextBlock Grid.Column="2" Text="{Binding SourceLabel}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}" />
-                <TextBlock x:Name="ResultText" Grid.Column="3" Text="{Binding Text}" TextTrimming="CharacterEllipsis" FontFamily="Cascadia Mono, Consolas" />
+                <TextBlock FontSize="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource AncestorType=Grid}, Converter={StaticResource PointsToDips}}" x:Name="ResultLineNumber" Grid.Column="1" Text="{Binding LineNumber}" Foreground="{DynamicResource AccentBrush}" />
+                <TextBlock FontSize="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource AncestorType=Grid}, Converter={StaticResource PointsToDips}}" Grid.Column="2" Text="{Binding SourceLabel}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}" />
+                <TextBlock FontSize="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource AncestorType=Grid}, Converter={StaticResource PointsToDips}}" x:Name="ResultText" Grid.Column="3" Text="{Binding Text}" TextTrimming="CharacterEllipsis" />
             </Grid>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding IsContext}" Value="True">
@@ -442,8 +443,8 @@
                                     <MenuItem Header="검색 조건 복사" Click="SearchTabMenuCopyCondition_Click"/>
                                 </ContextMenu></StackPanel.ContextMenu>
                                 <TextBlock Text="{Binding Title}" Margin="0,0,7,0" VerticalAlignment="Center"/><Button Content="×" Tag="{Binding}" Padding="2,0" MinHeight="18" Height="18" Margin="0" Background="Transparent" BorderThickness="0" Click="SearchResultClose_Click"/></StackPanel></DataTemplate></TabControl.ItemTemplate>
-                            <TabControl.ContentTemplate><DataTemplate><DockPanel>
-                                <Grid DockPanel.Dock="Top" Margin="8,3"><Grid.ColumnDefinitions><ColumnDefinition Width="112"/><ColumnDefinition Width="128"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="원본 줄 번호"/><TextBlock Grid.Column="1" Text="파일"/><TextBlock Grid.Column="2" Text="내용"/></Grid>
+                            <TabControl.ContentTemplate><DataTemplate><DockPanel Grid.IsSharedSizeScope="True">
+                                <Grid DockPanel.Dock="Top" Margin="8,3"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="Auto" MinWidth="94" SharedSizeGroup="ResultLineNumberColumn"/><ColumnDefinition Width="128"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Grid.Column="1" Text="원본 줄 번호"/><TextBlock Grid.Column="2" Text="파일"/><TextBlock Grid.Column="3" Text="내용"/></Grid>
                                 <ListBox ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource SearchResultRowTemplate}" SelectionMode="Extended"
                                          ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                                          Loaded="SearchResultsList_Loaded" Unloaded="SearchResultsList_Unloaded" SelectionChanged="SearchResultsList_SelectionChanged"

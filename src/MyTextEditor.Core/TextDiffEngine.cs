@@ -6,7 +6,7 @@ using MyTextEditor.Core.Models;
 
 namespace MyTextEditor.Core;
 
-public sealed class TextDiffEngine
+public sealed partial class TextDiffEngine
 {
     public TextDiffResult Compare(string left, string right, DiffOptions? options = null, CancellationToken cancellationToken = default)
     {

@@ -10,7 +10,6 @@ public enum DiffEndpointKind
     OpenDocument,
     File,
     Clipboard,
-    Selection,
     Scratch
 }
 
@@ -70,12 +69,6 @@ public sealed class DiffWindowCallbacks
     public Action<double>? FontSizeChanged { get; init; }
     public Action<string>? HighlightColorChanged { get; init; }
     public string HighlightColor { get; init; } = "#FFD166";
-}
-
-public sealed class DiffTabRequestedEventArgs(DiffEndpoint left, DiffEndpoint right) : EventArgs
-{
-    public DiffEndpoint Left { get; } = left;
-    public DiffEndpoint Right { get; } = right;
 }
 
 public sealed class DiffFilesDroppedEventArgs(IReadOnlyList<string> paths) : EventArgs

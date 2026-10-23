@@ -1,4 +1,36 @@
-﻿# OmniEdit 작업 인수인계
+# OmniEdit 작업 인수인계
+
+
+현재 상태: v1.10.0 릴리즈 준비 완료. Release 빌드 0경고/0오류, Core 41/41, --merge-110, --merge-clarity, --result-font, 기본 Performance 전체 통과. 자체 포함 EXE 시작·정상 종료 확인. 30MB 로딩 중앙값 0.221초. 300MB 비교는 Core 범위 벤치마크로 측정했으며 UI 전체 무지연은 보장하지 않는다.
+## v1.10.0 릴리즈
+
+현재 목표는 Merge 중앙 버튼·잠금 표시·차이 지도를 정돈하고, 대용량 비교의 스냅샷/줄 인덱스 재사용·취소·지연 inline 계산을 구현하며 검색 결과에 선택한 편집기 글꼴과 크기를 적용하는 것이다. 사용자는 검증 후 main·v1.10 태그·GitHub Release EXE/ZIP 게시까지 요청했다. 현재 공개 버전은 v1.9.9이며 아래 구현은 작업 트리의 개발본이다.
+
+### 구현한 주요 경로
+
+- `src/MyTextEditor.Core/TextDiffEngine.Ranges.cs`: 원문 범위 기반 DiffSnapshot과 줄 인덱스, CompareRanges 및 지연 inline API. 기존 Compare API를 유지한다. 큰 입력에서는 정확한 원문 확인을 포함한 anchor 경로를 사용하며 재배열된 구간은 기존 엔진보다 넓은 변경 블록으로 표시될 수 있다.
+- `src/MyTextEditor/Controls/ScintillaEditorHost.Snapshot.cs`: native UTF-8 버퍼를 64KiB 단위로 복사하고 Dispatcher에 양보한다. revision 변경 시 캡처를 폐기한다.
+- `src/MyTextEditor/Diff/DiffTabView.xaml`, `.xaml.cs`, `.Comparison110.cs`, `.Ui110.cs`: 작은 벡터 병합 버튼, 잠금 토글, 차이 지도, 자동/수동 비교와 중단, 스냅샷 캐시, 보이는 줄의 inline 계산. 비교 작업을 직렬화하고 비활성 탭 작업을 미룬다. 선택 영역 비교는 제거했다.
+- `src/MyTextEditor/MainWindow.xaml`, `Models/PointsToDipsConverter.cs`: 결과 본문·줄 번호·파일명에 편집기 글꼴/크기를 동적으로 적용하고 줄 높이·번호 폭을 자동 조절한다. 버튼·탭 제목의 UI 글꼴은 유지한다.
+- `tests/MyTextEditor.Core.Tests/RangeDiffTests.cs`, `tests/MyTextEditor.Performance/SearchResultFontVerification.cs`: 범위 비교와 검색 결과 글꼴 회귀 검증.
+
+### 결정과 사용 규칙
+
+자동 비교는 새 탭에서 ON이며 한쪽이 30,000,000 UTF-8 바이트 이상이면 한 번 OFF로 바꾸고 안내한다. 사용자가 다시 켤 수 있다. OFF에서도 최초 로드와 명시적 병합 뒤에는 비교하며 직접 편집·옵션 변경 뒤에는 F5/다시 비교가 필요하다. 오래된 결과로 병합하지 않는다. 계산 중단은 텍스트를 바꾸지 않는다. 병합 후 다음 차이는 기본 OFF이고 켜면 단일 블록 병합 뒤 이후 차이로 이동하며 끝에서 순환하지 않는다. 두 옵션은 탭별 실행 상태로만 유지한다.
+
+줄 단위 표시를 먼저 하고 화면에 보이는 변경 줄만 inline 계산한다. 현재 UI에서는 16,384 UTF-16자를 넘는 긴 줄은 줄 전체 강조만 제공한다. 300MB 파일에서도 무지연이라고 보장하지 않는다. 검색 결과의 글꼴/크기는 일반 편집기 설정을 공유하며 별도 결과 창에도 적용한다.
+
+### 검증 상태와 다음 작업
+
+확인된 범위: Release 빌드 성공, Core 41/41, `--result-font` GUI 검증 통과. 기본 Merge GUI 회귀 실행이 중단되어 원인을 조사 중이다. 이 상태를 Merge 전체 검증 완료로 보고하면 안 된다. 30/100/300MB 쌍의 비교 시간·최대 메모리·UI 응답 측정과 자체 포함 EXE 시작/종료 확인은 아직 완료되지 않았다. 실제 125/150% DPI와 물리 한글 IME 검증도 완료로 주장하지 않는다.
+
+1. Merge GUI 중단 원인을 재현·수정하고 관련 회귀 테스트를 통과시킨다.
+2. 자동/수동 비교, F5·중단, 잠금, stale 차단, 양방향 병합·Undo, 탭 전환, 차이 지도·겹친 버튼을 확인한다.
+3. 30/100/300MB의 동일·소수/다수 변경·반복·전체 교체·긴 한 줄 사례를 측정하고 실제 한계를 기록한다.
+4. 검증 결과에 맞춰 README·도움말·이 문서를 최종 갱신한다. 자체 포함 EXE/ZIP 생성·실행 확인 후 main·v1.10·GitHub Release를 게시하고 한글 설명/해시를 확인한다.
+
+주의: `.gitignore`는 사용자가 수정한 파일이므로 이번 커밋에 포함하지 않는다. 기존 작업 트리 변경을 되돌리지 않는다. 이 절은 진행 중 기록이며 아래 버전별 검증 기록과 혼동하지 않는다.
+
 ## v1.9.9 외부 파일 전달·포커스 검증
 
 파일 인수 실행은 같은 사용자 SID/로그인 세션의 첫 수신 창으로 Named Pipe 전달하고 ACK 후 종료한다. 인수 없는 실행은 독립 창을 만든다. FileOpenCoordinator.cs는 전용 스레드에서 Mutex를 획득/해제하며 보조 창은 OS Mutex 대기로 인계를 기다린다(타이머 폴링은 종료 직후 새 창 실행 경합이 있어 제거). 파이프는 CurrentUserOnly, 길이 제한 1MiB, 3초 접수 제한이며 서버 오류는 UI 상태바에 알리고 소유권을 해제한다. 실패 시 자동 중복 실행하지 않는다. UI Dispatcher에는 취소 가능한 접수 콜백을 사용한다.
@@ -320,3 +352,4 @@ v1.6 구현, 독립 리뷰, 로컬 검증과 배포가 완료됐다. 구현 커�
 - 앱 종료의 일반 문서 확인이 취소되면 `CancelPreparedClose()`로 Diff 종료 승인을 초기화한다.
 - `bin/`, `obj/`, `artifacts/`, 사용자 `settings.json`은 커밋하지 않는다. 배포 파일은 GitHub Release에만 첨부한다.
 - 변경 뒤 Release 빌드, Core 테스트, 성능 실행기와 자체 포함 EXE 시작·종료를 다시 검증한다.
+

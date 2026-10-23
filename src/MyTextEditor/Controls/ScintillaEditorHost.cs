@@ -28,6 +28,7 @@ public enum EditorShortcut
     Help,
     DiffPrevious,
     DiffNext,
+    DiffRecompare,
     MergeLeft,
     MergeRight,
     ZoomIn,
@@ -677,6 +678,11 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         if (modifiers == Forms.Keys.None && key is Forms.Keys.F7 or Forms.Keys.F8)
         {
             shortcut = key == Forms.Keys.F7 ? EditorShortcut.DiffPrevious : EditorShortcut.DiffNext;
+            return true;
+        }
+        if (modifiers == Forms.Keys.None && key == Forms.Keys.F5)
+        {
+            shortcut = EditorShortcut.DiffRecompare;
             return true;
         }
         if (modifiers == Forms.Keys.Shift && key == Forms.Keys.F3)
