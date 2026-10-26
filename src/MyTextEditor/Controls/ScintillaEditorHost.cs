@@ -140,7 +140,12 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         try
         {
             using (var output = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None)) resource.CopyTo(output);
-            File.Move(temporary, destination, true);
+            try { File.Move(temporary, destination, true); }
+            catch (UnauthorizedAccessException) when (File.Exists(destination))
+            {
+                try { File.Replace(temporary, destination, null); }
+                catch (UnauthorizedAccessException) { File.Copy(temporary, destination, true); }
+            }
         }
         finally
         {

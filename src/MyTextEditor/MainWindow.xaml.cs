@@ -325,6 +325,7 @@ public partial class MainWindow : Window
                 return false;
             }
 
+            document.EncodingModified = false;
             document.FilePath = state.FilePath;
             document.Encoding = state.Encoding;
             document.HasByteOrderMark = state.HasByteOrderMark;
@@ -400,6 +401,7 @@ public partial class MainWindow : Window
         if (ActiveDocumentTabs.Items.Count == 0)
             _activeDocumentTabs = LeftDocuments.Count > 0 ? DocumentTabs : RightDocuments.Count > 0 ? RightDocumentTabs : DocumentTabs;
         RefreshDiffSourceStates();
+        NormalizeDocumentPanes();
         document.Editor.ReleaseResources();
         RefreshSearchSessionState();
         EmptyDocumentState.Visibility = Documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -653,6 +655,7 @@ public partial class MainWindow : Window
     {
         if (e.Source != sender || sender != ActiveDocumentTabs) return;
         UpdateStatus();
+        _ = PollFileChangesAsync();
     }
 
     private void UpdateStatus()
@@ -671,13 +674,15 @@ public partial class MainWindow : Window
         if (editor is { HasSelection: true })
             CaretStatus.Text += $"  ·  선택 {editor.SelectionRange.Length:N0}자";
         LineCountStatus.Text = $"{editor?.LineCount ?? 1:N0}줄";
-        EncodingStatus.Text = document.Encoding.WebName.ToUpperInvariant();
+        EncodingStatus.Text = DocumentEncodings.GetDisplayName(DocumentEncodings.FromEncoding(document.Encoding, document.HasByteOrderMark));
+        WordWrapMenuItem.IsChecked = editor?.WordWrap == true;
         NewLineStatus.Text = document.NewLine == "\r\n" ? "CRLF" : document.NewLine == "\n" ? "LF" : "CR";
     }
 
     private void ConfigureEditor(DocumentViewModel document)
     {
         var editor = document.Editor;
+        editor.SetWordWrap(_settings.DefaultWordWrap);
         editor.EditorFocused += (_, _) => { if (Documents.Contains(document)) SelectDocument(document); };
         editor.CaretChanged += Editor_CaretChanged;
         editor.RevisionChanged += Editor_RevisionChanged;

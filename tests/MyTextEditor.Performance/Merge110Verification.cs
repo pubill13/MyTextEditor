@@ -35,8 +35,8 @@ internal static class Merge110Verification
             PumpUntil(() => view.DifferenceCount == 2);
             var left = Field<ScintillaEditorHost>(view, "_leftEditor");
             var right = Field<ScintillaEditorHost>(view, "_rightEditor");
-            var auto = Field<CheckBox>(view, "AutoCompareCheck");
-            Check(auto.IsChecked == true && Field<CheckBox>(view, "MergeNextCheck").IsChecked == false, "New tab comparison defaults");
+            var auto = Field<System.Windows.Controls.MenuItem>(view, "AutoCompareCheck");
+            Check(auto.IsChecked == true && Field<System.Windows.Controls.MenuItem>(view, "MergeNextCheck").IsChecked == false, "New tab comparison defaults");
             var map = Field<DifferenceMap>(view, "DifferenceMapView");
             map.Navigate!(1);
             Check(Field<int>(view, "_currentBlockIndex") == 1, "Map navigation");
@@ -60,7 +60,7 @@ internal static class Merge110Verification
             SendNative(left, Forms.Keys.F5);
             PumpUntil(() => view.DifferenceCount == 2);
             map.Navigate!(0);
-            Field<CheckBox>(view, "MergeNextCheck").IsChecked = true;
+            Field<System.Windows.Controls.MenuItem>(view, "MergeNextCheck").IsChecked = true;
             Call(view, "MergeCurrent", DiffSide.Right);
             PumpUntil(() => view.DifferenceCount == 1);
             Check(Field<int>(view, "_currentBlockIndex") == 0 && left.GetText().Contains("new1"), "Merge-next failed");
@@ -114,3 +114,4 @@ internal static class Merge110Verification
         }
     }
 }
+

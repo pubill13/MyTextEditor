@@ -50,6 +50,7 @@ public partial class MainWindow
         _activeDocumentTabs = tabs;
         tabs.SelectedItem = document;
         UpdateStatus();
+        _ = PollFileChangesAsync();
     }
 
     private void DocumentPane_MouseDown(object sender, MouseButtonEventArgs e)
@@ -106,6 +107,22 @@ public partial class MainWindow
         DocumentTabs.UpdateLayout(); RightDocumentTabs.UpdateLayout();
         (right ? RightDocuments : LeftDocuments).Add(document);
         SelectDocument(document);
+        NormalizeDocumentPanes();
+    }
+
+    private void NormalizeDocumentPanes()
+    {
+        if (LeftDocuments.Count > 0 && RightDocuments.Count > 0) return;
+        var active = CurrentDocument;
+        foreach (var document in RightDocuments.ToArray())
+        {
+            RightDocuments.Remove(document);
+            RightDocumentTabs.UpdateLayout();
+            LeftDocuments.Add(document);
+        }
+        SetDocumentSplit(false);
+        _activeDocumentTabs = DocumentTabs;
+        if (active is not null && LeftDocuments.Contains(active)) SelectDocument(active);
     }
 
     private void FocusCurrentDocumentAfterLayout()

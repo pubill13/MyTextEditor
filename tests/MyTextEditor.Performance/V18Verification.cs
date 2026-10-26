@@ -167,7 +167,7 @@ internal static class V18Verification
                         throw new Exception("Small font gutter button height ignored");
                 Capture(window, "merge-6pt");
             }
-            var check = (System.Windows.Controls.CheckBox)typeof(DiffTabView).GetField("ScrollSyncCheck", Private)!.GetValue(view)!;
+            var check = (System.Windows.Controls.MenuItem)typeof(DiffTabView).GetField("ScrollSyncCheck", Private)!.GetValue(view)!;
             check.IsChecked = false;
             int unchanged = rightHost.FirstVisibleLine;
             host.ScrollToLine(25000);
@@ -218,3 +218,4 @@ internal static class V18Verification
         }
     }
 }
+

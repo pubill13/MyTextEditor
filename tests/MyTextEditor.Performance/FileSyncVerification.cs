@@ -100,6 +100,24 @@ internal static class FileSyncVerification
             Toggle(window, true);
             Poll(window);
             Require(document.Text == "비동기 진행 중 OFF", "Turning ON again must resume after a cancelled poll");
+            var otherFile = Path.Combine(directory, "inactive.log");
+            File.WriteAllText(otherFile, "다른 문서", new UTF8Encoding(false));
+            WaitFor(window.OpenStartupFilesAsync([otherFile]));
+            var other = window.Documents.Single(item => item.FilePath == otherFile);
+            File.WriteAllText(file, "비활성 문서 최신 내용", new UTF8Encoding(false));
+            Poll(window);
+            Require(document.Text == "비동기 진행 중 OFF", "Inactive documents must not reload their full content");
+            Call(window, "SelectDocument", document);
+            Poll(window);
+            Require(document.Text == "비활성 문서 최신 내용", "Selecting pending document must reload it");
+            File.WriteAllText(file, "기록 중 첫 변경", new UTF8Encoding(false));
+            WaitFor((Task)Call(window, "PollFileChangesAsync")!);
+            Require(document.Text == "비활성 문서 최신 내용", "First observation must defer until stable");
+            File.WriteAllText(file, "기록 중 두 번째 변경", new UTF8Encoding(false));
+            WaitFor((Task)Call(window, "PollFileChangesAsync")!);
+            Require(document.Text == "비활성 문서 최신 내용", "Changing stamp must restart stable wait");
+            Poll(window);
+            Require(document.Text == "기록 중 두 번째 변경", "Stable latest content must apply");
             Console.WriteLine("PASS file sync OFF/ON, monotonic revision, encoding, dirty guard, deletion/recreation, locked retry, own-save Undo, pending OFF");
             return 0;
         }
@@ -123,12 +141,14 @@ internal static class FileSyncVerification
 
     private static void Toggle(MainWindow window, bool enabled)
     {
-        Field<MenuItem>(window, "SyncFilesMenuItem").IsChecked = enabled;
+        Field<System.Windows.Controls.Primitives.ToggleButton>(window, "SyncFilesMenuItem").IsChecked = enabled;
         Call(window, "SyncFiles_Click", window, new RoutedEventArgs());
         Field<DispatcherTimer>(window, "_fileSyncTimer").Stop();
     }
     private static void Poll(MainWindow window)
     {
+        WaitFor((Task)Call(window, "PollFileChangesAsync")!);
+        WaitFor(Task.Delay(550));
         WaitFor((Task)Call(window, "PollFileChangesAsync")!);
     }
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
@@ -148,3 +168,4 @@ internal static class FileSyncVerification
         task.GetAwaiter().GetResult();
     }
 }
+

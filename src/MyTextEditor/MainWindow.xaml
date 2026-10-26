@@ -67,6 +67,7 @@
                 <MenuItem Header="저장(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
                 <MenuItem Header="다른 이름으로 저장(_A)…" InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
                 <Separator />
+                <MenuItem x:Name="EncodingFileMenu" Header="인코딩" SubmenuOpened="EncodingMenu_Opened"/>
                 <MenuItem x:Name="RecentFilesMenu" Header="최근 파일" />
                 <Separator />
                 <MenuItem Header="현재 탭 닫기(_W)" InputGestureText="Ctrl+W" Click="CloseTab_Click" />
@@ -89,7 +90,7 @@
                 <MenuItem x:Name="ToolsMenuItem" Header="도구 패널" IsCheckable="True" IsChecked="True" Click="ToggleTools_Click" />
                 <MenuItem x:Name="ResultsMenuItem" Header="결과 패널" IsCheckable="True" IsChecked="False" Click="ToggleResults_Click" />
                 <MenuItem x:Name="SplitDocumentsMenuItem" Header="문서 좌우 분할" IsCheckable="True" Click="ToggleDocumentSplit_Click" />
-                <MenuItem x:Name="SyncFilesMenuItem" Header="외부 파일 변경 자동 반영" IsCheckable="True" Click="SyncFiles_Click" />
+                <MenuItem x:Name="WordWrapMenuItem" Header="자동 줄바꿈" IsCheckable="True" Click="WordWrap_Click" ToolTip="표시만 줄바꿈하며 파일 내용은 바꾸지 않습니다." />
                 <Separator />
                 <MenuItem x:Name="ThemeMenu" Header="색상 테마" />
                 <MenuItem Header="글자 확대" InputGestureText="Ctrl++" Click="ZoomIn_Click" />
@@ -106,7 +107,7 @@
             <Separator />
             <StatusBarItem><TextBlock x:Name="LineCountStatus" Text="1줄" /></StatusBarItem>
             <Separator />
-            <StatusBarItem><TextBlock x:Name="EncodingStatus" Text="UTF-8" /></StatusBarItem>
+            <StatusBarItem><Button Padding="4,0" Margin="0" ToolTip="저장 인코딩 변경 / 다른 인코딩으로 다시 열기" Click="EncodingStatus_Click"><TextBlock x:Name="EncodingStatus" Text="UTF-8"/></Button></StatusBarItem>
             <Separator />
             <StatusBarItem><TextBlock x:Name="NewLineStatus" Text="CRLF" /></StatusBarItem>
         </StatusBar>
@@ -122,6 +123,7 @@
                     <ToggleButton x:Name="ToolsToggleButton" Content="검색·정리" Style="{StaticResource CompactToolbarToggle}" IsChecked="True" ToolTip="검색·정리 패널 표시/숨기기 (검색 Ctrl+F, 치환 Ctrl+H)" Click="ToggleToolsButton_Click"/>
                     <Border Width="1" Margin="8,3" Background="{DynamicResource BorderBrush}" />
                     <TextBlock Text="부가 기능" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="{DynamicResource MutedBrush}"/>
+                    <ToggleButton x:Name="SyncFilesMenuItem" Content="외부 변경 반영" Style="{StaticResource CompactToolbarToggle}" ToolTip="외부 파일 변경 자동 반영 · 저장하지 않은 수정은 보호합니다." Click="SyncFiles_Click"/>
                     <ToggleButton x:Name="DiffToggleButton" Content="비교/병합" Style="{StaticResource CompactToolbarToggle}" ToolTip="비교/병합 창 표시·숨기기 (작업 유지)" Click="ToggleDiff_Click"/>
                     <ToggleButton x:Name="MacroToggleButton" Content="매크로" Style="{StaticResource CompactToolbarToggle}" ToolTip="매크로 창 표시·숨기기 (작업 유지)" Click="ToggleMacro_Click"/>
                     <Border Width="1" Margin="8,3" Background="{DynamicResource BorderBrush}" />

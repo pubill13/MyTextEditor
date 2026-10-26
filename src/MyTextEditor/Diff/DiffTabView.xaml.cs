@@ -66,6 +66,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         ScrollSyncCheck.IsChecked = options.ScrollSync;
         _recompareTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _recompareTimer.Tick += RecompareTimer_Tick;
+        UpdateOptionSummary();
     }
 
     public event EventHandler? ResourcesReleased;
@@ -453,13 +454,13 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
                 new(width, rightRange.Bottom), new(0, leftRange.Bottom)
             };
             connector.Visibility = Visibility.Visible;
-            connector.Opacity = index == _currentBlockIndex ? 0.65 : 0.22;
-            connector.StrokeThickness = index == _currentBlockIndex ? 2 : 1;
+            connector.Opacity = index == _currentBlockIndex ? 0.22 : 0.08;
+            connector.StrokeThickness = 1;
             var left = (WpfButton)panel.Children[0];
             var right = (WpfButton)panel.Children[1];
             left.MinHeight = right.MinHeight = 0;
             left.Height = right.Height = buttonSize;
-            left.Width = right.Width = Math.Min(buttonSize, 28);
+            left.Width = right.Width = 24;
             left.Tag = right.Tag = index;
             left.ToolTip = DescribeMerge(block, DiffSide.Right) + "\nAlt+← · Ctrl+Z로 되돌리기";
             right.ToolTip = DescribeMerge(block, DiffSide.Left) + "\nAlt+→ · Ctrl+Z로 되돌리기";
@@ -498,27 +499,27 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _gutterConnections.Add(connector);
         var left = CreateMergeArrowButton(toLeft: true);
         var right = CreateMergeArrowButton(toLeft: false);
-        right.Margin = new Thickness(4, 0, 0, 0);
+        right.Margin = new Thickness(0);
         left.MouseEnter += GutterButton_MouseEnter;
         right.MouseEnter += GutterButton_MouseEnter;
         left.Click += MergeBlockToLeft_Click;
         right.Click += MergeBlockToRight_Click;
         panel.Children.Add(left); panel.Children.Add(right);
-        Canvas.SetLeft(panel, 3);
+        Canvas.SetLeft(panel, 0);
         MergeGutterCanvas.Children.Add(panel);
         return panel;
     }
 
-    private static WpfButton CreateMergeArrowButton(bool toLeft)
+    private WpfButton CreateMergeArrowButton(bool toLeft)
     {
         var arrow = new System.Windows.Shapes.Path
         {
             Data = Geometry.Parse(toLeft ? "M 13,2 L 7,8 L 13,14 M 7,8 L 21,8" : "M 15,2 L 21,8 L 15,14 M 7,8 L 21,8"),
-            StrokeThickness = 1.8,
+            StrokeThickness = 1.3,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
             StrokeLineJoin = PenLineJoin.Round,
-            Width = 16,
+            Width = 12,
             Height = 12,
             Stretch = Stretch.Uniform,
             IsHitTestVisible = false
@@ -529,7 +530,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         });
         return new WpfButton
         {
-            Content = new Viewbox { Child = arrow, MaxWidth = 16, MaxHeight = 12, StretchDirection = StretchDirection.DownOnly },
+            Style = (Style)FindResource("MergeArrowStyle"),
+            Content = new Viewbox { Child = arrow, MaxWidth = 12, MaxHeight = 12, StretchDirection = StretchDirection.DownOnly },
             Width = 24,
             Height = 24,
             Padding = new Thickness(0),
@@ -646,12 +648,26 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void Option_Changed(object sender, RoutedEventArgs e)
     {
+        UpdateOptionSummary();
         if (!IsLoaded) return;
         NotifyOptionsChanged();
         EditorChanged();
     }
 
-    private void ScrollSync_Changed(object sender, RoutedEventArgs e) { if (IsLoaded) NotifyOptionsChanged(); }
+    private void ScrollSync_Changed(object sender, RoutedEventArgs e) { UpdateOptionSummary(); if (IsLoaded) NotifyOptionsChanged(); }
+
+    private void DisplayOption_Changed(object sender, RoutedEventArgs e) => UpdateOptionSummary();
+
+    private void UpdateOptionSummary()
+    {
+        if (OptionsMenu is null || CompareModeText is null || MergeNextCheck is null) return;
+        var count = (IgnoreWhitespaceCheck.IsChecked ? 1 : 0) + (IgnoreCaseCheck.IsChecked ? 1 : 0) +
+            (IgnoreEmptyLinesCheck.IsChecked ? 1 : 0) + (!ScrollSyncCheck.IsChecked ? 1 : 0) +
+            (!AutoCompareCheck.IsChecked ? 1 : 0) + (MergeNextCheck.IsChecked ? 1 : 0);
+        OptionsMenu.Header = count == 0 ? "옵션" : $"옵션 · {count}";
+        CompareModeText.Text = AutoCompareCheck.IsChecked ? "자동" : "수동 · F5";
+        CompareModeText.ToolTip = AutoCompareCheck.IsChecked ? "편집 후 자동으로 다시 비교합니다" : "편집 후 F5로 다시 비교하세요";
+    }
 
     private void ReadOnly_Changed(object sender, RoutedEventArgs e)
     {

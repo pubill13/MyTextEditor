@@ -1,5 +1,14 @@
 # OmniEdit 작업 인수인계
 
+## 현재 작업 업데이트 — 인코딩·표시·동기화·Merge 밀도
+
+구현 완료: 5종 인코딩 선택 저장/지정 인코딩 다시 열기, 저장 인코딩 변경을 포함한 문서 dirty 상태, 일반 문서 자동 줄바꿈, 빈 분할 자동 해제, 외부 파일 감시의 메타데이터 일괄 확인·500ms 안정화·비활성 문서 지연 로드, Merge 옵션 메뉴·압축 toolbar·48px gutter를 적용했다.
+
+검증: Core 42/42, Release 빌드 0경고/0오류, --merge-110, --merge-clarity, --result-font 통과. 인코딩 저장/로드의 Windows 파일 교체는 Move 거부 환경에서 File.Replace로 대체하는 경로를 추가했다.
+
+주의: 125/150% 실제 DPI와 물리 한글 IME는 아직 검증하지 않았다. 300MB는 Core 비교 벤치마크 기준이며 UI 전체 무지연을 보장하지 않는다. 다음 Agent는 먼저 dotnet build MyTextEditor.sln -c Release --no-restore -p:NuGetAudit=false와 Core/Performance 회귀를 실행하고, 이후 README/HANDOFF를 다시 읽은 뒤 배포 여부를 판단한다.
+
+
 
 현재 상태: v1.10.0 릴리즈 준비 완료. Release 빌드 0경고/0오류, Core 41/41, --merge-110, --merge-clarity, --result-font, 기본 Performance 전체 통과. 자체 포함 EXE 시작·정상 종료 확인. 30MB 로딩 중앙값 0.221초. 300MB 비교는 Core 범위 벤치마크로 측정했으며 UI 전체 무지연은 보장하지 않는다.
 ## v1.10.0 릴리즈
@@ -352,4 +361,5 @@ v1.6 구현, 독립 리뷰, 로컬 검증과 배포가 완료됐다. 구현 커�
 - 앱 종료의 일반 문서 확인이 취소되면 `CancelPreparedClose()`로 Diff 종료 승인을 초기화한다.
 - `bin/`, `obj/`, `artifacts/`, 사용자 `settings.json`은 커밋하지 않는다. 배포 파일은 GitHub Release에만 첨부한다.
 - 변경 뒤 Release 빌드, Core 테스트, 성능 실행기와 자체 포함 EXE 시작·종료를 다시 검증한다.
+
 

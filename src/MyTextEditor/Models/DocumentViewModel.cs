@@ -9,6 +9,12 @@ namespace MyTextEditor.Models;
 public sealed class DocumentViewModel : INotifyPropertyChanged
 {
     private bool _isModified;
+    private bool _encodingModified;
+    public bool EncodingModified
+    {
+        get => _encodingModified;
+        set { if (_encodingModified == value) return; _encodingModified = value; OnPropertyChanged(nameof(IsModified)); OnPropertyChanged(nameof(TabTitle)); }
+    }
 
     public Guid Id { get; } = Guid.NewGuid();
     public string? FilePath { get; set; }
@@ -24,7 +30,7 @@ public sealed class DocumentViewModel : INotifyPropertyChanged
 
     public bool IsModified
     {
-        get => _isModified;
+        get => _isModified || _encodingModified;
         set { if (_isModified == value) return; _isModified = value; OnPropertyChanged(); OnPropertyChanged(nameof(TabTitle)); }
     }
 

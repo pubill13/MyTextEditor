@@ -4,6 +4,7 @@ using MyTextEditor.Core.Models;
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("명시적 인코딩 로드·BOM·무손실 저장", ExplicitEncodingTests.Run),
     ("범위 Diff 원문 매핑과 취소", RangeDiffTests.Run),
     ("단어 탐색 방향 순환 Unicode 경계", SearchWorkflowTests.Occurrences),
     ("폴더 검색 인코딩 패턴 문맥 오류 취소", SearchWorkflowTests.FolderSearch),

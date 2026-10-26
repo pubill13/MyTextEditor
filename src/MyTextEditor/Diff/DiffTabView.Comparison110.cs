@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using MyTextEditor.Controls;
 using MyTextEditor.Core;
 using MyTextEditor.Core.Models;
@@ -46,6 +46,7 @@ public partial class DiffTabView
 
     private void AutoCompare_Changed(object sender, RoutedEventArgs e)
     {
+        UpdateOptionSummary();
         if (!_initialized) return;
         _recompareTimer.Stop();
         if (AutoCompareCheck.IsChecked == true && _needsComparison && _isActive) _ = CompareNowAsync();

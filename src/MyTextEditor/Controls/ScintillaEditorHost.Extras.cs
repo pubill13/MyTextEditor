@@ -36,6 +36,15 @@ public sealed partial class ScintillaEditorHost
 
     private void Editor_SizeChanged(object? sender, EventArgs e) => UpdateScrollBars();
 
+    public bool WordWrap => _editor.WrapMode != WrapMode.None;
+    public void SetWordWrap(bool enabled)
+    {
+        _editor.WrapMode = enabled ? WrapMode.Word : WrapMode.None;
+        _horizontalBar.Visible = !enabled;
+        if (enabled) _editor.XOffset = 0;
+        UpdateScrollBars();
+    }
+
     private void UpdateScrollBars()
     {
         if (_resourcesReleased || !_editor.IsHandleCreated) return;

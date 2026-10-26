@@ -210,3 +210,4 @@ dotnet publish src/MyTextEditor/MyTextEditor.csproj -c Release -r win-x64 --self
 
 1.9.4부터 로그 정리 기능은 제거되었습니다. 이 단계가 포함된 기존 매크로는 구버전에서 해당 단계를 삭제한 뒤 저장해야 다시 사용할 수 있습니다. 원본 매크로 파일은 자동 변경하지 않습니다.
 
+

@@ -19,4 +19,8 @@ public sealed record DocumentLoadBuffer(
     Encoding OriginalEncoding,
     bool HasByteOrderMark,
     string NewLine,
-    string FilePath);
+    string FilePath)
+{
+    public TimeSpan ReadElapsed { get; init; }
+    public TimeSpan DecodeElapsed { get; init; }
+}

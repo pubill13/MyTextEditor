@@ -12,12 +12,18 @@ public sealed class DocumentFileService
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
-    public async Task<DocumentState> LoadAsync(string filePath, CancellationToken cancellationToken = default)
+    public Task<DocumentState> LoadAsync(string filePath, CancellationToken cancellationToken = default) =>
+        LoadDocumentAsync(filePath, null, cancellationToken);
+
+    public Task<DocumentState> LoadAsync(string filePath, DocumentEncodingKind encoding, CancellationToken cancellationToken = default) =>
+        LoadDocumentAsync(filePath, encoding, cancellationToken);
+
+    private async Task<DocumentState> LoadDocumentAsync(string filePath, DocumentEncodingKind? encoding, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
-        var detected = DetectEncoding(bytes);
-        var preambleLength = detected.HasBom ? detected.Encoding.GetPreamble().Length : 0;
+        var detected = ResolveEncoding(bytes, encoding);
+        var preambleLength = detected.PreambleLength;
         var text = detected.Encoding.GetString(bytes, preambleLength, bytes.Length - preambleLength);
 
         return new DocumentState
@@ -31,21 +37,30 @@ public sealed class DocumentFileService
         };
     }
 
-    public async Task<DocumentLoadBuffer> LoadBufferAsync(
+    public Task<DocumentLoadBuffer> LoadBufferAsync(
         string filePath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => LoadBufferInternalAsync(filePath, null, cancellationToken);
+
+    public Task<DocumentLoadBuffer> LoadBufferAsync(string filePath, DocumentEncodingKind encoding,
+        CancellationToken cancellationToken = default) => LoadBufferInternalAsync(filePath, encoding, cancellationToken);
+
+    private async Task<DocumentLoadBuffer> LoadBufferInternalAsync(string filePath, DocumentEncodingKind? encoding,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
         var bytes = await File.ReadAllBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
-        var detected = DetectEncoding(bytes);
-        var preambleLength = detected.HasBom ? detected.Encoding.GetPreamble().Length : 0;
+        var readElapsed = timer.Elapsed;
+        timer.Restart();
+        var detected = ResolveEncoding(bytes, encoding);
+        var preambleLength = detected.PreambleLength;
         var sourceBytes = bytes.AsMemory(preambleLength);
 
         ReadOnlyMemory<byte> utf8Buffer;
         string newLine;
         if (detected.Encoding.CodePage == Encoding.UTF8.CodePage)
         {
-            // DetectEncoding has already validated the entire UTF-8 buffer.
+            // ResolveEncoding has already validated the entire UTF-8 buffer.
             utf8Buffer = sourceBytes;
             newLine = TextLines.DetectNewLine(sourceBytes.Span);
         }
@@ -61,7 +76,7 @@ public sealed class DocumentFileService
             detected.Encoding,
             detected.HasBom,
             newLine,
-            Path.GetFullPath(filePath));
+            Path.GetFullPath(filePath)) { ReadElapsed = readElapsed, DecodeElapsed = timer.Elapsed };
     }
 
     public async Task SaveAsync(DocumentState document, string? filePath = null, CancellationToken cancellationToken = default)
@@ -110,7 +125,16 @@ public sealed class DocumentFileService
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, fullDestination, overwrite: true);
+            try
+            {
+                File.Move(temporaryPath, fullDestination, overwrite: true);
+            }
+            catch (UnauthorizedAccessException) when (File.Exists(fullDestination))
+            {
+                // Some Windows file providers reject Move(..., overwrite:true) even when
+                // the destination is writable. Replace preserves the same atomic intent.
+                File.Replace(temporaryPath, fullDestination, destinationBackupFileName: null);
+            }
         }
         finally
         {
@@ -154,6 +178,23 @@ public sealed class DocumentFileService
                 EncoderFallback.ExceptionFallback,
                 DecoderFallback.ExceptionFallback), false);
         }
+    }
+
+    private static (Encoding Encoding, bool HasBom, int PreambleLength) ResolveEncoding(
+        ReadOnlySpan<byte> bytes, DocumentEncodingKind? selected)
+    {
+        if (selected is null)
+        {
+            var detected = DetectEncoding(bytes);
+            return (detected.Encoding, detected.HasBom, detected.HasBom ? detected.Encoding.GetPreamble().Length : 0);
+        }
+
+        var encoding = DocumentEncodings.GetEncoding(selected.Value);
+        // A UTF-8 BOM describes the input bytes even when the requested save format omits it.
+        var preamble = encoding.CodePage == 65001 ? Encoding.UTF8.GetPreamble() : encoding.GetPreamble();
+        var preambleLength = preamble.Length > 0 && bytes.StartsWith(preamble) ? preamble.Length : 0;
+        if (encoding.CodePage == 65001) encoding.GetCharCount(bytes[preambleLength..]);
+        return (encoding, DocumentEncodings.HasBom(selected.Value), preambleLength);
     }
 
     private static Encoding CreateStrictEncoding(Encoding source, bool emitBom) => source.CodePage switch
