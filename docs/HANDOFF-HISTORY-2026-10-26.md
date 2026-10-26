@@ -1,0 +1,354 @@
+# 과거 작업 기록 — 현재 상태 판단에 사용하지 말 것
+
+이 문서는 당시 기록이며 미배포·미완료 표기가 뒤섞여 있습니다. 현재 상태는 루트 HANDOFF.md가 우선합니다. 필요한 과거 기능만 검색해서 읽으세요.
+
+## v1.10.0 릴리즈 기록
+
+### 구현한 주요 경로
+
+- `src/MyTextEditor.Core/TextDiffEngine.Ranges.cs`: 원문 범위 기반 DiffSnapshot과 줄 인덱스, CompareRanges 및 지연 inline API. 기존 Compare API를 유지한다. 큰 입력에서는 정확한 원문 확인을 포함한 anchor 경로를 사용하며 재배열된 구간은 기존 엔진보다 넓은 변경 블록으로 표시될 수 있다.
+- `src/MyTextEditor/Controls/ScintillaEditorHost.Snapshot.cs`: native UTF-8 버퍼를 64KiB 단위로 복사하고 Dispatcher에 양보한다. revision 변경 시 캡처를 폐기한다.
+- `src/MyTextEditor/Diff/DiffTabView.xaml`, `.xaml.cs`, `.Comparison110.cs`, `.Ui110.cs`: 작은 벡터 병합 버튼, 잠금 토글, 차이 지도, 자동/수동 비교와 중단, 스냅샷 캐시, 보이는 줄의 inline 계산. 비교 작업을 직렬화하고 비활성 탭 작업을 미룬다. 선택 영역 비교는 제거했다.
+- `src/MyTextEditor/MainWindow.xaml`, `Models/PointsToDipsConverter.cs`: 결과 본문·줄 번호·파일명에 편집기 글꼴/크기를 동적으로 적용하고 줄 높이·번호 폭을 자동 조절한다. 버튼·탭 제목의 UI 글꼴은 유지한다.
+- `tests/MyTextEditor.Core.Tests/RangeDiffTests.cs`, `tests/MyTextEditor.Performance/SearchResultFontVerification.cs`: 범위 비교와 검색 결과 글꼴 회귀 검증.
+
+### 결정과 사용 규칙
+
+자동 비교는 새 탭에서 ON이며 한쪽이 30,000,000 UTF-8 바이트 이상이면 한 번 OFF로 바꾸고 안내한다. 사용자가 다시 켤 수 있다. OFF에서도 최초 로드와 명시적 병합 뒤에는 비교하며 직접 편집·옵션 변경 뒤에는 F5/다시 비교가 필요하다. 오래된 결과로 병합하지 않는다. 계산 중단은 텍스트를 바꾸지 않는다. 병합 후 다음 차이는 기본 OFF이고 켜면 단일 블록 병합 뒤 이후 차이로 이동하며 끝에서 순환하지 않는다. 두 옵션은 탭별 실행 상태로만 유지한다.
+
+줄 단위 표시를 먼저 하고 화면에 보이는 변경 줄만 inline 계산한다. 현재 UI에서는 16,384 UTF-16자를 넘는 긴 줄은 줄 전체 강조만 제공한다. 300MB 파일에서도 무지연이라고 보장하지 않는다. 검색 결과의 글꼴/크기는 일반 편집기 설정을 공유하며 별도 결과 창에도 적용한다.
+
+### 검증 상태와 다음 작업
+
+확인된 범위: Release 빌드 성공, Core 41/41, `--result-font` GUI 검증 통과. 기본 Merge GUI 회귀 실행이 중단되어 원인을 조사 중이다. 이 상태를 Merge 전체 검증 완료로 보고하면 안 된다. 30/100/300MB 쌍의 비교 시간·최대 메모리·UI 응답 측정과 자체 포함 EXE 시작/종료 확인은 아직 완료되지 않았다. 실제 125/150% DPI와 물리 한글 IME 검증도 완료로 주장하지 않는다.
+
+1. Merge GUI 중단 원인을 재현·수정하고 관련 회귀 테스트를 통과시킨다.
+2. 자동/수동 비교, F5·중단, 잠금, stale 차단, 양방향 병합·Undo, 탭 전환, 차이 지도·겹친 버튼을 확인한다.
+3. 30/100/300MB의 동일·소수/다수 변경·반복·전체 교체·긴 한 줄 사례를 측정하고 실제 한계를 기록한다.
+4. 검증 결과에 맞춰 README·도움말·이 문서를 최종 갱신한다. 자체 포함 EXE/ZIP 생성·실행 확인 후 main·v1.10·GitHub Release를 게시하고 한글 설명/해시를 확인한다.
+
+주의: `.gitignore`는 사용자가 수정한 파일이므로 이번 커밋에 포함하지 않는다. 기존 작업 트리 변경을 되돌리지 않는다. 이 절은 진행 중 기록이며 아래 버전별 검증 기록과 혼동하지 않는다.
+
+## v1.9.9 외부 파일 전달·포커스 검증
+
+파일 인수 실행은 같은 사용자 SID/로그인 세션의 첫 수신 창으로 Named Pipe 전달하고 ACK 후 종료한다. 인수 없는 실행은 독립 창을 만든다. FileOpenCoordinator.cs는 전용 스레드에서 Mutex를 획득/해제하며 보조 창은 OS Mutex 대기로 인계를 기다린다(타이머 폴링은 종료 직후 새 창 실행 경합이 있어 제거). 파이프는 CurrentUserOnly, 길이 제한 1MiB, 3초 접수 제한이며 서버 오류는 UI 상태바에 알리고 소유권을 해제한다. 실패 시 자동 중복 실행하지 않는다. UI Dispatcher에는 취소 가능한 접수 콜백을 사용한다.
+
+App.xaml.cs에서 창 생성 전에 전달 여부를 정하고 시작 파일을 먼저 큐에 넣는다. MainWindow.ExternalFiles.cs는 최소화 복원/활성화/기존 OpenFilesAsync 경로를 사용한다. OpenStartupFilesAsync와 분리해 외부 요청으로 사용자 빈 탭을 지우지 않는다. Window_Closing의 _checkingShutdown은 매크로 확인부터 전체 종료 확인까지 요청을 차단하고 취소 시 해제한다. 원본 1.9.8 포커스 코드는 실제 초기/Ctrl+N/상단 버튼 입력 테스트가 통과하여 변경하지 않았다.
+
+검증: Release 0경고/0오류, Core40/40, --ux198 실제 키보드 초기/Ctrl+N/상단 새문서/다중/중복 열기 및 로딩 중 포커스 보존 통과. --instance199를 자체 포함 EXE에 실행하여 독립 2창, 첫 창 수신, 한글/공백/다중/중복/동시 경로, 빈 탭 보존, 없는 파일 뒤 정상 파일, 최소화 복원, 수정 문서 종료 중 거절/취소 후 재수신, 첫 창 종료 후 인계/정상 종료 통과. 확인창 테스트는 Windows 기본 버튼 ID가 일정하지 않아 한국어 라벨 fallback 사용. --results-close 및 기본 Performance(검색 결과/단축키/Merge/매크로 Undo) 통과;30MB 중앙값0.236초. 실제 DPI100%, 물리 IME/125·150% 미검증. 접근 불가 권한 파일은 별도 재현하지 않고 없는 파일 오류 경로 검증. 탐색기 파일 연결 설정은 변경하지 않았으며 동일 파일 인수 실행 경로를 검증했다.
+
+배포 대상 main/v1.9.9, artifacts/v1.9.9 EXE·ZIP. 구버전1.9.8 이하 프로세스에는 수신 기능이 없으므로 모두 닫고 업데이트 실행 필요. 사용자 .gitignore 변경은 커밋에서 제외한다. 다음 작업은 사용자 실환경 확인이며, 새 기능 작업은 없음.
+
+## v1.9.8 창 조작·화면 밀도
+
+검색·정리 분리/복귀는 테마 벡터 아이콘(16px, 클릭28px). 별도 창 X는 Closing을 취소하고 숨겨 입력/탭/스크롤을 보존한다. 전용 복귀 아이콘만 패널을 도킹하고 해당 Window를 실제 Close한다. 앱 종료는 기존 종료 플래그로 실제 해제한다. 재실행은 도킹 상태다. 이전 v1.9.7의 X 도킹 설명은 이 버전에서 대체된다.
+
+문서 생성/배치 파일 열기 완료 때만 지연 포커스를 요청한다. SelectDocument는 그대로 유지해 검색 결과 클릭 포커스를 보존한다. 사용자 입력/입력칸 포커스/창 비활성화 generation으로 오래된 요청을 취소한다. MainWindow.DocumentPanes.cs와 ToolsWindow.cs가 관련 경로다.
+
+메인 명령 버튼26px/실측 toolbar30px, 문서·Merge 탭28px/닫기24px. Merge source header는 좁은 창에서 wrap한다. Macro 명령/입력26px, 미리보기180px와 분할선. 공통 전역 스타일은 축소하지 않았다. 새 설정/의존성 없음.
+
+검증: Release 0경고/0오류, Core40/40, --verify-tools-window, --panel-ux, --document-panes(실제 마우스·키보드), --ux198(Windows 키 이벤트 초기/새문서/다중/중복파일 입력 및 로딩 중 포커스 취소), --results-close, 기본 Performance(Merge/매크로 Undo, 30MB 중앙값0.205초), --density198(5테마×최소/넓은 창) 통과. 현재 main 본문 높이1040×680에서521px,1600×900에서741px. 변경 전 동일 조건 실측은 미수행. WPF PNG는 artifacts/v1.9.8/verify이며 native 본문은 포함하지 않는다. 실제 DPI100%;125/150%와 물리 한글 IME는 미검증. 자체 포함 EXE1.9.8.0 시작/정상 종료0 확인. 사용자 .gitignore 변경은 제외한다.
+
+배포: main/v1.9.8와 EXE/ZIP 게시. EXE SHA256 9A83CD90D47AACA61ED8FB46C639B52EDB705F8CA129DDBC1B43053A5F64CEE0, ZIP 7461DA6F2338E31F997D5466368C2060D1FDDD541D287CB2999E6C87B23D42CB. 다음 작업은 사용 환경에서 물리 IME와 추가 DPI 확인이다.
+
+## v1.9.7 화면·검색·창 조작
+
+메인 제목 OmniEdit 및 창 ICO 명시 연결(App 시작 시 모든 Window Loaded에 공유 아이콘 적용). 기존 ICO는 16/24/32/48/64/128/256 프레임 포함. Merge gutter는 벡터 방향 아이콘과 방향/범위/Alt 단축키 툴팁. OneDark B0B7C4, SolarizedLight 536970 본문색 적용. 상단 비교/매크로 메뉴 대신 부가 기능 토글: OFF는 숨김, ON은 기존 창 표시, X는 기존 저장 확인. F1 기능은 유지하고 메뉴 옆 표기만 제거했다.
+
+MainWindow.ToolsWindow.cs는 동일 ToolPanel 재부모화, 대상 표시, 창 위치/크기 보존, X 도킹, Esc 숨김 및 CtrlF/H 복원을 담당한다. 입력/탭/스크롤은 그대로 유지한다. 재실행은 도킹 상태이며 새 설정은 geometry만 추가했다. MainWindow.Results.cs는 결과 포커스의 CtrlW/ShiftW를 일반 문서보다 먼저 소비하고 오른쪽/왼쪽 이웃 선택, 연속 닫기, 마지막 편집기 복귀를 처리한다. Core FolderSearchOptions.DefaultFilePatterns와 NormalizeEmptyPatterns를 UI가 공유하며 빈 값만 복원한다. 조건 검색은 LiteralFindBox와 일반 찾기 버튼을 비활성화하고 값은 유지한다.
+
+검증: Release 빌드 0오류/0경고, Core40/40, --verify-tools-window(프로그램적 창 분리/복원/종료), --results-close(실제 Windows 키보드, 도킹/분리 CtrlW/ShiftW, 포커스, 원문 보존), --ux197(테마/패턴/조건/토글 창 재사용), --panel-ux(최소폭/5개 테마/검색 포커스), --omni-search, 기본 Performance(Undo/Merge/매크로/30MB 중앙값0.213초) 통과. 조건 모드에서는 일반 찾기를 비활성화하는 새 요구에 맞춰 기존 테스트를 변경했다. 실제 DPI100%; 물리 IME와 125/150%는 미검증. 작업표시줄/AltTab의 셸 캐시 표시까지 자동 검증한 것으로 보고하지 말 것. 사용자 .gitignore 변경은 제외한다.
+
+## v1.9.6 릴리즈
+
+탭 클릭 전환 수정 커밋 f8ef71b를 포함해 1.9.6으로 배포한다. artifacts/v1.9.6의 자체 포함 EXE/ZIP 및 UTF-8 릴리즈 설명을 사용한다. 실제 탭 클릭·분할·드래그·Undo·연속 닫기와 빈 화면 두 파일 열기 회귀 통과, 배포 EXE 1.9.6.0 시작·정상 종료 확인. 아래 탭 클릭 수정의 로컬/미배포 표시는 이번 릴리즈 이전 기록이다. 사용자 .gitignore 변경은 포함하지 않는다.
+
+## 2026-09-29 탭 클릭 전환 수정 (로컬, 미배포)
+
+탭 드래그의 PreviewMouseLeftButtonDown에서 Grid가 마우스를 캡처하면 TabItem의 기본 선택 처리가 누락되는 문제를 실제 mouse_event 클릭으로 재현했다. `MainWindow.DocumentTabDrag.cs`에서 캡처 전에 클릭한 문서를 SelectDocument로 선택한다. 닫기 버튼은 기존 ButtonBase 제외 규칙을 유지한다. `DocumentPanesVerification`에 네이티브 편집기 포커스에서 반복 클릭 시 SelectedItem·CurrentDocument·편집기 표시·캡처 해제를 검증하고 분할 양쪽에도 적용했다. 수정 전 실패, 수정 후 통과. 기존 실제 드래그 양방향 분할·Undo·Ctrl+W 및 `--tab-visibility` 회귀 통과. Release 빌드 0경고/0오류. 실행 파일은 `src/MyTextEditor/bin/TabFix/OmniEdit.exe`. 버전은 1.9.5 유지, 공개 v1.9.5 바이너리에는 이 수정이 아직 없다.
+
+## v1.9.5 릴리즈
+
+사용자 요청으로 대용량·탭 표시 수정과 탭 드래그·Merge 최적화를 1.9.5 자체 포함 EXE/ZIP으로 배포한다. `artifacts/v1.9.5/`에 배포 파일과 UTF-8 릴리즈 설명을 생성했다. EXE FileVersion 1.9.5.0 시작 및 정상 종료(exit 0) 확인. 아래 미배포 표시는 이번 릴리즈 이전 기록이다. 공개 대상은 main, v1.9.5, GitHub Release의 EXE/ZIP이며 테스트 범위와 성능 한계는 아래와 릴리즈 설명에 기록했다.
+
+## GitHub 코드 업데이트
+
+사용자 요청에 따라 아래 대용량·탭 수정과 앞선 탭 드래그·Merge 최적화 커밋을 함께 main에 올린다. 소스 코드 업데이트이며 EXE/ZIP 릴리즈는 기존 v1.9.4 그대로다. 아래의 로컬/미배포 표시는 바이너리 배포 여부와 당시 검증 시점을 구분해 읽을 것.
+
+## 대용량 다중 파일·탭 제목 수정 (로컬 검증 완료, 미배포)
+
+현재 요청: 300MB 파일 20개 이상 로딩·검색·정리 지연 개선 및 첫 두 파일 드롭 때 탭 제목이 사라지는 문제 해결. 구현 및 검증 완료. 버전/태그/원격 릴리즈는 변경하지 않았다. 실행 가능한 최신 개발 빌드는 `src/MyTextEditor/bin/Next/OmniEdit.exe`이며 .NET 9 데스크톱 런타임이 필요하다. 기존 사용자 `.gitignore` 변경을 보존한다.
+
+- `MainWindow.DocumentPanes.cs`: 빈 화면 안내를 Documents 컬렉션 변경과 동기화. 빈 상태에서 파일 드롭 후 안내가 탭 제목을 덮는 현상을 재현하고 수정했다.
+- `ScintillaEditorHost.cs`: plain-text 문서를 StylesNone으로 생성해 문자별 스타일 버퍼를 제거. create/set/release 참조 수명을 유지하며 Diff와 사용자 하이라이트 indicator는 유지한다.
+- `MainWindow.SearchWorkflow.cs`, `MainWindow.xaml.cs`, `UiModels.cs`: 열린 파일을 순차 백그라운드 검색하고 일치 줄·문서 revision만 보존. 전체 파일들의 UTF-16 사본을 동시에 보관하지 않는다. 단일 대형 문서 검색과 결과 정렬도 백그라운드 처리하고 결과 행 생성은 UI에 주기적으로 양보한다. 단일 검색은 기존 전체 snapshot 공유 정책을 유지한다. 검색 중단과 종료 시 취소를 지원한다.
+- `TextTransformService.cs`, `TransformModels.cs`: 줄별 문자열 배열 대신 단일 출력 버퍼와 원문/결과 범위 목록. `ITextChangePreviewList.GetStatus()`로 문자열 생성 없이 상태 조회. 줄바꿈/통계/모든 미리보기 행을 유지한다.
+- `MainWindow.TransformWork.cs`, `TransformPreviewList.cs`: 100만 자 이상 정리 계산을 백그라운드 실행. 원문 수정·닫힘·탭 전환 시 오래된 결과를 적용하지 않는다. WPF IList로 미리보기 문자열을 필요한 행만 생성한다. 파일 열기는 gate로 직렬화해 중복 드롭 경합을 방지한다.
+
+검증: Release 빌드 0경고/0오류, Core 40/40, `--tab-visibility`, `--omni-search`, `--transform-work`, `--search-actions`, 기본 Performance, `--v18` 통과. Ctrl+C 테스트는 제한된 권한에서 실제 키 입력 실패 후 정상 데스크톱 입력 권한으로 통과했다. 탭 테스트는 최초 두 파일·모두 닫은 후 두 파일·시작 파일의 실제 헤더 표시/히트테스트/선택을 확인한다. 정리 테스트는 lazy WPF 목록·필터·다른 탭/수정 시 stale 차단·단일 Undo를 확인한다. 현재 실제 DPI는 100%; 다른 DPI/물리 IME는 이번 변경에서 미검증이다.
+
+실측: `--large-workspace 21 300`에서 300,000,000바이트 파일 21개(총 6.3GB) 열기 36.397초, 전체 검색 6.273초, 한 문서 치환 계산+적용 2.929초. 로드 직후 working set 8113MiB, 검색 후 9019MiB, peak 10167MiB. UI 최대 heartbeat 간격은 열기 1673ms, 검색 217ms, 치환 2198ms. 원문 캡처와 native 적용은 여전히 UI 스레드이므로 무중단 편집이라고 보고하면 안 된다. 테스트는 255자 ASCII 행+한글/이모지 검색 표식 1개, 하나의 fixture를 서로 다른 경로의 hardlink로 연 캐시 친화 조건이며 실제 서로 다른 파일들의 cold SSD 성능이나 모든 행 일치 검색을 대표하지 않는다. 원문은 탭별 독립 버퍼이며 치환/Undo/검색 결과 보존까지 확인했다.
+
+스타일 버퍼 비교: `--native-buffer-memory 300 --default-styles`의 로드 후 1003.5MiB, StylesNone은 716.9MiB(별도 프로세스 같은 fixture, 약 286.6MiB 절감). 30MB 로드 3회 중앙값 0.218초. 5만 줄 Merge 스크롤 p95 100/5000/50000 변경에서 1.00/1.31/3.11ms.
+
+남은 성능 한계/후속 우선순위: 전체 편집 버퍼 자체는 총 파일 크기에 비례한다. 모든 행이 일치하는 검색은 결과 수에 비례해 메모리를 사용한다. native 원문 캡처/최종 ReplaceAll 적용의 UI 중단을 줄이는 작업은 별도 개선 대상이다. 현재 요청의 최적화와 탭 버그 수정은 완료했지만 이 한계를 없앴다고 해석하지 말 것. 배포가 요청되면 최신 코드에서 자체 포함 EXE/ZIP을 만들고 버전/문서/원격을 함께 갱신한다. 사용자가 실행 중인 앱은 종료하지 않는다.
+
+빌드: `dotnet restore MyTextEditor.sln -p:NuGetAudit=false` (환경에 따라 정상 사용자 권한 필요), `dotnet build MyTextEditor.sln -c Release --no-restore -p:OutputPath=bin/Next/ -p:NuGetAudit=false`. 테스트는 `tests/MyTextEditor.Performance/bin/Next/MyTextEditor.Performance.dll`을 사용한다. 대용량 실행기는 가용 물리 RAM을 확인한 뒤 자체 임시 폴더에서만 fixture/hardlink를 생성·정리한다.
+
+## 탭 드래그·Merge 최적화 (로컬, 미배포)
+
+문서 탭 제목을 오른쪽 끝으로 드래그하면 Popup 분할 미리보기를 표시하고 놓을 때 분할한다. 분할 후 양방향 이동, Esc/범위 밖 취소, 문서와 Undo 유지가 가능하다. MainWindow.DocumentTabDrag.cs가 native 편집기 위의 미리보기와 마우스 캡처를 관리한다. DocumentPanesVerification에서 실제 Windows mouse_event로 분할/돌아오기와 기존 Ctrl+W를 확인했다.
+
+TextDiffEngine은 서로 일치할 가능성이 없는 줄을 제외한 뒤 정확한 line diff를 수행하고 원본 gap을 복원한다. 중복 inline 비교를 제거하고 취소 토큰을 받는다. DiffTabView는 비교 작업을 직렬화하고 지난 generation을 취소/폐기하며, 하이라이트를 viewport 주변에만 적용한다. 스크롤 anchor에 문서/변경 구간 경계를 포함해 긴 변경 구간에서도 대응 위치가 따라온다. DiffPlex 내부 단일 호출 자체는 중간 취소할 수 없지만 후속 결과 적용은 차단된다.
+
+검증: Release 빌드 경고/오류 0, Core 39/39(250개 무작위 LCS·병합 원문·anchor 검증 포함), 실제 탭 드래그/Undo/연속 닫기, Merge 범위, 5개 테마/하이라이트 회귀 통과. 완전히 변경된 5만 줄 Core 비교 438ms, 스크롤+gutter p95는 100/5000/50000개 변경 각각 1.17/1.48/2.00ms. 306MB 다중 파일 회귀 3.089초. 실제 DPI 100%이며 다른 DPI와 물리 IME는 미검증. 기본 구현 커밋 d6bb2b1은 로컬이며 GitHub 최신은 v1.9.4다. 이번 목표에는 신규 배포 요청이 없으므로 원격 게시하지 않았다. 사용자 .gitignore 변경은 보존한다.
+
+## 1.9.4 배포 변경 (2026-09-23)
+
+최신 요청에 따라 로그 정리 기능 자체를 제거했다. 빠른 정리 행, 즐겨찾기 ID, 매크로 동작, Core 구현·모델 및 해당 기능 전용 테스트를 삭제했다. 기존 즐겨찾기의 cleanup-log 값은 설정 로드 시 제거한다. 기존 CleanupLog 단계가 포함된 매크로는 지원하지 않는 동작으로 JSON 로드가 거절되며 원본 파일을 자동 수정하지 않는다. 해당 단계가 필요한 이전 매크로는 구버전에서 단계를 삭제 후 저장해야 한다. 다른 빠른 정리 기능은 유지한다. 아래의 옵션만 제거/내부 API 유지 설명은 이번 변경으로 대체된다.
+
+선택 글자 수, Ctrl+H/F 선택 문구 자동 입력, 다중 파일 로딩 개선도 함께 포함한다. Release 빌드 0경고/0오류, 잔존 Core 38/38(삭제 기능 전용 4개 제외), 제거된 매크로 동작 거절, 선택 입력·패널 18개 즐겨찾기·기존 GUI/매크로/Merge 회귀 통과. 102MB 파일 3개와 중복 경로 검사 2.950초, 30MB 중앙값 0.210초. 실행 중 사용자 앱의 DLL 잠금을 피하려고 검증 빌드는 bin/Release194를 사용했다. artifacts/v1.9.4에 배포 파일을 생성하고 main/v1.9.4 및 GitHub Release에 게시한다. 사용자 .gitignore 변경은 커밋하지 않는다.
+## 2026-09-23 선택 입력·파일 열기 개선 (1.9.4 포함)
+
+요청 5건을 반영했다. 하단 줄/열 옆에 선택 길이를 표시한다(UTF-16 코드 단위, 줄바꿈 포함, 이모지는 2단위 가능). 편집기에 포커스가 있고 선택이 있으면 Ctrl+H는 선택 원문을 치환 입력에 채우고 전체 선택한다. 바꿀 값은 유지한다. Ctrl+F도 한 줄 선택을 일반 찾기에 채우며, 선택 없음/도구 입력칸에서 반복 호출 시 기존 값 전체 선택 동작은 유지한다. 검색 조건 데이터는 지우지 않는다.
+
+로그 정리 옵션 UI·설정·preferences/dialog 파일을 제거했다. 오래된 JSON의 LogCleanup 속성은 무시하며 실행은 기존 보수적 기본 CleanupLog API로 통일했다. Core의 옵션 overload는 내부 호환 API로 남고 UI에는 노출하지 않는다. 다중 파일 열기는 중간 문서 선택을 생략하고 마지막 성공 문서를 선택한다. UTF-8 검사/변환은 Task.Run으로 UI에서 분리하고 초기 native 버퍼 로드 후 이벤트/외관을 연결한다. 무제한 병렬 로드는 추가하지 않았다.
+
+검증: Release 빌드 오류/경고 0, Core 42/42, --file-sync, --panel-ux, 기본 Performance GUI 회귀 통과. --selection-ux는 선택 길이, 한글/이모지/여러 줄 Ctrl+H, Ctrl+F, 입력 반복/선택 없음 보존, 102MB 파일 3개+중복 경로의 순서·본문·수정 상태를 검사한다. 306,000,000바이트 묶음 열기와 결과 검증 2.760초(로컬 캐시된 파일, 이전 버전 대비 비율은 측정하지 않음). 일반 30MB 로딩 중앙값 0.211초. 도움말과 README 갱신. 실제 DPI 100%, 물리 IME·다른 DPI는 이번에 미검증. 버전은 1.9.3 그대로이며 이 변경은 아직 커밋/배포하지 않았다. 사용자 .gitignore 변경을 보존한다.
+
+## 1.9.3 UX 구현·검증 완료
+
+현재 사용자 요청에 따라 로그 정리 옵션, 연속 Ctrl+W, 외부 파일 변경 자동 반영 ON/OFF, 문서 좌우 분할, Merge 범위·방향 표시를 구현했다. 로그 정리는 ANSI/제어문자, 줄 끝 공백, 연속 빈 줄을 각각 켜고 끌 수 있는 `LogCleanupOptionsDialog`와 설정 모델을 사용한다. 문서 분할은 `MainWindow.DocumentPanes.cs`의 LeftDocuments/RightDocuments와 활성 pane 포커스로 Undo·검색·탭 닫기를 라우팅한다. 외부 동기화는 `MainWindow.FileSync.cs`에서 1초 metadata polling을 하며 clean 문서만 `ReloadUtf8`로 자동 반영하고 dirty 문서는 유지·알림한다. `AutoReloadFiles`는 설정에 저장된다. Merge는 범위 행 번호, 방향별 대체/삽입/삭제 설명, gutter 연결 polygon과 색상 범례를 표시한다.
+
+2026-09-22 테스트 안정화 완료: Release 빌드 오류/경고 0, Core 42/42. 외부 동기화와 Merge 범위 검사를 각각 3회 연속 통과했다. 자동 반영 OFF/ON, revision, UTF-16/BOM/줄바꿈, dirty 보호, 삭제/재생성, 잠금 해제 후 재시도, 직접 저장 후 Undo 유지, 진행 중 OFF 취소와 ON 재개를 검사했다. 좌우 분할/활성 pane Undo/문서 보존/세 번 연속 Ctrl+W, 검색 결과 복사·분리/복귀, 패널 UX, F7/F8, 매크로, Diff 탭·드롭, 하이라이트·5개 테마 회귀도 통과했다. 30MB 로딩 3회 중앙값 0.233초, 해제 최대 0.052초. 5만 줄 Merge 스크롤/gutter p95는 100개 변경 0.09ms, 5천 개 변경 0.41ms. 실제 GUI 배율은 96 DPI(100%)이며 125/150%와 물리 한글 IME는 미검증이다.
+
+멈춤 원인은 OFF 경계가 아니라 반복 reload 후 편집 시 `ScheduleHighlightRefresh`의 managed `IndicatorClearRange`가 TextChanged 알림 안에서 문자 위치 캐시를 참조한 것이었다. `ScintillaEditorHost.Highlights.cs`에서 이 전체 범위 지우기만 native 바이트 좌표(SCI_GETLENGTH/SCI_INDICATORCLEARRANGE)로 처리했다. FileSync에는 poll별 취소 토큰을 추가해 OFF 후 ON으로 돌아와도 안전하게 재개한다. Merge 테스트는 대상 CRLF 보존을 LF 원본과 문자열 동등으로 잘못 검사하던 것을 실제 결과 생성 완료와 정확한 대상 CRLF 검증으로 수정했다. 테스트 기대값을 없애지 말 것.
+
+Performance 테스트 진입점은 실패를 stderr/exit 1로 보고하여 Windows 오류 보고 창이 테스트 DLL을 점유하지 않게 했다. 실제 키 입력 검사(`--document-panes`, `--search-actions`)는 정상 Windows 데스크톱 입력 권한과 foreground가 필요하다. 제한된 실행에서 Ctrl+W 입력 전달 실패가 있었고 정상 권한 실행에서 통과했다. 멈춘 테스트를 정리할 때는 명령행으로 확인된 Performance 프로세스만 종료하고 사용자의 OmniEdit 프로세스는 종료하지 않는다.
+
+배포 완료: 버전 1.9.3, 구현 커밋 `6083a88`, `main`과 `v1.9.3` 태그를 원격에 반영했다. https://github.com/pubill13/MyTextEditor/releases/tag/v1.9.3 에 EXE(80,069,014바이트)와 ZIP(74,541,773바이트)을 게시했다. `artifacts/v1.9.3/`의 EXE FileVersion 1.9.3.0 실제 시작·정상 종료(exit 0), 공개 API의 두 SHA-256과 UTF-8 한글 릴리즈 설명 일치를 확인했다. 다음 수동 확인 항목은 실제 125/150% DPI·IME다. 사용자 `.gitignore` 변경은 보존한다.
+
+## 1.9.2 결과 영역 UX (로컬 작업)
+
+검색 조건 제목을 조건 입력 영역 내부로 옮겨 폴더 내 검색 체크박스 아래 16px 간격을 확보했다. 검색 결과 명령을 한 줄로 줄이고 탭 높이를 낮췄으며, 줄 번호 포함은 더 보기 메뉴로 이동했다. ‘—’는 결과를 28px 복원 바로 접고, ‘↗’는 같은 결과 패널을 모델리스 창으로 이동한다. 닫기/‘↙’는 본창에 다시 붙인다. 새 검색은 펼치며 결과 내용·탭·선택 행을 보존한다. Ctrl+C는 목록 PreviewKeyDown과 표준 Copy CommandBinding으로 지원한다. 삭제/치환 제목은 크기 14와 얇은 강조선/배경으로 입력 라벨과 구분했다.
+
+MainWindow.Results.cs가 접기/복원/분리/수명 관리를 담당한다. 재부모화 전에 ResultPanel.DataContext를 고정해야 ItemsSource와 선택 행이 초기화되지 않는다. 종료 확인 취소 시 별도 창을 유지하고 실제 CompleteShutdown에서만 닫는다. 창 분리 상태/내용은 저장하지 않는다. SettingsService의 임시 파일명을 GUID로 구분하여 여러 프로세스의 설정 쓰기가 같은 .tmp 파일을 사용하지 않게 했다. 문서/Undo/검색은 독립적이나 설정·매크로 파일은 공유한다.
+
+검증 완료: Core 41/41, 패널 UX와 SearchActionsVerification 통과. 표준 Copy 명령과 실제 Windows Ctrl+C 키 입력(본창/별도 창/선택 없음), 접기 높이/복원, 별도 창 분리/복귀와 선택 보존, 5개 테마의 최소 창 폭 640px 명령 경계를 확인했다. WinForms SendKeys의 메시지 처리 타이밍으로 불안정했던 키 입력 검사는 키별 Windows 이벤트와 WPF 메시지 처리를 구분하도록 수정했다. 실제 DPI는 100%이며 125/150%와 물리 IME는 미검증이다. Release 빌드 경고/오류 0, `artifacts/v1.9.2/win-x64/OmniEdit.exe`(80,057,430바이트)의 두 프로세스/별도 창 동시 실행과 한쪽 종료 시 다른 쪽 유지, 양쪽 정상 종료(exit 0)를 확인했다. v1.9.2는 로컬 작업이며 GitHub 최신 배포는 v1.9.1이다. 사용자 .gitignore 변경은 보존한다.
+
+## 1.9.1 검색 UX 수정 (배포 완료)
+
+로컬 자체 포함 실행 파일: `artifacts/v1.9.1/win-x64/OmniEdit.exe` (1.9.1.0). Release 빌드 오류/경고 0, 게시된 EXE 실제 시작 및 정상 종료(exit 0)를 확인했다.
+
+사용자 요청 3건을 수정했다. `폴더 내 검색` 체크박스를 켜면 폴더 선택과 하위 폴더/파일 패턴 옵션을 표시하고 `폴더 모두 찾기`로 선택한 경로를 검색한다. 현재 파일의 폴더를 자동으로 검색하지 않는다. UserSettings의 SearchInFolder/SearchFolderPath에 범위와 경로를 저장한다. 일반 찾기 버튼은 포함·제외 조건 모드가 저장되어 있어도 텍스트가 있으면 활성화되며, 클릭/Enter로 일반 모드의 다음 위치를 찾는다. 기존 조건 입력은 보존한다. 공통 체크박스 표시를 중앙 정렬하고 저장과 검색·정리 사이에 구분선을 추가했다.
+
+주요 파일: MainWindow.xaml, MainWindow.xaml.cs, MainWindow.SearchWorkflow.cs, Models/UserSettings.cs, Themes/Controls.xaml. README와 도움말을 반영하고 버전은 1.9.1로 올렸다. OmniSearchVerification에 기존 조건 모드의 일반 찾기, 다른 폴더 선택, 폴더 미선택 차단, 경로/범위 설정 캡처·복원 회귀를 추가했다. Core 41/41, Omni 검색 GUI, 패널 UX 5개 테마/1040·1920 논리 폭 검사를 통과했다. 실제 DPI는 100%이며 다른 배율과 물리 IME는 미검증이다. 구현 커밋 690de8a와 v1.9.1 태그를 main/origin에 반영했다. https://github.com/pubill13/MyTextEditor/releases/tag/v1.9.1 에 EXE(80,056,562바이트)와 ZIP(74,530,734바이트)을 게시했고, 공개 API에서 SHA-256 일치 및 한글 설명 원문 일치를 확인했다. Release 등록은 UTF-8을 정확하게 읽는 PowerShell 7(pwsh)을 사용한다. 사용자 .gitignore 변경은 보존한다.
+
+## 현재 작업: OmniEdit 1.9.0
+
+사용자가 요청한 12개 사용성 문제의 구현과 Windows용 자체 포함 EXE/ZIP 배포를 완료했다. 내부 C# 네임스페이스와 `%LOCALAPPDATA%\MyTextEditor` 설정 경로는 기존 사용자 설정 호환성을 위해 유지하고, 화면 제목·도움말·아이콘·실행 파일 이름을 OmniEdit로 바꿨다. 사용자가 만든 `.gitignore`의 `테스트파일/` 변경과 대용량 테스트 파일은 건드리지 않았다.
+
+배포 완료: 구현 커밋 `5972e5a`가 `main`에 있으며 `v1.9` 태그와 [GitHub Release](https://github.com/pubill13/MyTextEditor/releases/tag/v1.9)를 게시했다. 공개 API에서 EXE(80,056,242바이트, SHA-256 `693b6281f3ce3096ea9833e5debff24efc7265cc0326e91a4c6f73a5729aa8af`)와 ZIP(74,530,284바이트, SHA-256 `968580da25a0e43b052b1a90a68c90c5925d38692a19542ed34328e158de1ce2`)의 업로드 완료 상태를 확인했다.
+
+2026-09-21 기준 구현: 명령행 파일 경로 열기와 초기 빈 탭 제거, 상단 비교/매크로 중복 버튼 제거, Diff·Macro Esc 닫기, 5개 테마의 네이티브 우클릭 메뉴 색상 및 WPF 메뉴 스타일, OmniEdit 아이콘 A안, 일반 단어 찾기/다음·이전과 모두 찾기 분리, 열린 모든 문서 검색, 현재 폴더 검색(하위 폴더·확장자 패턴), 파일/줄 번호가 붙은 다중 원본 결과 탭, 일반·검색 결과·Merge 탭 우클릭 메뉴, 빈 Merge 좌우 직접 입력 시 준비 상태 전환과 중앙 gutter 폭 조정, Diff 닫기 처리 개선. 직접 입력 Merge 종료 과정에서 동기적으로 `Close()`를 재호출하는 재진입 버그를 발견해 Dispatcher 후속 호출로 수정했다. 아이콘 A/B/C 원본 시안과 생성 스크립트는 `artifacts/omni-icons/`, `tools/Generate-OmniIcons.ps1`에 있다. 현재 채택한 A는 파란 O 링과 청록색 텍스트 커서다.
+
+주요 변경 파일: `App.xaml(.cs)`와 `MainWindow.xaml.cs`는 시작 파일 처리; `MainWindow.SearchWorkflow.cs`는 일반/열린 문서/폴더 찾기, 결과 이동, 탭 메뉴; `MainWindow.xaml`은 UI; `MyTextEditor.Core/TextOccurrenceSearch.cs`, `FolderTextSearchService.cs`는 검색; `Models/UiModels.cs`, `SettingsModels.cs`, `UserSettings.cs`, `Services/SettingsService.cs`는 결과/설정/구버전 검색 모드 마이그레이션; `Controls/ScintillaEditorHost.cs`와 `EditorScrollBar.cs`, `Themes/Controls.xaml`은 네이티브 편집기/메뉴 색상과 찾기; `Diff/DiffTabView.xaml(.cs)`, `DiffWorkspaceWindow.xaml.cs`, `Macros/MacroWindow.cs`는 비교·매크로 UX/종료; `Assets/AppIcon.ico`, `MyTextEditor.csproj`, `Help/HelpWindow.xaml(.cs)`는 브랜드/도움말; Core 테스트와 Performance의 `OmniSearchVerification`, `OmniThemeVerification`, `OmniMergeVerification`는 회귀 검증.
+
+Core 41/41, Omni 검색 GUI, 5개 테마 메뉴+Unicode 네이티브 찾기, Merge 직접 입력/Undo/2탭 저장 취소/버리기 종료(약 136ms), 기존 패널 UX·검색 결과·v1.8 GUI·매크로·30MB 성능 회귀가 통과했다. 30MB 로딩 중앙값은 0.244초이며 Release 빌드는 오류/경고 0이다. 자체 포함 EXE에 파일 경로를 전달해 실제 시작/정상 종료(exit 0)를 확인했다. NuGet은 샌드박스 네트워크가 막혀 있으므로 복원 시 `dotnet restore MyTextEditor.sln --ignore-failed-sources -p:NuGetAudit=false -p:RestorePackagesPath=C:\Users\Lim\.nuget\packages`를 사용한다. 이후 `--no-restore` 빌드는 정상이다. `gh` CLI는 PATH에 없지만 Git Credential Manager의 저장된 인증으로 Release API를 사용했다. 실제 125/150% DPI·물리 한글 IME 조작은 아직 이 작업에서 검증하지 않았다.
+
+다음 우선순위: (1) 실제 125/150% DPI와 물리 한글 IME 수동 확인, (2) 현장 피드백에 따라 UX 수정. 파일 검색은 현재 지정한 텍스트 확장자 패턴만 대상으로 하며 UI에서 패턴을 변경할 수 있다. 폴더 검색 결과는 파일 길이/수정 시각이 달라지면 원문 이동을 차단한다. 열린 문서 결과는 원문 수정·닫힘 후 스냅샷 복사/추출만 가능하다. 배포 후 이 문서만 추가 커밋하므로 `v1.9` 태그는 구현 커밋을 가리킨다.
+
+최종 갱신: 2026-09-22 (Asia/Seoul)
+
+## 과거 버전 기록 (아래의 ‘최신 작업’ 표현은 당시 기준)
+
+### v1.8.1 배포
+
+배포 완료: 구현 커밋 `786793d`, 태그 `v1.8.1`을 origin에 반영했다. https://github.com/pubill13/MyTextEditor/releases/tag/v1.8.1 에 EXE(80,028,927바이트)·ZIP(74,509,930바이트) 업로드와 공개를 완료했다. 최종 EXE 1.8.1+786793d의 시작/정상종료(exit0)를 확인했다. 인증 문제는 사용자 로그인 후 해결됐다. 실제 한글 IME 조합과125/150% OS 배율 검증은 Release에도 남은 제한으로 명시했다.
+
+사용자가 로컬 작업의 GitHub 반영과 EXE·ZIP 배포를 승인했다. 검색 결과·Merge F7/F8·Undo 개선과 오른쪽 패널 UX 개선을 모두 v1.8.1에 포함한다. 아래의 로컬 미배포 안내는 당시 이력이다. 새 버전은 1.8.1, 태그는 v1.8.1이며 기존 v1.8은 변경하지 않는다. Release에는 실제 한글 IME 조합과125/150% OS 배율 검증이 미완료임을 명시한다. 현재 검증은 실제100%에서 Core39/39·GUI 회귀·패널5테마·30MB 중앙값0.236초까지 통과했다.
+
+## 오른쪽 패널·검색 입력 UX 개선 (최신 작업)
+
+사용자 승인 계획의 구현과 로컬 검증을 완료했다. 아래 검색 결과·Merge·Undo 개선을 포함한 변경은 아직 작업 트리에 있으며 GitHub v1.8 배포본에는 포함되지 않는다. 이번 계획에는 버전 변경·커밋·Release 게시는 포함되지 않았다.
+
+- 목표/완료: 오른쪽 패널 숨김과 편집 영역 확장, 상단 검색·정리 토글/보기 메뉴 동기화, Ctrl+F 마지막 검색칸 전체 선택, Ctrl+H 치환 원문 전체 선택, 패널 내부 Esc로 편집기 복귀. 조건과 옵션·패널 폭을 유지하며 조건 초기화는 세 검색칸만 비운다. 찾기와 Undo 명령 고정, 결과 부가 명령 더 보기, 즐겨찾기와 글꼴 오버플로를 구현했다.
+- 주요 파일: MainWindow.Panels.cs는 표시·포커스·IME 조합 추적·Esc·오버플로 공통 경로를 맡는다. MainWindow.xaml은 고정 명령/패널 헤더/도구 모음 배치, MainWindow.xaml.cs는 기존 명령 연결을 담당한다. UserSettings/SettingsService의 LastSearchField(All/Any/Exclude), SelectedToolTab(0/1)은 구버전 기본값과 정규화를 제공한다.
+- 설계: 숨기기 전에 ActualWidth를 저장하고 열린 패널에 Ctrl+F를 눌러도 폭을 다시 설정하지 않는다. 포커스는 generation으로 마지막 요청만 적용하며 새 마우스 조작은 이전 요청을 취소한다. 실제 입력칸을 재생성하지 않아 기존 입력·스크롤을 보존한다. 일반 마우스 포커스에서는 전체 선택하지 않는다. 조합 입력은 포커스 전환 전 CompleteComposition을 호출하고 Esc는 조합·콤보 우선 처리한다.
+- 검증: Release 빌드 오류/경고0, Core39/39, --panel-ux/--search-actions 및 기존 GUI 회귀 통과. 패널 폭/입력 보존·조건 교체·최신 포커스 요청·Esc·설정 JSON·즐겨찾기19개 순서/접근·5개 테마 1040/1920 논리 폭에서 명령 경계를 검사했다. 30MB 로딩 중앙값0.236초. 캡처는 artifacts/panel-ux/visual의 WPF RenderTargetBitmap이며 native 편집기 본문은 제외된다.
+- 제한/다음 작업: 현재 실제 DPI96(100%)만 확인했으며 물리 한글 IME 조합 입력과 실제125/150%는 미검증이다. 해당 수동 검증이 우선이다. 필요 시 로컬 변경을 별도 버전으로 커밋/배포한다. 사용자 기존 .gitignore 변경과 대용량 테스트파일을 보존하고, 테스트가 실제 사용자 설정을 저장하지 않도록 _settingsReady/debounce/종료 경로를 계속 차단해야 한다.
+
+## 검색 결과·Merge 단축키·실행 취소 개선 (최신 작업)
+
+사용자가 승인한 개선 구현을 완료했다. 이번 변경은 로컬 작업 트리에 있으며 기존 v1.8 GitHub Release에는 아직 포함되지 않는다. 버전 변경·새 Release 게시는 이번 승인 계획에 포함되지 않았다.
+
+- 검색 결과: 명시적 줄 번호/본문 템플릿과 가상화, 단일 클릭 원본 이동 및 결과 포커스 유지. 전체 복사·전체를 새 문서로 버튼을 주 영역에 배치했다. 복사는 원본 순서, 줄 번호 기본 OFF이며 새 문서 추출은 항상 snapshot.Text/NewLine을 사용한다. 원문 변경·닫힘 뒤에도 복사·추출은 유지하고 이동·삭제는 차단한다.
+- MainWindow.xaml 및 .xaml.cs가 검색 결과 상태/동작과 공통 Undo 버튼을 관리한다. ScintillaEditorHost.GoToLine에 선택적 focusEditor 인자를 추가해 결과 목록 포커스를 보존한다. 단일 클릭은 일반 PreviewMouseUp 터널 이벤트에서 왼쪽 버튼만 처리한다.
+- Merge: native host와 DiffWorkspaceWindow의 WPF 경로에서 F7 이전/F8 다음, 기존 Alt 방향키 유지. 비활성·만료·차이 없음 이동을 차단한다.
+- 매크로: MacroWindowCallbacks에 텍스트를 읽지 않는 Undo 상태 조회/요청을 추가했다. MacroWindow.RefreshDocumentState를 메인 상태 변경 때 호출한다. 대상 문서 이름과 편집 실행 취소를 표시하며 기존 계산 취소 버튼은 실행 중단으로 구분한다. Ctrl+Z와 동일한 Undo 기록을 사용하고 별도 복원 스냅샷은 만들지 않는다.
+- 검증: Release 솔루션 빌드 오류/경고0, Core39/39. 기존 GUI 회귀 및 신규 MergeKeysVerification 통과, 30MB 로딩 중앙값0.293초. --search-actions 신규 GUI 테스트에서 단일 클릭·선택/포커스 유지·복사 순서/문맥/줄 번호·stale/닫힌 원문 추출·Undo 상태·매크로 저비용 상태 조회 통과. 클릭 테스트는 WPF routed event 방식이며 실제 Ctrl/Shift 물리 입력 자동화는 아니다.
+- 1040×720 실제96DPI(100%) 결과 패널 WPF 캡처에서 줄 번호와 주요 버튼을 확인했다. artifacts/v1.8/visual/search-actions-1040-wpf.png는 native 본문이 제외되는 RenderTargetBitmap 캡처다. 실제125/150% 배율은 미검증이다.
+- 다음 작업: 필요 시 변경을 커밋하고 새 버전/Release 생성. 현재 src/MyTextEditor/bin/Release/net9.0-windows가 최신 빌드다. 사용자 기존 .gitignore 변경 및 테스트파일은 그대로 보존해야 한다.
+
+## v1.8 표시·테마·Merge 개선 (최신)
+
+목표는 선택 표시를 명확하게 하고 하이라이트·5개 테마·6~72pt 크기·Merge 스크롤·섹션별 도움말을 완성하는 것이다. 기능 구현·독립 리뷰·배포를 완료했다. 구현 커밋은 `dd3645d`, 태그 `v1.8`, Release는 https://github.com/pubill13/MyTextEditor/releases/tag/v1.8 이다. 자체 포함 EXE(80,021,102바이트)·ZIP(74,502,392바이트)을 게시했고 최종 EXE 1.8.0+dd3645d 시작·정상 종료(exit0)를 확인했다. 실제125/150% DPI 검증은 아래 제한으로 남아 있다.
+
+- ScintillaEditorHost의 Controls partial 파일에서 사용자 하이라이트(indicator23), 현재 줄 margin24, 테마별 선택색, 테마 WinForms 가로/세로 스크롤바를 관리한다. 기존 Diff indicator20~22와 분리했다. 팔레트는 Models/ThemePalette.cs가 WPF 리소스와 native 색상을 함께 제공한다.
+- 하이라이트는 탭/endpoint 수명 동안 유지한다. 선택 영역의 앞쪽 편집은 위치를 이동하고 내부 편집은 표시를 지운다. 같은 문구 전체는 문자 그대로 대소문자 구분 검색이며 수정 후 300ms debounce로 재계산한다. bounded channel(4×512)과 취소/revision 검사로 UI 적용을 나누고, 겹치거나 인접한 결과는 합친다. 최근 색만 설정에 저장한다. 표시 자체는 dirty·Undo·파일 내용에 영향을 주지 않는다.
+- Merge는 활성 탭의 화면에 보이는 gutter 버튼을 재사용하며 렌더 프레임당 한 번 갱신한다. anchor/caret 검색은 이진 탐색이다. host가 프로그램 스크롤 직후 이벤트를 보내고 같은 위치의 늦은 UpdateUI 이벤트를 제거해 좌우 재진입을 방지한다. 스크롤 중 텍스트 추출·Diff 재계산은 하지 않는다.
+- 일반 크기는 기존 설정 유지, Merge는 Diff.FontSize로 따로 저장(default11). 크기는 정수6~72pt, Ctrl+휠/+/−와 Ctrl+0(일반15/Merge11), Ctrl+G를 지원한다. WPF 입력칸에는 새 편집기 명령을 강제로 적용하지 않는다. 구버전 Light/Dark·크기 설정을 호환한다.
+- 도움말은 7개 category/18개 topic과 ID로 이동한다. HelpWindow.NavigateToTopic으로 검색·정리·매크로·Diff의 문맥 도움말을 연결했다. 외부 라이브러리 추가는 없으며 팔레트 MIT 출처는 THIRD_PARTY_NOTICES에 기록했다.
+- 검증: Core39/39, Release빌드 경고/오류0, 기존 GUI 및30MB 로딩 중앙값0.262초. 신규 --v18에서 Unicode 범위 추적·겹침 우선순위·대소문자·readonly/Undo분리·5개 테마·설정왕복/범위·도움말·Sync OFF/비활성 탭 검증 통과. 5만 줄에서100개 변경 p95 0.06ms, 5000개 변경 p95 0.12ms(스크롤+gutter 처리, 전체 OS 입력 지연 수치는 아님).
+- 대용량 회귀: 100MiB 로드0.729초/매크로0.182초, 300MiB 로드2.321초/매크로0.488초. 적용/Undo/Redo와 기존 결과 hash 일치. 300MiB의 결과 적용은2.198초로 대용량 전체 교체 지연은 아직 남아 있다.
+- 시각검증 한계: 현재 환경의 실제 DPI96(100%)만 확인했다. PrintWindow 캡처는 artifacts/v1.8/visual에 있다. 실제125/150% 전환·다중 모니터 검증은 미완료다. 레이아웃 크기 모사를 실제 DPI 검증으로 보고하지 않는다.
+- 최종 리뷰 수정: 라이트 계열의 비활성 선택 글자를 어둡게 해 대비를 높였다. gutter 버튼 높이는 실제 줄 높이에 맞춰6~9pt에서도 겹치지 않도록 제한했다. 수정 후 --v18 재검증 통과, 5000개 변경 스크롤+gutter p95는0.22ms였다.
+- 다음 우선순위: 실제125/150% 배율에서 native/WPF 좌표·스크롤 thumb·팝업 검증, 실사용 피드백, 기존 대용량 전체 결과 적용 지연 개선. 이름 변경/북마크/공백표시는 이번 범위 밖이다. 사용자 기존 .gitignore 변경·테스트파일은 보존한다.
+
+## v1.7.1 대용량 매크로 개선 (현재)
+
+사용자 요청은 수백 MB 파일에서 매크로의 메모리 부담을 줄이는 것이다. 기존 동작과 저장 형식은 유지했다.
+
+- `TextMacroRunner`는 원문 줄을 문자열로 복사하지 않고 `ReadOnlyMemory<char>` 범위로 참조한다. 검색은 span에서 평가하며, 최종 문자열은 정확한 크기로 한 번 할당한다. 자르기·접두/접미·치환·번호·중복 제거의 임시 미리보기 객체도 줄였다. Unicode 글자 제거와 ANSI 정리는 기존 공통 변환 규칙을 재사용한다.
+- `MacroWindow`는 다른 매크로 전환·새 실행·종료 때 이전 스냅샷 참조를 해제한다. 단계 미리보기와 실행 계산은 하나씩 수행하고 이전 계산 취소가 끝난 뒤 다음 계산을 시작한다. 단계 전후 비교에서는 전체 중간 결과를 둘 다 보관하지 않고 표시할 20,000자를 바로 추린다.
+- 재현 가능한 실행기를 `tests/MyTextEditor.Performance/LargeFileBenchmark.cs`에 추가했다. `dotnet run --project tests/MyTextEditor.Performance -c Release -- --large-file 테스트파일/혼합로그-300MB.log`로 검색(AAA+BBB, CC 제외)·접두사 매크로, 인수 `cleanup` 추가 시 치환·로그 정리도 측정한다. 원본 파일은 변경하지 않는다. 결과 해시와 단일 Undo/Redo도 검사한다.
+- 동일 300MiB 파일·동일 실행기로 비교: 매크로 1.751 → 0.506초, 매크로 할당량 4108.5 → 1217.8MiB, 계산 직후 작업 집합 5115.9 → 2858.3MiB. 결과 SHA-256(UTF-16)은 동일했다. 적용·Undo/Redo를 포함한 테스트 프로세스 전체 최대 작업 집합은 7791.8 → 5546.8MiB. 실행기는 검증용 원문과 결과도 함께 보관하므로 실사용 최저 메모리 수치로 해석하지 않는다.
+- 100MiB 개선본: 매크로 0.206초·계산 직후 1021.4MiB. 100MiB 치환/로그 정리 조합은 1.484 → 0.910초, 1916.2 → 1254.0MiB이며 결과 해시 동일. 백그라운드 계산 중 UI 타이머 최대 간격은 측정 사례에서 46ms 이하였다. 결과 적용은 UI 스레드에서 수행하므로 300MiB에서는 약 2.18초가 걸렸으며 무정지 보장은 하지 않는다.
+- 검증: Core 39/39(범위 기반 의미 보존·메모리 할당 상한 포함), Release 빌드, GUI·스냅샷 해제·Undo/Redo 회귀 통과. 30MB 로딩 중앙값 0.246초. 독립 코드 리뷰 완료.
+- 미해결/우선순위: 매우 큰 파일의 적용 시 UI 정지와 Undo 버퍼 메모리는 여전히 남아 있다. 수백 MB에서도 RAM이 충분해야 한다. 다음에는 이 구간을 측정해 개선한다. 외부 라이브러리나 저장 형식 변경은 없다.
+- 이전 화면 검증 기록 정정: 125%·150%는 96 DPI에서 Full HD의 해당 작업 영역 크기를 모사한 WPF 렌더링이다. 실제 OS DPI 전환이나 모든 창·팝업 검증을 완료한 것은 아니다. 이전 메모리 수치도 계산 직후 WorkingSet 측정이며 최대값과 구분해야 한다.
+- 배포 완료: 구현 커밋 `0133790`, 태그 `v1.7.1`, Release https://github.com/pubill13/MyTextEditor/releases/tag/v1.7.1 에 자체 포함 EXE(80,003,040바이트)·ZIP(74,483,672바이트)을 게시했다. 최종 EXE 버전 1.7.1+0133790의 시작·정상 종료(exit 0)를 확인했다. 현재 미완료 구현은 없으며 위 제한은 후속 범위다. 기존 사용자 `.gitignore` 변경과 테스트파일은 보존한다.
+
+## v1.7 작업 매크로 인수인계
+
+현재 목표는 사용자가 검색·치환·삭제·자르기·정리를 임의 순서로 조립하고 저장하는 작업 매크로다. v1.6 기능은 아래에 기록되어 있다. v1.7 구현·독립 리뷰·통합 검증을 완료했다. 구현 커밋은 d23f2b6, 태그는 v1.7이다. GitHub Release https://github.com/pubill13/MyTextEditor/releases/tag/v1.7 에 자체 포함 MyTextEditor.exe와 MyTextEditor-win-x64.zip을 게시했다. 최종 단일 EXE 1.7.0+d23f2b6 시작·정상 종료(exit 0)를 확인했다. 현재 미완료 구현은 없다.
+
+- 사용자 확정: 현재 문서만 실행, 단계 직접 조립, 검색은 임의 단계, 검색 대상은 내용 수정 후에도 유지, JSON 내보내기·가져오기 지원.
+- 각 단계는 전체 문서 또는 최근 검색 일치 줄을 대상으로 한다. 새 검색은 이전 대상을 교체한다. 검색 없는 매크로도 가능하다.
+- 분할된 줄은 대상 여부를 이어받고 삭제된 줄은 사라진다. 합치기는 연속 대상 구간마다 수행한다. 중복 제거와 줄 번호는 대상 전체 원문 순서를 따른다.
+- 실행은 시작 시점의 매크로·문서 스냅샷을 사용한다. 백그라운드 처리와 취소를 제공하며 최종 ID/revision 재검사 후 ReplaceAll 한 번으로 적용한다. 오류·취소 시 중간 결과를 문서에 반영하지 않는다.
+- 매크로는 별도 macros.json에 원자 저장하고 외부 JSON 가져오기는 새 ID로 추가한다. 문서 내용은 저장·내보내기하지 않는다.
+- 메인 종료는 매크로 미저장 편집을 먼저 확인한다. 이후 Diff 또는 일반 문서에서 종료를 취소하면 매크로 종료 승인도 초기화한다.
+- 주요 코드: Core/Macros는 모델·검증·JSON·줄 추적 실행기, 앱 Macros는 저장·단계 UI·미리보기, MainWindow.Macros.cs는 현재 문서와 원자 적용 연결이다.
+- 검증: Release 빌드 경고/오류 0, Core 37/37, 매크로 저장·창 수명·다단계 단일 Undo/Redo 통합 테스트 통과. 기존 Diff/도움말/설정 회귀 통과. 30MB 로딩 3회 중앙값 0.250초, 리소스 해제 최대 0.067초, 5만 줄 Diff 53ms. 2026-09-14 추가 측정에서 100MB 파일 열기 0.727초·대표 매크로 0.827초, 300MB 파일 열기 2.163초·대표 매크로 1.820초였다. Full HD의 125%·150% 상당 작업 영역에서 매크로 창 라이트·다크 렌더링은 잘림과 밝은 테마 잔여 영역 없이 표시됐다.
+- 알려진 제한: 대용량 매크로의 최대 작업 집합이 100MB에서 약 1.7GB, 300MB에서 약 5.1GB로 측정됐다. 처리 시간은 짧지만 RAM이 적은 PC에서는 버벅임 또는 메모리 부족 위험이 있으므로 다음 성능 개선 대상이다. 1280×720 물리 화면에 125% 이상 배율을 함께 쓰면 창 최소 크기 때문에 화면에 모두 들어오지 않을 수 있다. 단계 미리보기는 처음 20,000자만 표시하고 선택 단계까지 재계산한다. 매크로 파일 손상 시 기존 파일을 덮어쓰지 않으며 사용자가 복구해야 한다.
+- 다음 우선순위: 매크로 실행기의 줄 객체·문자열 복제를 줄여 대용량 최대 메모리를 낮춘다. 이후 1280×720 고배율 대응과 실제 다중 모니터 DPI 전환을 검증한다. 신규 기능보다 발견된 정확성·사용성 문제를 우선한다.
+- 기존 사용자가 만든 테스트파일/과 .gitignore 변경을 보존한다. 대용량 테스트 로그 전수 검사나 재생성은 이번 작업 범위가 아니다.
+
+## v1.6까지의 기록 (아래 버전·배포 정보는 과거 기록)
+
+## 프로젝트의 현재 목표
+
+MyTextEditor는 복잡한 정규식 없이 줄 검색·추출·삭제·가공을 수행하는 Windows 10/11 x64용 텍스트 편집기다. C#·WPF·.NET 9, Scintilla5.NET과 DiffPlex를 사용한다. 30MB·약 3천만 자 로그를 2초 이내에 열고 .NET 설치 없이 실행되는 단일 EXE를 제공하는 기준을 유지한다.
+
+현재 버전 목표는 `1.6.0`이다. 앱당 하나의 모델리스 Diff 작업 공간에서 여러 Merge 탭을 독립적으로 유지하고, 파일을 좌우에 직접 드롭해 바로 비교할 수 있게 한다. 기존 단문 도움말은 검색과 목차를 갖춘 전용 창으로 교체한다.
+
+## 지금까지 완료된 작업
+
+- v1.4까지 대용량 Scintilla 편집기, 다중 문서 탭, 파일 드롭, 단순 조건 검색, 검색 결과 탭, 텍스트 변환·바로 적용, 로그 정리, 즐겨찾기, 최근 검색, 테마·글꼴·설정 자동 저장을 구현했다.
+- v1.5에서 UI 독립 `TextDiffEngine`·`TextMergeService`, 줄·인라인 차이 강조, 탐색, 블록/전체 양방향 병합, 좌우 교환, 차이 복사, 스크롤 동기화, 원본 revision과 외부 파일 변경 보호를 구현했다.
+- v1.6에서 대상 선택 대화상자와 여러 `DiffWindow`를 제거하고 단일 `DiffWorkspaceWindow`와 여러 `DiffTabView`로 바꿨다.
+- `비교/병합`은 좌우가 비어 있는 탭을 즉시 열거나 기존 빈 탭을 선택한다. 각 Merge 탭은 endpoint, 편집기, Undo, 비교 결과, 옵션, generation과 스크롤을 독립적으로 보존한다.
+- Merge 탭 추가·개별 닫기·다른 비교 닫기·모두 닫기, `Ctrl+W`/`Ctrl+F4`, `Ctrl+Tab`/`Ctrl+Shift+Tab`을 지원한다.
+- 단일 파일은 놓은 좌우 영역 또는 현재 탭의 첫 빈 영역에 넣는다. 두 파일은 둘 다 로드에 성공한 뒤 새 탭 좌우에 OS 전달 순서로 배치하며 완전히 빈 탭이 있으면 재사용한다. 세 개 이상, 폴더와 실패 파일은 제외 사실을 한 번 알린다.
+- 실제 내용이 빈 파일과 미지정 영역을 `DiffEndpointKind.Empty`와 `IsReady`로 구분한다. 양쪽 준비 전에는 비교·탐색·병합을 비활성화한다.
+- 열린 문서와 클립보드 빠른 비교, 선택 영역과 클립보드 비교, 양쪽 선택 영역 비교는 같은 작업 공간에 새 Merge 탭을 만든다.
+- 검색 가능한 모델리스 `HelpWindow`와 15개 도움말 주제를 추가했다. 파일·검색·모든 정리 도구·설정·Diff/Merge·저장·단축키·제약을 설명하며 `F1`, 도움말 안 `Ctrl+F`, 검색 결과 없음 초기화를 지원한다.
+- 도움말 창과 Diff 작업 공간의 크기·위치, 새 Merge 탭의 기본 비교 옵션을 설정에 저장한다. 도움말 검색어와 Merge 탭 내용은 저장하지 않는다.
+- 앱·파일 버전을 `1.6.0`으로 올렸다.
+
+## 현재 구현/수정 중인 작업
+
+v1.6 구현, 독립 리뷰, 로컬 검증과 배포가 완료됐다. 구현 커밋은 `90f520b`, 태그는 `v1.6`이며 GitHub Release는 `https://github.com/pubill13/MyTextEditor/releases/tag/v1.6`이다. Release에 자체 포함 `MyTextEditor.exe`와 문서가 포함된 `MyTextEditor-win-x64.zip`을 첨부했다. 현재 진행 중인 코드 수정은 없다.
+
+## 주요 설계 결정과 이유
+
+- 작업 공간 창은 하나만 두고 비교 한 건의 책임은 `DiffTabView`가 가진다. 공통 창 수명과 탭 명령을 비교 상태에서 분리하면서 비활성 탭의 네이티브 편집기와 Undo를 유지하기 위해서다.
+- 빈 endpoint를 빈 문자열 파일과 구분한다. 내용이 0바이트인 파일도 정상 비교 소스여야 하기 때문이다.
+- 두 파일 드롭은 두 endpoint 로드를 먼저 끝낸 뒤 탭에 반영한다. 한쪽 로드 실패로 불완전한 비교가 남지 않게 한다.
+- 일반 편집기와 Diff 작업 공간의 드롭 처리를 분리한다. 일반 창의 기존 다중 문서 열기 동작을 바꾸지 않는다.
+- DiffPlex 모델은 Core 자체 도메인 모델로 변환하며 WPF/Scintilla 타입을 Core에 넣지 않는다.
+- 병합은 정규화 문자열이 아니라 원문에 적용하고 대상 줄바꿈과 끝 개행을 보존한다. 각 블록·전체 병합은 Scintilla `ReplaceAll` 한 번으로 적용해 Undo 한 단계로 되돌린다.
+- 직접 편집 뒤 300ms 비동기 비교를 실행하고 generation이 지난 결과는 버린다. UI를 막지 않고 오래된 결과를 적용하지 않기 위해서다.
+- 열린 문서는 시작 revision을 보관하며 원본 반영 직전에 다시 검사한다. Diff 버퍼가 최신 원본을 조용히 덮지 못하게 한다.
+- 도움말은 외부 Markdown/UI 라이브러리 없이 작은 `HelpTopic` 모델과 WPF 기본 컨트롤로 구성했다. 현재 규모에서 검색 가능한 정적 안내에 충분하다.
+- 앱 종료는 Diff 탭의 종료 가능 여부를 모두 확인한 뒤 일반 문서를 확인한다. 어느 단계에서 취소해도 Merge 탭을 제거하지 않고 이전 종료 승인을 초기화한다.
+
+## 사용자가 명시한 요구사항 및 변경사항
+
+- 비교/병합 버튼은 대상 선택창 없이 빈 좌우 비교 화면을 즉시 열어야 한다.
+- Diff는 앱당 모델리스 창 하나와 여러 Merge 탭으로 구성하며 탭별 상태를 잃지 않아야 한다.
+- 파일 두 개를 함께 드롭하면 새 Merge 탭 좌우에 자동 배치하고, 완전히 빈 초기 탭은 재사용해야 한다.
+- 파일 세 개 이상은 앞의 두 개만 사용한다. 폴더를 재귀 탐색하지 않는다.
+- 일반 편집기 상태와 일반 창의 파일 드롭은 기존처럼 문서 탭을 열어야 한다.
+- 좌우 각각 파일 선택, 열린 문서, 클립보드, 비우기 소스를 제공해야 한다.
+- 선택 영역 비교와 클립보드 빠른 비교도 작업 공간의 새 탭으로 열어야 한다.
+- Merge 탭과 비교 이력은 재실행 후 복원하지 않는다.
+- 기능 수에 맞는 전용 도움말, 목차, 검색, 예시, 주의사항과 전체 단축키 안내를 제공해야 한다.
+- 기존 대용량 로딩, 검색, 변환, 인코딩, 테마, 설정 저장과 종료 성능을 회귀시키지 않는다.
+
+## 수정한 주요 파일과 역할
+
+| 파일 | 역할 |
+| --- | --- |
+| `src/MyTextEditor/Diff/DiffContracts.cs` | Empty endpoint, readiness, 원본 문서 ID와 작업 공간 callback 계약 |
+| `src/MyTextEditor/Diff/DiffTabView.xaml(.cs)` | 비교 한 건의 좌우 편집기·옵션·탐색·병합·소스·드롭·저장·stale 처리 |
+| `src/MyTextEditor/Diff/DiffWorkspaceWindow.xaml(.cs)` | 단일 모델리스 창, Merge 탭 생성·순환·닫기, 두 파일 드롭, 공통 수명 |
+| `src/MyTextEditor/MainWindow.Diff.cs` | 작업 공간 singleton, 빠른 비교, 열린 문서 callback, 설정·테마·종료 연결 |
+| `src/MyTextEditor/Controls/ScintillaEditorHost.cs` | F1과 Merge 탭 단축키의 child HWND 전달 |
+| `src/MyTextEditor/Help/HelpTopic.cs`, `HelpCatalog.cs` | 검색 가능한 도움말 데이터 모델과 15개 주제 |
+| `src/MyTextEditor/Help/HelpWindow.xaml(.cs)` | 모델리스 도움말 목차·검색·본문·결과 없음 UI |
+| `src/MyTextEditor/MainWindow.Help.cs` | 도움말 창 singleton과 배치 저장 |
+| `src/MyTextEditor/Models/UserSettings.cs`, `Services/SettingsService.cs` | 도움말 배치와 Diff 기본 옵션의 호환 저장·정규화 |
+| `tests/MyTextEditor.Performance/Program.cs` | Scintilla 단축키, 탭형 Diff, 도움말 검색, 30MB 회귀 실행 검증 |
+| `README.md` | v1.6 작업 공간·드롭·도움말 사용법 |
+
+삭제한 `DiffSourceDialog.xaml(.cs)`와 `DiffWindow.xaml(.cs)`는 v1.5 단일 비교 창 구현이며 다시 사용하지 않는다.
+
+## 검증 결과
+
+- Core 테스트: 30/30 통과
+- 50,000줄·100개 변경 Diff: 약 50ms, 3초 기준 통과
+- Release 솔루션 빌드: 경고 0, 오류 0
+- Scintilla 단축키 전달, 탭형 Diff 비교·단일 Undo, 빈 탭 재사용, 빈 파일 readiness, 두 파일 드롭, 도움말 검색 실행 검증: 통과
+- 30,000,044바이트 로그 3회 로딩 중앙값: 약 0.236초, 2초 기준 통과
+- 30MB Scintilla 해제: 약 0.021~0.057초, 1.5초 기준 통과
+- 자체 포함 EXE FileVersion: `1.6.0.0`; ProductVersion: `1.6.0+90f520b17eb33fa54edd9aa56abcaea4144b9296`
+- 배포 EXE 실제 시작·clean close: 약 61ms
+- EXE 크기: 79,979,029바이트; SHA-256: `5CA492C1079118218DF27F65C41F769A8657C1661B083E2EB591BE01D0BBAE95`
+- ZIP 크기: 74,458,724바이트; SHA-256: `C5AF44972FE3BF8D13B17249F1D10D7C1017CCB027BC045782C0E5D211F2A64F`
+- ZIP 내부 EXE와 독립 EXE SHA-256 일치
+- GitHub 공개 Release와 `MyTextEditor.exe`, `MyTextEditor-win-x64.zip` 자산 조회 확인
+
+## 알려진 문제/미해결 이슈
+
+- 100%·125%·150% DPI와 라이트·다크 테마는 XAML 빌드와 프로그램 실행으로 검증하지만 실제 여러 모니터에서의 육안 평가는 사용 환경에서 한 번 더 확인해야 한다.
+- 저장·버리기·취소 MessageBox의 모든 조합을 자동 클릭하는 UI 자동화는 없다. 종료 전에 탭을 제거하지 않는 구조와 Core/host 실행 검증으로 보완한다.
+- 삭제 전용 블록 반대편에 가상 빈 행을 삽입하지 않는다. 대응 줄 anchor 보간으로 스크롤을 맞춘다.
+- Diff 파일은 전체 문자열로 로드한다. 현재 5만 줄 성능 목표는 만족하지만 수백 MB 파일 두 개의 동시 비교는 후속 최적화 대상이다.
+- Heatmap, 동일 영역 접기, Smart Merge, Merge Basket, custom ignore regex, snapshot/timeline, 실제 3-way Merge는 후속 범위다.
+
+## 다음에 해야 할 작업과 우선순위
+
+1. 실제 사무실 데이터로 파일 한 개 좌우 드롭, 두 파일 동시 드롭과 여러 Merge 탭 전환을 확인한다.
+2. 100%·125%·150% DPI 및 라이트·다크 테마에서 탭 헤더, 드롭 안내, gutter와 도움말 레이아웃을 육안 확인한다.
+3. 큰 추가·삭제 블록에서 anchor 스크롤 감각과 가운데 병합 버튼 위치를 조정한다.
+4. 실제 사용 피드백에 따라 후속 Diff 기능의 우선순위를 정한다.
+
+## 다음 Agent가 반드시 알아야 할 주의사항
+
+- 루트 `AGENTS.md`를 먼저 읽고 사용자 변경을 reset·checkout·revert하지 않는다.
+- 앱당 `DiffWorkspaceWindow`는 하나다. 새 비교 요구를 별도 창으로 열지 말고 `OpenComparison`으로 탭을 추가한다.
+- 탭 전환 때 endpoint나 Scintilla host를 다시 만들지 않는다. 리소스는 탭을 실제로 닫을 때 한 번만 해제한다.
+- 두 파일 드롭은 양쪽 로드 성공 전 기존 탭을 수정하거나 새 탭을 남기지 않는다.
+- `DiffEndpointKind.Empty`와 내용이 빈 File/Clipboard endpoint를 혼동하지 않는다.
+- 열린 문서 snapshot에는 반드시 `SourceDocumentId`와 revision을 함께 넣는다.
+- 원본 반영은 revision을 재검사하고 `ReplaceAll` 한 번으로 적용하며 자동 저장하지 않는다.
+- `ApplyBlock` 뒤 이전 `DiffBlock` 좌표를 재사용하지 말고 전체 Diff를 다시 계산한다.
+- Scintilla inline 강조 위치에 UTF-8 바이트 길이를 직접 쓰지 말고 `GetLineTextRange`로 UTF-16 범위를 변환한다.
+- 일반 창 드롭은 문서 열기이고 Diff 자동 탭 생성은 작업 공간 내부 드롭만 해당한다.
+- 앱 종료의 일반 문서 확인이 취소되면 `CancelPreparedClose()`로 Diff 종료 승인을 초기화한다.
+- `bin/`, `obj/`, `artifacts/`, 사용자 `settings.json`은 커밋하지 않는다. 배포 파일은 GitHub Release에만 첨부한다.
+- 변경 뒤 Release 빌드, Core 테스트, 성능 실행기와 자체 포함 EXE 시작·종료를 다시 검증한다.
+
+
