@@ -37,18 +37,25 @@ public sealed partial class ScintillaEditorHost
     private void Editor_SizeChanged(object? sender, EventArgs e) => UpdateScrollBars();
 
     public bool WordWrap => _editor.WrapMode != WrapMode.None;
+    public int DisplayLineCount => _editor.Lines[LineCount - 1].DisplayIndex + _editor.Lines[LineCount - 1].WrapCount;
+
     public void SetWordWrap(bool enabled)
     {
+        if (WordWrap == enabled) return;
+        var topDocumentLine = _editor.DocLineFromVisible(FirstVisibleLine);
         _editor.WrapMode = enabled ? WrapMode.Word : WrapMode.None;
         _horizontalBar.Visible = !enabled;
         if (enabled) _editor.XOffset = 0;
+        // Scintilla computes wrapping during layout/paint, before display indices can be used.
+        _editor.Refresh();
+        ScrollToLine(topDocumentLine);
         UpdateScrollBars();
     }
 
     private void UpdateScrollBars()
     {
         if (_resourcesReleased || !_editor.IsHandleCreated) return;
-        _verticalBar.SetRange(Math.Max(0, LineCount - Math.Max(1, LinesOnScreen)), Math.Max(1, LinesOnScreen), FirstVisibleLine);
+        _verticalBar.SetRange(Math.Max(0, DisplayLineCount - Math.Max(1, LinesOnScreen)), Math.Max(1, LinesOnScreen), FirstVisibleLine);
         _horizontalBar.SetRange(Math.Max(0, _editor.ScrollWidth - _editor.ClientSize.Width + _editor.Margins[0].Width),
             Math.Max(1, _editor.ClientSize.Width), _editor.XOffset);
     }

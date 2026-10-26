@@ -7,6 +7,8 @@ using MyTextEditor.Core.Models;
 using MyTextEditor.Diff;
 using MyTextEditor.Models;
 using Application = System.Windows.Application;
+using Point = System.Windows.Point;
+using Size = System.Windows.Size;
 using StackPanel = System.Windows.Controls.StackPanel;
 
 internal static class MergeClarityVerification
@@ -62,7 +64,8 @@ internal static class MergeClarityVerification
             right.Undo();
             Pump(() => view.DifferenceCount > 0);
             if (right.GetText() != "같음\n새 값\n추가 행\n끝") throw new Exception("Merge Undo did not restore exact replacement");
-            Console.WriteLine("PASS Merge direction/ranges/insertion/deletion/end-newline descriptions, rendered connectors, block action and Undo");
+            VerifyCompactLayout(app, window, view, left, right);
+            Console.WriteLine("PASS Merge direction/ranges/insertion/deletion/end-newline descriptions, rendered connectors, block action and Undo; compact layout and options at 900x560/1600x900 across all five themes (programmatic WPF verification)");
             return 0;
         }
         finally
@@ -71,6 +74,52 @@ internal static class MergeClarityVerification
             typeof(DiffTabView).GetField("_rightDirty", Private)!.SetValue(view, false);
             window.Close();
             app.Shutdown();
+        }
+    }
+
+    private static void VerifyCompactLayout(Application app, DiffWorkspaceWindow window, DiffTabView view,
+        ScintillaEditorHost left, ScintillaEditorHost right)
+    {
+        foreach (var theme in ThemePalette.All)
+        {
+            app.Resources.MergedDictionaries[0] = theme.CreateResources();
+            window.ApplyAppearance(new("Consolas", 11, theme.IsDark) { Palette = theme });
+            foreach (var size in new[] { new Size(900, 560), new Size(1600, 900) })
+            {
+                Console.WriteLine($"Merge clarity layout: {theme.Id} {size.Width}x{size.Height}");
+                window.Width = size.Width;
+                window.Height = size.Height;
+                window.UpdateLayout();
+                // Drain layout/render work before checking bounds or opening the popup.
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+                foreach (var editor in new[] { left, right })
+                {
+                    var bounds = editor.TransformToAncestor(view).TransformBounds(new Rect(editor.RenderSize));
+                    if (bounds.Width < 250 || bounds.Height < 250 || bounds.Left < 0 || bounds.Right > view.ActualWidth + 1 || bounds.Bottom > view.ActualHeight + 1)
+                        throw new Exception($"Merge editor clipped: {theme.Id}, {size}, {bounds}");
+                }
+                var previous = Field<System.Windows.Controls.Button>(view, "PreviousButton");
+                var next = Field<System.Windows.Controls.Button>(view, "NextButton");
+                var previousTop = previous.TranslatePoint(new Point(), view).Y;
+                if (Math.Abs(previousTop - next.TranslatePoint(new Point(), view).Y) > 1 || previous.ActualHeight < 24 || next.ActualHeight < 24)
+                    throw new Exception($"Merge command row or click targets invalid: {theme.Id}, {size}");
+                var options = Field<System.Windows.Controls.MenuItem>(view, "OptionsMenu");
+                if (!options.IsVisible || options.ActualWidth < 24) throw new Exception("Merge options are inaccessible");
+                options.IsSubmenuOpen = true;
+                try
+                {
+                    options.UpdateLayout();
+                    Pump(() => options.Items.Count > 0 && options.Items.Cast<System.Windows.Controls.MenuItem>().All(item => item.ActualWidth > 0 && item.ActualHeight > 0));
+                    foreach (System.Windows.Controls.MenuItem item in options.Items)
+                        if (item.ActualWidth < 24 || item.ActualHeight <= 0)
+                            throw new Exception($"Merge option clipped: {theme.Id}, {size}, {item.Header}");
+                }
+                finally { options.IsSubmenuOpen = false; }
+                foreach (var panel in Field<List<StackPanel>>(view, "_gutterPool").Where(panel => panel.Visibility == Visibility.Visible))
+                    foreach (System.Windows.Controls.Button arrow in panel.Children)
+                        if (arrow.ActualWidth < 24 || arrow.ActualHeight < 24)
+                            throw new Exception($"Merge arrow click target too small: {theme.Id}, {size}");
+            }
         }
     }
 

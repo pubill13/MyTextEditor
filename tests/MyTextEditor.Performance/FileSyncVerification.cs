@@ -93,6 +93,8 @@ internal static class FileSyncVerification
                 "Own save must not cause reload and discard Undo");
 
             File.WriteAllText(file, "비동기 진행 중 OFF", new UTF8Encoding(false));
+            WaitFor((Task)Call(window, "PollFileChangesAsync")!);
+            WaitFor(Task.Delay(550));
             var inFlight = (Task)Call(window, "PollFileChangesAsync")!;
             Toggle(window, false);
             WaitFor(inFlight);
@@ -118,7 +120,39 @@ internal static class FileSyncVerification
             Require(document.Text == "비활성 문서 최신 내용", "Changing stamp must restart stable wait");
             Poll(window);
             Require(document.Text == "기록 중 두 번째 변경", "Stable latest content must apply");
-            Console.WriteLine("PASS file sync OFF/ON, monotonic revision, encoding, dirty guard, deletion/recreation, locked retry, own-save Undo, pending OFF");
+
+            foreach (var guardName in new[] { "_savingDocuments", "_closingDocuments", "_encodingReloads" })
+            {
+                var guard = Field<HashSet<DocumentViewModel>>(window, guardName);
+                var before = document.ContentRevision;
+                File.WriteAllText(file, guardName, new UTF8Encoding(false));
+                guard.Add(document);
+                try { Poll(window); }
+                finally { guard.Remove(document); }
+                Require(document.ContentRevision == before, guardName + " must prevent external reload");
+                Poll(window);
+                Require(document.Text == guardName, "Reload must resume after " + guardName);
+            }
+
+            File.WriteAllText(file, "동시 편집 중 외부 변경", new UTF8Encoding(false));
+            WaitFor((Task)Call(window, "PollFileChangesAsync")!);
+            WaitFor(Task.Delay(550));
+            var editingPoll = (Task)Call(window, "PollFileChangesAsync")!;
+            document.Editor.ReplaceAll("진행 중 추가한 편집");
+            WaitFor(editingPoll);
+            Require(document.Text == "진행 중 추가한 편집", "Editing during a pending poll must preserve local content");
+            document.Editor.Undo();
+            Poll(window);
+
+            VerifyLargeReloads(window, document, file);
+
+            File.WriteAllText(file, "종료 중 외부 변경", new UTF8Encoding(false));
+            var closingPoll = (Task)Call(window, "PollFileChangesAsync")!;
+            var beforeStop = document.ContentRevision;
+            Call(window, "StopFileSync");
+            WaitFor(closingPoll);
+            Require(document.ContentRevision == beforeStop, "Stopping file sync must cancel pending application");
+            Console.WriteLine("PASS file sync OFF/ON, revision, encoding, edit/save/close/reopen guards, deletion/recreation, locked retry, own-save Undo, inactive/stability, pending OFF/stop, 30/100/300MB");
             return 0;
         }
         catch (Exception exception)
@@ -136,6 +170,25 @@ internal static class FileSyncVerification
             window.Close();
             app.Shutdown();
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void VerifyLargeReloads(MainWindow window, DocumentViewModel document, string file)
+    {
+        var chunk = Encoding.UTF8.GetBytes(new string('x', 999) + "\n");
+        foreach (var megabytes in new[] { 30, 100, 300 })
+        {
+            var bytes = megabytes * 1_000_000;
+            using (var stream = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.Read))
+                for (var remaining = bytes; remaining > 0; remaining -= chunk.Length) stream.Write(chunk);
+            var before = document.ContentRevision;
+            Poll(window);
+            var measurement = typeof(MainWindow).GetProperty("LastFileSyncMeasurement", Private)!.GetValue(window)!;
+            var actualBytes = (long)measurement.GetType().GetProperty("Utf8Bytes")!.GetValue(measurement)!;
+            Require(document.ContentRevision > before && !document.IsModified && actualBytes == bytes &&
+                document.Editor.LineCount == bytes / chunk.Length + 1,
+                $"{megabytes}MB external reload must apply the complete buffer cleanly");
+            Console.WriteLine($"file-sync {megabytes}MB: {measurement}");
         }
     }
 
@@ -160,7 +213,7 @@ internal static class FileSyncVerification
         var watch = Stopwatch.StartNew();
         while (!task.IsCompleted)
         {
-            if (watch.Elapsed > TimeSpan.FromSeconds(15)) throw new TimeoutException("File sync verification timed out");
+            if (watch.Elapsed > TimeSpan.FromSeconds(60)) throw new TimeoutException("File sync verification timed out");
             var frame = new DispatcherFrame();
             Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => frame.Continue = false));
             Dispatcher.PushFrame(frame);

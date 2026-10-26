@@ -174,9 +174,7 @@ public partial class MainWindow
 
                     var revision = document.ContentRevision;
                     SyncFilesMenuItem.ToolTip = $"외부 변경 반영 ON · {document.DisplayName} 읽는 중";
-                    var loadWatch = Stopwatch.StartNew();
                     var buffer = await _fileService.LoadBufferAsync(state.Path, cancellationToken);
-                    loadWatch.Stop();
                     var afterRead = await ReadFileSyncStampAsync(state.Path, cancellationToken);
                     // A file may still be being written, or the user may edit/save/close while I/O runs.
                     if (observed != afterRead || !IsCurrentFileSync(document, state, generation) ||
@@ -187,6 +185,7 @@ public partial class MainWindow
                     var firstVisibleLine = document.Editor.FirstVisibleLine;
                     document.Encoding = buffer.OriginalEncoding;
                     document.HasByteOrderMark = buffer.HasByteOrderMark;
+                    document.AcceptEncodingChanges();
                     document.NewLine = buffer.NewLine;
                     document.Editor.SetNewLine(buffer.NewLine);
                     document.Editor.ReloadUtf8(buffer.Utf8Buffer);

@@ -140,12 +140,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         try
         {
             using (var output = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None)) resource.CopyTo(output);
-            try { File.Move(temporary, destination, true); }
-            catch (UnauthorizedAccessException) when (File.Exists(destination))
-            {
-                try { File.Replace(temporary, destination, null); }
-                catch (UnauthorizedAccessException) { File.Copy(temporary, destination, true); }
-            }
+            File.Move(temporary, destination, true);
         }
         finally
         {
@@ -277,6 +272,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         {
             _loading = false;
         }
+        // Reload callers restore display-line scroll positions immediately after loading.
+        if (WordWrap) _editor.Refresh();
         CaretChanged?.Invoke(this, EventArgs.Empty);
         DirtyChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -365,12 +362,13 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     public void SetFirstVisibleLine(int zeroBasedLine)
     {
         if (_editor.Lines.Count == 0) return;
-        var target = Math.Clamp(zeroBasedLine, 0, _editor.Lines.Count - 1);
+        var target = Math.Clamp(zeroBasedLine, 0, DisplayLineCount - 1);
         if (_editor.FirstVisibleLine != target) _editor.FirstVisibleLine = target;
         NotifyVerticalScroll();
     }
 
-    public void ScrollToLine(int zeroBasedLine) => SetFirstVisibleLine(zeroBasedLine);
+    public void ScrollToLine(int zeroBasedLine) =>
+        SetFirstVisibleLine(_editor.Lines[Math.Clamp(zeroBasedLine, 0, LineCount - 1)].DisplayIndex);
 
     public void SetDiffHighlights(
         IEnumerable<DiffLineHighlight> lineHighlights,

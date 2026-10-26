@@ -260,6 +260,7 @@ public partial class MainWindow : Window
             NewLine = buffer.NewLine,
             IsModified = false
         };
+        document.AcceptEncodingChanges();
         editor.SetNewLine(document.NewLine);
         editor.LoadUtf8(buffer.Utf8Buffer);
         ConfigureEditor(document);
@@ -273,9 +274,16 @@ public partial class MainWindow : Window
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveDocumentAsync(CurrentDocument, false);
     private async void SaveAs_Click(object sender, RoutedEventArgs e) => await SaveDocumentAsync(CurrentDocument, true);
 
-    private async Task<bool> SaveDocumentAsync(DocumentViewModel? document, bool saveAs)
+    private Task<bool> SaveDocumentAsync(DocumentViewModel? document, bool saveAs) => SaveDocumentCoreAsync(document, saveAs);
+
+    private async Task<bool> SaveDocumentCoreAsync(DocumentViewModel? document, bool saveAs, bool allowEncodingReload = false)
     {
         if (document is null) return true;
+        if (!allowEncodingReload && _encodingReloads.Contains(document))
+        {
+            StatusMessage.Text = $"{document.DisplayName} 파일을 인코딩으로 다시 여는 중입니다.";
+            return false;
+        }
         if (!_savingDocuments.Add(document))
         {
             StatusMessage.Text = $"{document.DisplayName} 파일을 이미 저장하고 있습니다.";
@@ -325,15 +333,18 @@ public partial class MainWindow : Window
                 return false;
             }
 
-            document.EncodingModified = false;
             document.FilePath = state.FilePath;
             document.Encoding = state.Encoding;
             document.HasByteOrderMark = state.HasByteOrderMark;
+            document.AcceptEncodingChanges();
             var hasNewerChanges = document.ContentRevision != savedRevision;
             if (hasNewerChanges)
                 document.IsModified = true;
             else
+            {
                 document.Editor.MarkSaved();
+                document.IsModified = false;
+            }
             document.NotifyIdentityChanged();
             await RefreshFileSyncBaselineAsync(document);
             AddRecentFile(path!);

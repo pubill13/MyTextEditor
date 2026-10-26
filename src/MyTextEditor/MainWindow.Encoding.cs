@@ -51,9 +51,7 @@ public partial class MainWindow
             {
                 if (document is null || !Documents.Contains(document) || _savingDocuments.Contains(document) || _encodingReloads.Contains(document)) return;
                 if (DocumentEncodings.FromEncoding(document.Encoding, document.HasByteOrderMark) == choice) return;
-                document.Encoding = DocumentEncodings.GetEncoding(choice);
-                document.HasByteOrderMark = DocumentEncodings.HasBom(choice);
-                document.EncodingModified = true;
+                document.ChangeEncoding(choice);
                 UpdateStatus();
                 StatusMessage.Text = "저장 인코딩을 변경했습니다. 파일 저장 시 반영됩니다.";
             };
@@ -73,7 +71,7 @@ public partial class MainWindow
             if (document.IsModified)
             {
                 var answer = MessageBox.Show(this, "다시 열기 전에 변경 내용을 저장할까요?\n저장하지 않으면 현재 편집 내용이 대체됩니다.", "인코딩으로 다시 열기", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
-                if (answer == MessageBoxResult.Cancel || (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false))) return;
+                if (answer == MessageBoxResult.Cancel || (answer == MessageBoxResult.Yes && !await SaveDocumentCoreAsync(document, false, allowEncodingReload: true))) return;
             }
             if (document.FilePath is not { } path) return;
             var revision = document.ContentRevision;
@@ -86,7 +84,7 @@ public partial class MainWindow
             document.Editor.ReloadUtf8(buffer.Utf8Buffer);
             document.Encoding = buffer.OriginalEncoding;
             document.HasByteOrderMark = buffer.HasByteOrderMark;
-            document.EncodingModified = false;
+            document.AcceptEncodingChanges();
             document.IsModified = false;
             document.NewLine = buffer.NewLine;
             document.Editor.SetNewLine(buffer.NewLine);
@@ -96,7 +94,12 @@ public partial class MainWindow
             StatusMessage.Text = $"{document.DisplayName}: {DocumentEncodings.GetDisplayName(kind)}로 다시 열었습니다.";
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
-        { MessageBox.Show(this, exception.Message, "인코딩으로 다시 열기 실패", MessageBoxButton.OK, MessageBoxImage.Error); }
+        {
+            // A wrong encoding is a recoverable choice: keep the current buffer and let the
+            // user choose another encoding without stacking a modal dialog on every attempt.
+            StatusMessage.Text = $"{document.DisplayName}: 인코딩으로 다시 열지 못했습니다. 현재 내용을 유지합니다. {exception.Message}";
+            UpdateStatus();
+        }
         finally { _encodingReloads.Remove(document); }
     }
 }

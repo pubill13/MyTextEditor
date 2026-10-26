@@ -53,6 +53,8 @@ internal static class Program
         if (args.Contains("--omni-search")) return OmniSearchVerification.Run();
         if (args.Contains("--document-panes")) return DocumentPanesVerification.Run();
         if (args.Contains("--file-sync")) return FileSyncVerification.Run();
+        if (args.Contains("--word-wrap")) return WordWrapVerification.Run();
+        if (args.Contains("--document-display")) return DocumentDisplayVerification.Run();
         if (args.Contains("--merge-clarity")) return MergeClarityVerification.Run();
         if (args.Contains("--result-font")) return SearchResultFontVerification.Run();
         if (args.Contains("--merge-110")) return Merge110Verification.Run();

@@ -125,16 +125,7 @@ public sealed class DocumentFileService
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                File.Move(temporaryPath, fullDestination, overwrite: true);
-            }
-            catch (UnauthorizedAccessException) when (File.Exists(fullDestination))
-            {
-                // Some Windows file providers reject Move(..., overwrite:true) even when
-                // the destination is writable. Replace preserves the same atomic intent.
-                File.Replace(temporaryPath, fullDestination, destinationBackupFileName: null);
-            }
+            File.Move(temporaryPath, fullDestination, overwrite: true);
         }
         finally
         {
