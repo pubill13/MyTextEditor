@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using MyTextEditor.Controls;
 using MyTextEditor.Core;
 using MyTextEditor.Core.Models;
@@ -7,7 +7,7 @@ namespace MyTextEditor.Diff;
 
 public partial class DiffTabView
 {
-    private bool _needsComparison = true, _largeModeApplied;
+    private bool _needsComparison = true;
     private (long Revision, string Text)? _leftSnapshot, _rightSnapshot;
     private TextDiffEngine.DiffSnapshot? _leftIndex, _rightIndex;
     private int? _mergeNextLine;
@@ -36,34 +36,7 @@ public partial class DiffTabView
         return text;
     }
 
-    private void CheckLargeComparison()
-    {
-        if (_largeModeApplied || Math.Max(_leftEditor.Utf8ByteLength, _rightEditor.Utf8ByteLength) < 30_000_000) return;
-        _largeModeApplied = true;
-        AutoCompareCheck.IsChecked = false;
-        AutoCompareCheck.ToolTip = "30MB 이상 문서: 자동 비교를 껐습니다. 필요하면 다시 켤 수 있습니다.";
-    }
-
-    private void AutoCompare_Changed(object sender, RoutedEventArgs e)
-    {
-        UpdateOptionSummary();
-        if (!_initialized) return;
-        _recompareTimer.Stop();
-        if (AutoCompareCheck.IsChecked == true && _needsComparison && _isActive) _ = CompareNowAsync();
-    }
     internal void RequestComparison() => _ = CompareNowAsync();
-    private void Recompare_Click(object sender, RoutedEventArgs e) => RequestComparison();
-    private void CancelCompare_Click(object sender, RoutedEventArgs e)
-    {
-        _comparisonCancellation?.Cancel();
-        _inlineCancellation?.Cancel();
-        _recompareTimer.Stop();
-        ++_generation;
-        _needsComparison = false;
-        CancelCompareButton.IsEnabled = false;
-        BusyProgress.Visibility = Visibility.Collapsed;
-        StatusText.Text = "비교를 중단했습니다. F5로 다시 비교합니다.";
-    }
 
     private void CompleteMergeNavigation()
     {

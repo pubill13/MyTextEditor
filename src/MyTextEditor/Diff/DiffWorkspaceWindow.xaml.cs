@@ -25,6 +25,7 @@ public partial class DiffWorkspaceWindow : Window
         _callbacks = callbacks;
         _highlightColor = callbacks.HighlightColor;
         _appearance = appearance;
+        UpdateLegendColors(appearance);
         DiffFontSizeCombo.ItemsSource = new[] { 6, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 60, 72 };
         RefreshFontSize();
         Width = Math.Max(MinWidth, options.Width);
@@ -61,8 +62,23 @@ public partial class DiffWorkspaceWindow : Window
     {
         var dpiScale = IsLoaded ? (float)VisualTreeHelper.GetDpi(this).DpiScaleX : appearance.DpiScale;
         _appearance = appearance with { DpiScale = dpiScale };
+        UpdateLegendColors(_appearance);
         foreach (var view in Views) view.ApplyAppearance(_appearance);
         RefreshFontSize();
+    }
+
+    private void UpdateLegendColors(DiffAppearance appearance)
+    {
+        var dark = appearance.Palette?.IsDark ?? appearance.DarkTheme;
+        // Match Scintilla's whole-line shading and stronger inline-change colors.
+        SetSwatch(AddedLegendSwatch, dark ? "#1F4231" : "#DEF7E6", dark ? "#2EA057" : "#40A05B");
+        SetSwatch(DeletedLegendSwatch, dark ? "#4A272B" : "#FFE6E6", dark ? "#DA5459" : "#D23F44");
+        SetSwatch(ModifiedLegendSwatch, dark ? "#433A1F" : "#FFF5CC", dark ? "#DAB042" : "#CD971F");
+        static void SetSwatch(Border swatch, string fill, string outline)
+        {
+            swatch.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(fill));
+            swatch.BorderBrush = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(outline));
+        }
     }
 
     public void RefreshSourceStates()

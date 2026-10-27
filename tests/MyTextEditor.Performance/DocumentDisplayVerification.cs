@@ -17,7 +17,12 @@ internal static class DocumentDisplayVerification
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
     private static object? Call(object target, string name, params object?[] args) => target.GetType().GetMethod(name, Private)!.Invoke(target, args);
-    private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+    private static void Pump()
+    {
+        var frame = new DispatcherFrame();
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private static void Wait(Task task)
     {
@@ -83,8 +88,10 @@ internal static class DocumentDisplayVerification
             WithDialogResponse(window, 6, () => Wait((Task)Call(window, "ReloadWithEncodingAsync", document, DocumentEncodingKind.Utf8)!));
             Check(document.Text == "다시 열기 전에 저장" && File.ReadAllText(path) == document.Text && !document.IsModified, "Save then reload must save edits while holding the reload guard");
             File.WriteAllBytes(path, [0xff]);
-            WithDialogResponse(window, 1, () => Wait((Task)Call(window, "ReloadWithEncodingAsync", document, DocumentEncodingKind.Utf8)!));
+            Wait((Task)Call(window, "ReloadWithEncodingAsync", document, DocumentEncodingKind.Utf8)!);
             Check(document.Text == "다시 열기 전에 저장" && !document.IsModified, "Failed decoding must preserve loaded content and dirty state");
+            Check(Field<System.Windows.Controls.TextBlock>(window, "StatusMessage").Text.Contains("다시 열지 못했습니다"),
+                "Failed decoding must report its cause in the status bar");
             Check(!Field<HashSet<DocumentViewModel>>(window, "_encodingReloads").Contains(document), "Failed reload must release its guard");
             Console.WriteLine("document-display: split and close protection");
             VerifyPanes(window, document);
@@ -130,22 +137,43 @@ internal static class DocumentDisplayVerification
     private static void WithDialogResponse(MainWindow owner, int command, Action action)
     {
         var ownerHandle = new WindowInteropHelper(owner).Handle;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        var responded = false;
-        timer.Tick += (_, _) =>
+        var threadId = GetWindowThreadProcessId(ownerHandle, out var processId);
+        Check(processId == Environment.ProcessId, "Dialog automation must target this test process only");
+        using var cancellation = new CancellationTokenSource();
+        // Native MessageBox uses a modal Win32 loop; it need not service WPF DispatcherTimer.
+        var response = Task.Run(() =>
         {
-            var dialog = FindWindow(null, "인코딩으로 다시 열기");
-            if (dialog == IntPtr.Zero) dialog = GetLastActivePopup(ownerHandle);
-            if (dialog == ownerHandle || dialog == IntPtr.Zero) return;
-            responded = PostMessage(dialog, 0x0111, (IntPtr)command, IntPtr.Zero);
-            timer.Stop();
-        };
-        timer.Start();
-        try { action(); Check(responded, "Expected modal dialog was not shown"); }
-        finally { timer.Stop(); }
+            var watch = Stopwatch.StartNew();
+            while (!cancellation.IsCancellationRequested && watch.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                var responded = false;
+                EnumThreadWindows(threadId, (dialog, _) =>
+                {
+                    if (GetWindow(dialog, 4) != ownerHandle || !IsWindowVisible(dialog)) return true; // GW_OWNER
+                    var className = new StringBuilder(32);
+                    GetClassName(dialog, className, className.Capacity);
+                    if (className.ToString() != "#32770") return true;
+                    var button = GetDlgItem(dialog, command);
+                    if (button == IntPtr.Zero || !IsWindowEnabled(button)) return true;
+                    responded = PostMessage(button, 0x00F5, IntPtr.Zero, IntPtr.Zero); // BM_CLICK
+                    return !responded;
+                }, IntPtr.Zero);
+                if (responded) return true;
+                Thread.Sleep(20);
+            }
+            return false;
+        });
+        try { action(); Check(response.GetAwaiter().GetResult(), $"Expected owned modal dialog was not shown (command {command})"); }
+        finally { cancellation.Cancel(); response.GetAwaiter().GetResult(); }
     }
 
-    [DllImport("user32.dll")] private static extern IntPtr GetLastActivePopup(IntPtr handle);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string? className, string windowName);
+    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumThreadWindows(uint threadId, EnumWindowsCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int id);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
 }

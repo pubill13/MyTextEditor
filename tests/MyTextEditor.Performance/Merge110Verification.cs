@@ -35,8 +35,7 @@ internal static class Merge110Verification
             PumpUntil(() => view.DifferenceCount == 2);
             var left = Field<ScintillaEditorHost>(view, "_leftEditor");
             var right = Field<ScintillaEditorHost>(view, "_rightEditor");
-            var auto = Field<System.Windows.Controls.MenuItem>(view, "AutoCompareCheck");
-            Check(auto.IsChecked == true && Field<System.Windows.Controls.MenuItem>(view, "MergeNextCheck").IsChecked == false, "New tab comparison defaults");
+            Check(Field<System.Windows.Controls.MenuItem>(view, "MergeNextCheck").IsChecked == false, "New tab comparison defaults");
             var map = Field<DifferenceMap>(view, "DifferenceMapView");
             map.Navigate!(1);
             Check(Field<int>(view, "_currentBlockIndex") == 1, "Map navigation");
@@ -49,11 +48,9 @@ internal static class Merge110Verification
             Check(left.GetText() == original && left.IsReadOnly, "Locked target was overwritten");
             Field<CheckBox>(view, "LeftReadOnlyCheck").IsChecked = false;
 
-            auto.IsChecked = false;
             left.ReplaceAll(original + "\nextra");
-            Check(Field<object?>(view, "_result") is null, "Manual edit retained stale result");
-            PumpFor(400);
-            Check(Field<object?>(view, "_result") is null, "Manual edit triggered automatic comparison");
+            Check(Field<object?>(view, "_result") is null, "Edit retained stale result");
+            PumpUntil(() => Field<object?>(view, "_result") is not null);
             Check(SendNative(left, Forms.Keys.F5), "F5 not consumed in Merge");
             PumpUntil(() => Field<object?>(view, "_result") is not null);
             left.Undo();
@@ -71,9 +68,10 @@ internal static class Merge110Verification
 
             var before = left.GetText();
             SendNative(left, Forms.Keys.F5);
-            Call(view, "CancelCompare_Click", view, new RoutedEventArgs());
+            view.SetActive(false);
             PumpFor(150);
             Check(left.GetText() == before && Field<object?>(view, "_result") is null, "Canceled comparison changed content or published old result");
+            view.SetActive(true);
             SendNative(right, Forms.Keys.F5);
             PumpUntil(() => Field<object?>(view, "_result") is not null);
             foreach (var theme in ThemePalette.All)
@@ -83,7 +81,7 @@ internal static class Merge110Verification
                 window.UpdateLayout(); PumpFor(20);
                 Check(map.Surface == app.Resources["SurfaceAltBrush"], "Map theme did not update");
             }
-            Console.WriteLine("PASS Merge 1.10: auto/manual, native F5, cancellation, lock, map/cache/theme, merge-next, single Undo/Redo (programmatic WPF/native verification)");
+            Console.WriteLine("PASS Merge 1.10: automatic updates, native F5, inactive-tab cancellation, lock, map/cache/theme, merge-next, single Undo/Redo (programmatic WPF/native verification)");
             return 0;
         }
         catch

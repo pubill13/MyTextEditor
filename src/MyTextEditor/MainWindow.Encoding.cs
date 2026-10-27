@@ -16,7 +16,10 @@ public partial class MainWindow
     private void WordWrap_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentEditor is not { } editor) return;
-        editor.SetWordWrap(WordWrapMenuItem.IsChecked);
+        // Returning focus from the menu can refresh IsChecked before Click is raised.
+        // The editor is the authoritative state for this command.
+        editor.SetWordWrap(!editor.WordWrap);
+        WordWrapMenuItem.IsChecked = editor.WordWrap;
         _settings.DefaultWordWrap = editor.WordWrap;
         MarkSettingsDirty();
         StatusMessage.Text = editor.WordWrap ? "자동 줄바꿈 ON · 파일의 개행은 변경하지 않습니다." : "자동 줄바꿈 OFF";

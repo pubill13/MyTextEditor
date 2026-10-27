@@ -113,8 +113,8 @@ public partial class MainWindow
         MarkSettingsDirty();
         UpdateFileSyncTooltip();
         StatusMessage.Text = _settings.AutoReloadFiles
-            ? "외부 파일 자동 반영 ON · 저장하지 않은 수정 내용은 덮어쓰지 않습니다."
-            : "외부 파일 자동 반영 OFF";
+            ? "파일 변경 모니터링 ON · 저장하지 않은 수정 내용은 덮어쓰지 않습니다."
+            : "파일 변경 모니터링 OFF";
     }
 
     private async void FileSyncTimer_Tick(object? sender, EventArgs e) => await PollFileChangesAsync();
@@ -173,7 +173,7 @@ public partial class MainWindow
                     }
 
                     var revision = document.ContentRevision;
-                    SyncFilesMenuItem.ToolTip = $"외부 변경 반영 ON · {document.DisplayName} 읽는 중";
+                    SyncFilesMenuItem.ToolTip = $"파일 변경 모니터링 ON · {document.DisplayName} 읽는 중";
                     var buffer = await _fileService.LoadBufferAsync(state.Path, cancellationToken);
                     var afterRead = await ReadFileSyncStampAsync(state.Path, cancellationToken);
                     // A file may still be being written, or the user may edit/save/close while I/O runs.
@@ -198,7 +198,7 @@ public partial class MainWindow
                     state.LastNotice = null;
                     state.PendingStamp = null;
                     UpdateStatus();
-                    StatusMessage.Text = $"{document.DisplayName}: 외부 변경 반영 · 읽기 {buffer.ReadElapsed.TotalMilliseconds:F0}ms · 변환 {buffer.DecodeElapsed.TotalMilliseconds:F0}ms · 화면 반영 {applyWatch.Elapsed.TotalMilliseconds:F0}ms";
+                    StatusMessage.Text = $"{document.DisplayName}: 파일 변경 모니터링 · 읽기 {buffer.ReadElapsed.TotalMilliseconds:F0}ms · 변환 {buffer.DecodeElapsed.TotalMilliseconds:F0}ms · 화면 반영 {applyWatch.Elapsed.TotalMilliseconds:F0}ms";
                     LastFileSyncMeasurement = new FileSyncMeasurement(buffer.Utf8Buffer.Length, buffer.ReadElapsed.TotalMilliseconds, buffer.DecodeElapsed.TotalMilliseconds, applyWatch.Elapsed.TotalMilliseconds);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
@@ -225,9 +225,9 @@ public partial class MainWindow
     {
         var notice = CurrentDocument is { } document && _fileSyncStates.TryGetValue(document, out var state) ? state.LastNotice : null;
         SyncFilesMenuItem.ToolTip = !_settings.AutoReloadFiles
-            ? "외부 변경 반영 OFF · 켜면 저장된 파일의 외부 변경을 감시합니다."
-            : notice is null ? "외부 변경 반영 ON · 기록이 안정된 활성 문서만 다시 읽습니다. 미저장 수정은 덮어쓰지 않습니다."
-            : $"외부 변경 반영 ON · {notice}";
+            ? "파일 변경 모니터링 OFF · 켜면 저장된 파일의 외부 변경을 감시합니다."
+            : notice is null ? "파일 변경 모니터링 ON · 기록이 안정된 활성 문서만 다시 읽습니다. 미저장 수정은 덮어쓰지 않습니다."
+            : $"파일 변경 모니터링 ON · {notice}";
     }
 
     private bool IsCurrentFileSync(DocumentViewModel document, FileSyncState state, long generation) =>
@@ -239,7 +239,7 @@ public partial class MainWindow
         if (state.LastNotice == message) return;
         state.LastNotice = message;
         StatusMessage.Text = $"{document.DisplayName}: {message}";
-        SyncFilesMenuItem.ToolTip = $"외부 변경 반영 ON · {document.DisplayName}: {message}";
+        SyncFilesMenuItem.ToolTip = $"파일 변경 모니터링 ON · {document.DisplayName}: {message}";
     }
 }
 

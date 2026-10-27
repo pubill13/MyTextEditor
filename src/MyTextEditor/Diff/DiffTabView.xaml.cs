@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -201,8 +201,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         InvalidateDisplayedResult();
         _recompareTimer.Stop();
         _needsComparison = true;
-        if (_isActive && AutoCompareCheck.IsChecked == true) _recompareTimer.Start();
-        StatusText.Text = AutoCompareCheck.IsChecked == true ? "입력이 끝나면 차이를 다시 계산합니다…" : "재비교 필요 · F5를 누르세요.";
+        if (_isActive) _recompareTimer.Start();
+        StatusText.Text = "입력이 끝나면 차이를 다시 계산합니다…";
     }
 
     private async void RecompareTimer_Tick(object? sender, EventArgs e)
@@ -223,14 +223,12 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (!_initialized || _resourcesReleased || !IsReady) return;
         _needsComparison = true;
         if (!_isActive) return;
-        CheckLargeComparison();
         _comparisonCancellation?.Cancel();
         using var cancellation = new CancellationTokenSource();
         _comparisonCancellation = cancellation;
         var generation = ++_generation;
         InvalidateDisplayedResult();
         BusyProgress.Visibility = Visibility.Visible;
-        CancelCompareButton.IsEnabled = true;
         StatusText.Text = "차이를 계산하는 중…";
         var acquired = false;
         try
@@ -279,7 +277,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         {
             if (acquired) _compareGate.Release();
             if (ReferenceEquals(_comparisonCancellation, cancellation)) _comparisonCancellation = null;
-            if (generation == _generation) { BusyProgress.Visibility = Visibility.Collapsed; CancelCompareButton.IsEnabled = false; }
+            if (generation == _generation) BusyProgress.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -660,13 +658,11 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void UpdateOptionSummary()
     {
-        if (OptionsMenu is null || CompareModeText is null || MergeNextCheck is null) return;
+        if (OptionsMenu is null || MergeNextCheck is null) return;
         var count = (IgnoreWhitespaceCheck.IsChecked ? 1 : 0) + (IgnoreCaseCheck.IsChecked ? 1 : 0) +
             (IgnoreEmptyLinesCheck.IsChecked ? 1 : 0) + (!ScrollSyncCheck.IsChecked ? 1 : 0) +
-            (!AutoCompareCheck.IsChecked ? 1 : 0) + (MergeNextCheck.IsChecked ? 1 : 0);
+            (MergeNextCheck.IsChecked ? 1 : 0);
         OptionsMenu.Header = count == 0 ? "옵션" : $"옵션 · {count}";
-        CompareModeText.Text = AutoCompareCheck.IsChecked ? "자동" : "수동 · F5";
-        CompareModeText.ToolTip = AutoCompareCheck.IsChecked ? "편집 후 자동으로 다시 비교합니다" : "편집 후 F5로 다시 비교하세요";
     }
 
     private void ReadOnly_Changed(object sender, RoutedEventArgs e)

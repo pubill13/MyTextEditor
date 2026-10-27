@@ -1,4 +1,4 @@
-﻿<Window x:Class="MyTextEditor.MainWindow"
+<Window x:Class="MyTextEditor.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="clr-namespace:MyTextEditor.Models" xmlns:core="clr-namespace:MyTextEditor.Core;assembly=MyTextEditor.Core"
@@ -67,7 +67,9 @@
                 <MenuItem Header="저장(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
                 <MenuItem Header="다른 이름으로 저장(_A)…" InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
                 <Separator />
-                <MenuItem x:Name="EncodingFileMenu" Header="인코딩" SubmenuOpened="EncodingMenu_Opened"/>
+                <MenuItem x:Name="EncodingFileMenu" Header="인코딩" SubmenuOpened="EncodingMenu_Opened">
+                    <MenuItem Header="인코딩 선택" IsEnabled="False"/>
+                </MenuItem>
                 <MenuItem x:Name="RecentFilesMenu" Header="최근 파일" />
                 <Separator />
                 <MenuItem Header="현재 탭 닫기(_W)" InputGestureText="Ctrl+W" Click="CloseTab_Click" />
@@ -123,7 +125,7 @@
                     <ToggleButton x:Name="ToolsToggleButton" Content="검색·정리" Style="{StaticResource CompactToolbarToggle}" IsChecked="True" ToolTip="검색·정리 패널 표시/숨기기 (검색 Ctrl+F, 치환 Ctrl+H)" Click="ToggleToolsButton_Click"/>
                     <Border Width="1" Margin="8,3" Background="{DynamicResource BorderBrush}" />
                     <TextBlock Text="부가 기능" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="{DynamicResource MutedBrush}"/>
-                    <ToggleButton x:Name="SyncFilesMenuItem" Content="외부 변경 반영" Style="{StaticResource CompactToolbarToggle}" ToolTip="외부 파일 변경 자동 반영 · 저장하지 않은 수정은 보호합니다." Click="SyncFiles_Click"/>
+                    <ToggleButton x:Name="SyncFilesMenuItem" Content="파일 변경 모니터링" Style="{StaticResource CompactToolbarToggle}" ToolTip="파일 변경 모니터링 · 저장하지 않은 수정은 보호합니다." Click="SyncFiles_Click"/>
                     <ToggleButton x:Name="DiffToggleButton" Content="비교/병합" Style="{StaticResource CompactToolbarToggle}" ToolTip="비교/병합 창 표시·숨기기 (작업 유지)" Click="ToggleDiff_Click"/>
                     <ToggleButton x:Name="MacroToggleButton" Content="매크로" Style="{StaticResource CompactToolbarToggle}" ToolTip="매크로 창 표시·숨기기 (작업 유지)" Click="ToggleMacro_Click"/>
                     <Border Width="1" Margin="8,3" Background="{DynamicResource BorderBrush}" />

@@ -92,6 +92,22 @@ internal static class MergeClarityVerification
                 window.UpdateLayout();
                 // Drain layout/render work before checking bounds or opening the popup.
                 window.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+                var legend = Field<Border>(window, "ColorLegend");
+                var legendBounds = legend.TransformToAncestor(window).TransformBounds(new Rect(legend.RenderSize));
+                if (!legend.IsVisible || legend.ActualWidth < 100 || legend.ActualHeight < 15 ||
+                    legendBounds.Right > window.ActualWidth || legendBounds.Top > 60)
+                    throw new Exception($"Tab legend missing or clipped: {theme.Id}, {size}");
+                var tabs = Field<System.Windows.Controls.TabControl>(window, "ComparisonTabs");
+                var tabHeader = (TabItem)tabs.Items[0];
+                var tabBounds = tabHeader.TransformToAncestor(window).TransformBounds(new Rect(tabHeader.RenderSize));
+                if (tabBounds.Right > legendBounds.Left)
+                    throw new Exception($"Tab header overlaps legend: {theme.Id}, {size}");
+                var swatch = Field<Border>(window, "AddedLegendSwatch");
+                var expected = theme.IsDark ? "#FF1F4231" : "#FFDEF7E6";
+                if (swatch.Background.ToString() != expected)
+                    throw new Exception($"Legend does not match editor shading: {theme.Id}");
+                if (view.FindName("AutoCompareCheck") is not null || view.FindName("CancelCompareButton") is not null || view.FindName("CompareModeText") is not null)
+                    throw new Exception("Removed comparison controls must not remain in the visual tree");
                 foreach (var editor in new[] { left, right })
                 {
                     var bounds = editor.TransformToAncestor(view).TransformBounds(new Rect(editor.RenderSize));
@@ -119,6 +135,17 @@ internal static class MergeClarityVerification
                     foreach (System.Windows.Controls.Button arrow in panel.Children)
                         if (arrow.ActualWidth < 24 || arrow.ActualHeight < 24)
                             throw new Exception($"Merge arrow click target too small: {theme.Id}, {size}");
+                if (theme.Id == "Light")
+                {
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)window.ActualWidth,
+                        (int)window.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                    bitmap.Render(window);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    System.IO.Directory.CreateDirectory("artifacts");
+                    using var output = System.IO.File.Create($"artifacts/merge-layout-{size.Width:0}.png");
+                    encoder.Save(output);
+                }
             }
         }
     }
