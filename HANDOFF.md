@@ -7,14 +7,14 @@
 - 후속 v1.11.1: 줄바꿈·인코딩 메뉴 수정, Merge UI 단순화, 파일 변경 모니터링 명칭 통일. 소스 검증 및 EXE 시작 확인 완료. 872e655 / v1.11.1로 GitHub EXE·ZIP 게시 완료, 서버 SHA-256 일치 확인.
 - .gitignore는 사용자 변경이므로 수정/stage/되돌리기 금지. 기존 릴리즈/태그 덮어쓰기 금지.
 
-## 추가 수정 — 2026-11-02 (v1.11.2 배포 준비)
+## 추가 수정 — 2026-11-02 (v1.11.2 배포 완료)
 - 문서 탭 드래그 순서 이동 및 삽입 위치 표시. 기존 좌우 분할 이동과 선택·Undo 보존.
 - 검색 결과 행의 세로 여백 축소. 글꼴 자체의 줄 높이는 보존.
 - 도움말 본문 15px/24px 줄 간격, 문단 및 단축키 개행, 최소 폭 레이아웃 개선.
 - 도움말 누락 보완: 탭 재정렬, 분할 메뉴, 최근 파일, 인코딩 재열기 실패, 결과 탭 Ctrl+W. 병합과 저장 관계 및 개발 용어 수정.
 - Release 빌드 0경고/0오류. --result-font, --help-layout, --document-panes 통과. help-layout.png 시각 확인.
 - 물리 마우스 테스트는 창 가림 때문에 실패할 수 있어 검증용 창만 Topmost 사용. GUI 테스트는 순차 실행.
-- v1.11.2 버전 확정. 릴리즈 EXE/ZIP 게시 후 서버 SHA-256 확인 예정. .gitignore 사용자 변경 유지.
+- 50d80aa / v1.11.2로 EXE·ZIP 공개 완료: https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.2 . 서버 SHA-256 일치 및 새 EXE 1.11.2 시작 확인. .gitignore 사용자 변경 유지.
 
 ## 이번 변경의 근거
 - 인코딩 메뉴가 비어 있어 SubmenuOpened 자체가 발생하지 않던 구조: 초기 하위 항목 제공 후 열 때 실제 명령 생성.
@@ -35,4 +35,4 @@
 ## 실행 주의
 - 네이티브 DLL 폴더 접근은 샌드박스에서 거부될 수 있으므로 권한 오류는 require_escalated로 재시도. 앱 코드 우회 금지.
 - 사용자 기존 프로세스/미저장 창 임의 종료 금지. GUI 검증은 순차 실행.
-- gh는 없음. 릴리즈는 artifacts/v1.11.1/publish-release.ps1에서 기존 git credential을 메모리 내 사용. 자격 증명 출력 금지. draft에 EXE/ZIP 업로드 후 서버 SHA-256 검증하고 공개한다.
+- gh는 없음. 릴리즈는 artifacts/v1.11.2/publish-release.ps1에서 기존 git credential을 메모리 내 사용. 자격 증명 출력 금지. draft에 EXE/ZIP 업로드 후 서버 SHA-256 검증하고 공개한다.
