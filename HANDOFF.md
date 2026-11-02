@@ -42,4 +42,4 @@
 - 현재 문서 폴더 버튼 추가, 미저장 경로 없는 문서는 비활성화. 검색 경로는 명시적으로 버튼을 누를 때만 변경.
 - Release 빌드, --folder-shortcut, --help-layout, --result-font 통과.
 - --search-actions는 별도 결과 창의 물리 Ctrl+C 자동화 실패. 직접 실행한 Copy 명령은 통과. 원인 미확정, 복사 로직 변경 없음.
-- v1.11.3 릴리즈 업로드 준비.
+- 985b635 / v1.11.3 공개 완료. EXE/ZIP 서버 SHA-256 일치. https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.3
