@@ -43,3 +43,11 @@
 - Release 빌드, --folder-shortcut, --help-layout, --result-font 통과.
 - --search-actions는 별도 결과 창의 물리 Ctrl+C 자동화 실패. 직접 실행한 Copy 명령은 통과. 원인 미확정, 복사 로직 변경 없음.
 - 985b635 / v1.11.3 공개 완료. EXE/ZIP 서버 SHA-256 일치. https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.3
+
+## 문서 탭 새 창 분리 (v1.11.4 배포 준비)
+- 사용자 선택: 별도 프로세스 대신 같은 프로세스의 독립 MainWindow. 문서 편집기 자체 이동으로 미저장 내용/인코딩/선택/Undo/줄바꿈 유지.
+- 창 바깥 드롭으로 분리, Esc 취소. 기존 재정렬/좌우 분할 유지. 파일 열기·저장·닫기·인코딩 재열기 중 분리 차단.
+- 이벤트 연결을 새 창으로 이전하며 이동 실패 시 원래 문서로 복구. 기존 검색 결과/비교는 이전 창에 남음.
+- 종료는 마지막 창 기준. 파일 열기 IPC는 현재 남아 있는 창에 전달. 창별 글꼴/테마 리소스 분리.
+- 최종 Release 빌드 0경고/0오류. --document-detach (물리 드래그 포함), --document-panes, --result-font, --help-layout PASS.
+- 실제 혼합 DPI 다중 모니터 위치 검증은 미실시. v1.11.4 버전 확정, EXE/ZIP 배포 및 서버 SHA-256 검증 예정.

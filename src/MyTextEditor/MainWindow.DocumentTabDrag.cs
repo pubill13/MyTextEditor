@@ -19,6 +19,7 @@ public partial class MainWindow
     private bool _tabDragging;
     private bool? _tabDropRight;
     private int? _tabDropIndex;
+    private Point? _tabDetachPosition;
     private Popup? _tabDropPreview;
 
     private void InitializeDocumentTabDrag()
@@ -81,17 +82,28 @@ public partial class MainWindow
             _tabDragging = Mouse.Capture(DocumentPanesGrid, CaptureMode.Element);
             if (!_tabDragging) { FinishDocumentTabDrag(false); return; }
         }
+        var previousDetach = _tabDetachPosition.HasValue;
+        var windowPoint = e.GetPosition(this);
+        _tabDetachPosition = windowPoint.X < 0 || windowPoint.Y < 0 ||
+            windowPoint.X > ActualWidth || windowPoint.Y > ActualHeight
+            ? PointToScreen(windowPoint) : null;
         var previousTarget = _tabDropRight;
         var previousIndex = _tabDropIndex;
         _tabDropRight = ResolveDocumentTabDrop(point);
         _tabDropIndex = _tabDropRight is { } right ? ResolveDocumentTabDropIndex(point, right) : null;
         if (_tabDropRight == RightDocuments.Contains(_dragDocument) && _tabDropIndex is null) _tabDropRight = null;
-        if (previousTarget != _tabDropRight || previousIndex != _tabDropIndex) ShowDocumentTabDropPreview();
+        if (previousDetach != _tabDetachPosition.HasValue || previousTarget != _tabDropRight || previousIndex != _tabDropIndex) ShowDocumentTabDropPreview();
         e.Handled = true;
     }
 
     private void ShowDocumentTabDropPreview()
     {
+        if (_tabDetachPosition is not null)
+        {
+            StatusMessage.Text = "놓으면 새 OmniEdit 창으로 분리합니다. Esc로 취소합니다.";
+            if (_tabDropPreview is not null) _tabDropPreview.IsOpen = false;
+            return;
+        }
         if (_tabDropRight is not { } right)
         {
             if (_tabDropPreview is not null) _tabDropPreview.IsOpen = false;
@@ -142,12 +154,19 @@ public partial class MainWindow
         var document = _dragDocument;
         var right = _tabDropRight;
         var index = _tabDropIndex;
+        var detachPosition = _tabDetachPosition;
         _tabDragging = false;
         _dragDocument = null;
         _tabDropRight = null;
         _tabDropIndex = null;
+        _tabDetachPosition = null;
         if (_tabDropPreview is not null) _tabDropPreview.IsOpen = false;
         if (Mouse.Captured == DocumentPanesGrid) Mouse.Capture(null);
+        if (apply && document is not null && detachPosition is { } screenPosition)
+        {
+            DetachDocumentWindow(document, screenPosition);
+            return;
+        }
         if (apply && document is not null && right.HasValue && Documents.Contains(document))
         {
             var sourceRight = RightDocuments.Contains(document);

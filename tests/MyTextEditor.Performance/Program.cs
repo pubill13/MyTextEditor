@@ -52,6 +52,7 @@ internal static class Program
         if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();
         if (args.Contains("--omni-theme")) return OmniThemeVerification.Run();
         if (args.Contains("--omni-search")) return OmniSearchVerification.Run();
+        if (args.Contains("--document-detach")) return DocumentDetachVerification.Run();
         if (args.Contains("--document-panes")) return DocumentPanesVerification.Run();
         if (args.Contains("--file-sync")) return FileSyncVerification.Run();
         if (args.Contains("--word-wrap")) return WordWrapVerification.Run();

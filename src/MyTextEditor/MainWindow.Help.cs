@@ -32,6 +32,7 @@ public partial class MainWindow
             _settings.Help.WindowLeft,
             _settings.Help.WindowTop);
         var window = new HelpWindow(placement) { Owner = this };
+        window.Resources.MergedDictionaries.Add(Resources);
         window.PlacementChangedByUser += HelpWindow_PlacementChanged;
         window.Closed += (_, _) =>
         {

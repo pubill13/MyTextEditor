@@ -90,8 +90,8 @@ public partial class MainWindow : Window
         RestoreWindowPlacement();
         ToolColumn.Width = new GridLength(Math.Max(280, _settings.ToolPanelWidth));
         ResultRow.Height = new GridLength(Math.Max(120, _settings.ResultPanelHeight));
-        Application.Current.Resources["EditorFontFamily"] = new FontFamily(_settings.EditorFontFamily);
-        Application.Current.Resources["EditorFontSize"] = _settings.EditorFontSize;
+        Resources["EditorFontFamily"] = new FontFamily(_settings.EditorFontFamily);
+        Resources["EditorFontSize"] = _settings.EditorFontSize;
         ApplyTheme(_settings.Theme);
         LoadInstalledFonts();
         SelectComboItem(FontFamilyCombo, _settings.EditorFontFamily);
@@ -697,18 +697,38 @@ public partial class MainWindow : Window
     {
         var editor = document.Editor;
         editor.SetWordWrap(_settings.DefaultWordWrap);
-        editor.EditorFocused += (_, _) => { if (Documents.Contains(document)) SelectDocument(document); };
+        editor.EditorFocused += Editor_Focused;
         editor.CaretChanged += Editor_CaretChanged;
         editor.RevisionChanged += Editor_RevisionChanged;
         editor.DirtyChanged += Editor_DirtyChanged;
         editor.ShortcutRequested += Editor_ShortcutRequested;
         editor.HighlightColor = _settings.HighlightColor;
         editor.HighlightColorChanged += SaveHighlightColor;
-        editor.HighlightFailed += message => StatusMessage.Text = message;
-        editor.FilesDropped += paths => _ = Dispatcher.InvokeAsync(async () => await OpenFilesAsync(paths));
+        editor.HighlightFailed += Editor_HighlightFailed;
+        editor.FilesDropped += Editor_FilesDropped;
         ApplyEditorAppearance(editor);
     }
 
+    private void Editor_Focused(object? sender, EventArgs e)
+    {
+        if (sender is ScintillaEditorHost editor && FindDocument(editor) is { } document) SelectDocument(document);
+    }
+
+    private void Editor_HighlightFailed(string message) => StatusMessage.Text = message;
+    private void Editor_FilesDropped(IReadOnlyList<string> paths) =>
+        _ = Dispatcher.InvokeAsync(async () => await OpenFilesAsync(paths));
+
+    private void DisconnectEditor(ScintillaEditorHost editor)
+    {
+        editor.EditorFocused -= Editor_Focused;
+        editor.CaretChanged -= Editor_CaretChanged;
+        editor.RevisionChanged -= Editor_RevisionChanged;
+        editor.DirtyChanged -= Editor_DirtyChanged;
+        editor.ShortcutRequested -= Editor_ShortcutRequested;
+        editor.HighlightColorChanged -= SaveHighlightColor;
+        editor.HighlightFailed -= Editor_HighlightFailed;
+        editor.FilesDropped -= Editor_FilesDropped;
+    }
     private DocumentViewModel? FindDocument(ScintillaEditorHost editor) => Documents.FirstOrDefault(document => document.Editor == editor);
 
     private void SimpleCondition_TextChanged(object sender, TextChangedEventArgs e)
@@ -1397,8 +1417,9 @@ public partial class MainWindow : Window
     {
         var palette = ThemePalette.Get(theme);
         _settings.Theme = palette.Id;
-        var dictionaries = Application.Current.Resources.MergedDictionaries;
-        dictionaries[0] = palette.CreateResources();
+        var dictionaries = Resources.MergedDictionaries;
+        if (dictionaries.Count == 0) dictionaries.Add(palette.CreateResources());
+        else dictionaries[0] = palette.CreateResources();
         ThemeMenu.Items.Clear();
         foreach (var choice in ThemePalette.All)
         {
@@ -1427,7 +1448,7 @@ public partial class MainWindow : Window
     {
         size = Math.Clamp(Math.Round(size), 6, 72);
         _settings.EditorFontSize = size;
-        Application.Current.Resources["EditorFontSize"] = size;
+        Resources["EditorFontSize"] = size;
         SyncFontSizeInputs();
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
         ApplyDiffAppearanceToWindows();
@@ -1461,7 +1482,7 @@ public partial class MainWindow : Window
         _settings.EditorFontFamily = installed.FamilyName;
         FontFamilyCombo.SelectedItem = installed;
         OverflowFontFamilyCombo.SelectedItem = installed;
-        Application.Current.Resources["EditorFontFamily"] = new FontFamily(installed.FamilyName);
+        Resources["EditorFontFamily"] = new FontFamily(installed.FamilyName);
         foreach (var document in Documents) ApplyEditorAppearance(document.Editor);
         ApplyDiffAppearanceToWindows();
         MarkSettingsDirty();
@@ -1520,7 +1541,7 @@ public partial class MainWindow : Window
             ?? orderedFonts.FirstOrDefault()
             ?? new FontChoice("Consolas", "Consolas");
         _settings.EditorFontFamily = selected.FamilyName;
-        Application.Current.Resources["EditorFontFamily"] = new FontFamily(selected.FamilyName);
+        Resources["EditorFontFamily"] = new FontFamily(selected.FamilyName);
     }
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)

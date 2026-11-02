@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.IO;
 using MyTextEditor.Services;
 
@@ -41,11 +41,14 @@ public partial class App : System.Windows.Application
             }));
         var window = new MainWindow();
         MainWindow = window;
-        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        ShutdownMode = ShutdownMode.OnLastWindowClose;
         window.Show();
         // Queue the launch files before enabling external requests; the normal open gate preserves order.
         var startup = paths.Length > 0 ? window.OpenStartupFilesAsync(paths) : Task.CompletedTask;
-        _fileOpenCoordinator.Start(window.TryAcceptExternalFiles, window.ReportFileOpenDeliveryError);
+        _fileOpenCoordinator.Start(
+            files => Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsActive)?.TryAcceptExternalFiles(files)
+                ?? Windows.OfType<MainWindow>().FirstOrDefault()?.TryAcceptExternalFiles(files) ?? false,
+            error => Windows.OfType<MainWindow>().FirstOrDefault()?.ReportFileOpenDeliveryError(error));
         await startup;
     }
 

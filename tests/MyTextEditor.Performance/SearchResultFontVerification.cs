@@ -50,8 +50,8 @@ internal static class SearchResultFontVerification
                 if (detached == 1) { Call(window, "DetachResults_Click", window, new RoutedEventArgs()); Pump(); }
                 foreach (var size in new[] { 6d, 15d, 72d })
                 {
-                    app.Resources["EditorFontFamily"] = new FontFamily("Malgun Gothic");
-                    app.Resources["EditorFontSize"] = size;
+                    window.Resources["EditorFontFamily"] = new FontFamily("Malgun Gothic");
+                    window.Resources["EditorFontSize"] = size;
                     Pump();
                     var list = Field<ListBox>(window, "_activeResultsList");
                     list.UpdateLayout(); Pump();
