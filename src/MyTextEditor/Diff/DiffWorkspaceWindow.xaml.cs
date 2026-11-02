@@ -126,7 +126,7 @@ public partial class DiffWorkspaceWindow : Window
         var tabMenu = new ContextMenu { DataContext = item };
         var closeTabMenu = new MenuItem { Header = "비교 탭 닫기" };
         closeTabMenu.Click += async (_, _) => await CloseTabAsync(item);
-        var closeOthersMenu = new MenuItem { Header = "다른 비교 닫기" };
+        var closeOthersMenu = new MenuItem { Header = "이 창을 제외하고 모두 닫기" };
         closeOthersMenu.Click += async (_, _) =>
             await CloseTabsAsync(ComparisonTabs.Items.OfType<TabItem>().Where(tab => tab != item).ToArray());
         var closeAllMenu = new MenuItem { Header = "모든 비교 닫기" };

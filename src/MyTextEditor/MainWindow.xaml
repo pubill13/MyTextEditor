@@ -194,7 +194,7 @@
                                     <StackPanel.ContextMenu>
                                         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                             <MenuItem Header="탭 닫기" Click="DocumentTabMenuClose_Click" />
-                                            <MenuItem Header="다른 탭 닫기" Click="DocumentTabMenuCloseOthers_Click" />
+                                            <MenuItem Header="이 창을 제외하고 모두 닫기" Click="DocumentTabMenuCloseOthers_Click" />
                                             <MenuItem Header="모든 탭 닫기" Click="DocumentTabMenuCloseAll_Click" />
                                             <MenuItem Header="다른 쪽으로 이동" Click="MoveDocumentPane_Click" />
                                             <Separator />
@@ -272,10 +272,11 @@
                                         <CheckBox x:Name="FolderSearchCheck" Content="폴더 내 검색" Margin="0,7,0,0" Checked="FolderSearchMode_Changed" Unchecked="FolderSearchMode_Changed" ToolTip="폴더를 선택한 뒤 모두 찾기로 검색합니다." />
                                         <StackPanel x:Name="FolderSearchOptionsPanel" Margin="0,7,0,7" Visibility="Collapsed">
                                             <TextBlock Text="검색할 폴더" />
-                                            <DockPanel LastChildFill="True">
-                                                <Button DockPanel.Dock="Right" Content="폴더 선택…" Click="ChooseSearchFolder_Click" ToolTip="검색 대상 폴더 선택" />
-                                                <TextBox x:Name="SearchFolderPathBox" IsReadOnly="True" TextChanged="SearchFolderPath_Changed" ToolTip="선택한 폴더에서 검색합니다." />
-                                            </DockPanel>
+                                            <TextBox x:Name="SearchFolderPathBox" IsReadOnly="True" TextChanged="SearchFolderPath_Changed" ToolTip="선택한 폴더에서 검색합니다." />
+                                            <WrapPanel>
+                                                <Button Content="폴더 선택…" Click="ChooseSearchFolder_Click" ToolTip="검색 대상 폴더 선택" />
+                                                <Button x:Name="UseCurrentDocumentFolderButton" Content="현재 문서 폴더" Click="UseCurrentDocumentFolder_Click" ToolTip="현재 문서 파일이 있는 폴더를 검색 폴더로 설정" />
+                                            </WrapPanel>
                                             <CheckBox x:Name="IncludeSubfoldersCheck" Content="하위 폴더 포함" ToolTip="선택한 폴더 안의 하위 폴더도 함께 검색합니다." IsChecked="True" />
                                             <TextBlock Text="파일 형식 (; 구분)"/><TextBox x:Name="FolderPatternBox" Text="{x:Static core:FolderSearchOptions.DefaultFilePatterns}" LostKeyboardFocus="FolderPattern_LostFocus" ToolTip="예: *.txt;*.log — 세미콜론으로 구분합니다. 비우면 기본 형식 목록으로 복원합니다." />
                                         </StackPanel>
@@ -445,7 +446,7 @@
                             <TabControl.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" ToolTip="{Binding ToolTip}">
                                 <StackPanel.ContextMenu><ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                     <MenuItem Header="결과 닫기" Click="SearchTabMenuClose_Click"/>
-                                    <MenuItem Header="다른 결과 닫기" Click="SearchTabMenuCloseOthers_Click"/>
+                                    <MenuItem Header="이 창을 제외하고 모두 닫기" Click="SearchTabMenuCloseOthers_Click"/>
                                     <MenuItem Header="모든 결과 닫기" Click="SearchTabMenuCloseAll_Click"/>
                                     <Separator/>
                                     <MenuItem Header="검색 조건 복사" Click="SearchTabMenuCopyCondition_Click"/>

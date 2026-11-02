@@ -195,6 +195,19 @@ public partial class MainWindow
         if (picker.ShowDialog() == Forms.DialogResult.OK) SearchFolderPathBox.Text = picker.SelectedPath;
     }
 
+    private void UseCurrentDocumentFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var path = CurrentDocument?.FilePath;
+        var folder = path is null ? null : Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            StatusMessage.Text = "현재 문서가 저장된 파일이 없어 폴더를 자동 설정할 수 없습니다.";
+            return;
+        }
+        SearchFolderPathBox.Text = folder;
+        StatusMessage.Text = $"현재 문서 폴더를 검색 폴더로 설정했습니다: {folder}";
+    }
+
     private async void SearchFolder_Click(object sender, RoutedEventArgs e)
     {
         NormalizeFolderPattern();

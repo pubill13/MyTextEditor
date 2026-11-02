@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -679,8 +679,11 @@ public partial class MainWindow : Window
         RefreshToolsTarget();
         if (document is null)
         {
+            if (UseCurrentDocumentFolderButton is not null) UseCurrentDocumentFolderButton.IsEnabled = false;
             CaretStatus.Text = "줄 -, 열 -"; LineCountStatus.Text = "0줄"; EncodingStatus.Text = "-"; NewLineStatus.Text = "-"; return;
         }
+        if (UseCurrentDocumentFolderButton is not null)
+            UseCurrentDocumentFolderButton.IsEnabled = document.FilePath is { Length: > 0 } path && Path.IsPathFullyQualified(path);
         CaretStatus.Text = $"줄 {(editor?.CurrentLine ?? 0) + 1}, 열 {(editor?.CurrentColumn ?? 0) + 1}";
         if (editor is { HasSelection: true })
             CaretStatus.Text += $"  ·  선택 {editor.SelectionRange.Length:N0}자";

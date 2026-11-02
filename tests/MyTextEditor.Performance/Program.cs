@@ -46,6 +46,7 @@ internal static class Program
         if (args.Contains("--tab-visibility")) return TabVisibilityVerification.Run();
         if (args.Contains("--selection-ux")) return SelectionUxVerification.Run();
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
+        if (args.Contains("--folder-shortcut")) return SearchActionsVerification.Run(folderShortcutOnly: true);
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
         if (args.Contains("--v18")) return V18Verification.Run();
         if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();

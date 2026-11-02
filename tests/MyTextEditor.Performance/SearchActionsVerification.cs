@@ -22,7 +22,7 @@ internal static class SearchActionsVerification
     private static void Check([System.Diagnostics.CodeAnalysis.DoesNotReturnIf(false)] bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
 
-    public static int Run()
+    public static int Run(bool folderShortcutOnly = false)
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
@@ -36,6 +36,26 @@ internal static class SearchActionsVerification
         {
             window.Show(); Pump();
             var source = window.Documents[0];
+            Call(window, "StopFileSync");
+            var folderBox = Field<System.Windows.Controls.TextBox>(window, "SearchFolderPathBox");
+            var folderButton = Field<Button>(window, "UseCurrentDocumentFolderButton");
+            folderBox.Text = "preserve";
+            Call(window, "UpdateStatus");
+            Check(!folderButton.IsEnabled, "Untitled document must disable current-folder shortcut");
+            Call(window, "UseCurrentDocumentFolder_Click", folderButton, new RoutedEventArgs());
+            Check(folderBox.Text == "preserve", "Missing path must preserve search folder");
+            source.FilePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "folder-shortcut.txt");
+            Call(window, "UpdateStatus");
+            Check(folderButton.IsEnabled, "File-backed document must enable current-folder shortcut");
+            folderButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(folderBox.Text == System.IO.Path.GetDirectoryName(source.FilePath), "Current document directory was not selected");
+            source.FilePath = null;
+            Call(window, "UpdateStatus");
+            if (folderShortcutOnly)
+            {
+                Console.WriteLine("PASS current document folder button: saved path, untitled disabled, invalid path preserves selection");
+                return 0;
+            }
             const string original = "123 한글😀\r\n문맥\r\n\r\n456 끝";
             source.Editor.LoadUtf8(Encoding.UTF8.GetBytes(original));
             var session = new SearchResultSession

@@ -40,7 +40,7 @@
                     <MenuItem StaysOpenOnClick="True"><MenuItem.Header><StackPanel Orientation="Horizontal"><TextBlock Text="글자 크기" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <ComboBox x:Name="DiffFontSizeCombo" Width="64" Height="26" Padding="4,2" IsEditable="True" ToolTip="6~72pt · Ctrl+휠 · Ctrl+0은 11pt" SelectionChanged="DiffFontSize_SelectionChanged" LostKeyboardFocus="DiffFontSize_LostKeyboardFocus" PreviewKeyDown="DiffFontSize_PreviewKeyDown"/>
                     </StackPanel></MenuItem.Header></MenuItem><Separator/>
-                    <MenuItem Header="다른 비교 닫기" Click="CloseOthers_Click"/><MenuItem Header="모든 비교 닫기" Click="CloseAll_Click"/><MenuItem Header="도움말" Click="Help_Click"/>
+                    <MenuItem Header="이 창을 제외하고 모두 닫기" Click="CloseOthers_Click"/><MenuItem Header="모든 비교 닫기" Click="CloseAll_Click"/><MenuItem Header="도움말" Click="Help_Click"/>
                 </MenuItem></Menu>
             </StackPanel>
         </Grid>

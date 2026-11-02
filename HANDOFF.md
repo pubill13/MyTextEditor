@@ -36,3 +36,10 @@
 - 네이티브 DLL 폴더 접근은 샌드박스에서 거부될 수 있으므로 권한 오류는 require_escalated로 재시도. 앱 코드 우회 금지.
 - 사용자 기존 프로세스/미저장 창 임의 종료 금지. GUI 검증은 순차 실행.
 - gh는 없음. 릴리즈는 artifacts/v1.11.2/publish-release.ps1에서 기존 git credential을 메모리 내 사용. 자격 증명 출력 금지. draft에 EXE/ZIP 업로드 후 서버 SHA-256 검증하고 공개한다.
+
+## v1.11.3 (2026-11-02)
+- 문서/검색 결과/Merge의 기존 다른 탭 닫기를 '이 창을 제외하고 모두 닫기'로 통일.
+- 현재 문서 폴더 버튼 추가, 미저장 경로 없는 문서는 비활성화. 검색 경로는 명시적으로 버튼을 누를 때만 변경.
+- Release 빌드, --folder-shortcut, --help-layout, --result-font 통과.
+- --search-actions는 별도 결과 창의 물리 Ctrl+C 자동화 실패. 직접 실행한 Copy 명령은 통과. 원인 미확정, 복사 로직 변경 없음.
+- v1.11.3 릴리즈 업로드 준비.
