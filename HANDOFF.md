@@ -35,7 +35,7 @@
 ## 실행 주의
 - 네이티브 DLL 폴더 접근은 샌드박스에서 거부될 수 있으므로 권한 오류는 require_escalated로 재시도. 앱 코드 우회 금지.
 - 사용자 기존 프로세스/미저장 창 임의 종료 금지. GUI 검증은 순차 실행.
-- gh는 없음. 릴리즈는 artifacts/v1.11.2/publish-release.ps1에서 기존 git credential을 메모리 내 사용. 자격 증명 출력 금지. draft에 EXE/ZIP 업로드 후 서버 SHA-256 검증하고 공개한다.
+- gh는 없음. 릴리즈는 artifacts/v1.11.4/publish-release.ps1에서 기존 git credential을 메모리 내 사용. 자격 증명 출력 금지. draft에 EXE/ZIP 업로드 후 서버 SHA-256 검증하고 공개한다.
 
 ## v1.11.3 (2026-11-02)
 - 문서/검색 결과/Merge의 기존 다른 탭 닫기를 '이 창을 제외하고 모두 닫기'로 통일.
@@ -44,10 +44,10 @@
 - --search-actions는 별도 결과 창의 물리 Ctrl+C 자동화 실패. 직접 실행한 Copy 명령은 통과. 원인 미확정, 복사 로직 변경 없음.
 - 985b635 / v1.11.3 공개 완료. EXE/ZIP 서버 SHA-256 일치. https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.3
 
-## 문서 탭 새 창 분리 (v1.11.4 배포 준비)
+## 문서 탭 새 창 분리 (v1.11.4 배포 완료)
 - 사용자 선택: 별도 프로세스 대신 같은 프로세스의 독립 MainWindow. 문서 편집기 자체 이동으로 미저장 내용/인코딩/선택/Undo/줄바꿈 유지.
 - 창 바깥 드롭으로 분리, Esc 취소. 기존 재정렬/좌우 분할 유지. 파일 열기·저장·닫기·인코딩 재열기 중 분리 차단.
 - 이벤트 연결을 새 창으로 이전하며 이동 실패 시 원래 문서로 복구. 기존 검색 결과/비교는 이전 창에 남음.
 - 종료는 마지막 창 기준. 파일 열기 IPC는 현재 남아 있는 창에 전달. 창별 글꼴/테마 리소스 분리.
 - 최종 Release 빌드 0경고/0오류. --document-detach (물리 드래그 포함), --document-panes, --result-font, --help-layout PASS.
-- 실제 혼합 DPI 다중 모니터 위치 검증은 미실시. v1.11.4 버전 확정, EXE/ZIP 배포 및 서버 SHA-256 검증 예정.
+- 실제 혼합 DPI 다중 모니터 위치 검증은 미실시. 3128d9e / v1.11.4 공개 완료. EXE/ZIP 서버 SHA-256 일치 및 배포 EXE 정상 시작 확인. https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.4
