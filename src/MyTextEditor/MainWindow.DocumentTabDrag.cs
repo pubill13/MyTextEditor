@@ -18,6 +18,7 @@ public partial class MainWindow
     private Point _tabDragStart;
     private bool _tabDragging;
     private bool? _tabDropRight;
+    private int? _tabDropIndex;
     private Popup? _tabDropPreview;
 
     private void InitializeDocumentTabDrag()
@@ -62,6 +63,8 @@ public partial class MainWindow
             var rightStart = RightDocumentTabs.TranslatePoint(new Point(), DocumentPanesGrid).X;
             return point.X >= rightStart;
         }
+        // A tab header is a valid left-pane target even when the split view is off.
+        if (ResolveDocumentTabDropIndex(point, false) is not null) return false;
         // Keep the rest of the editor neutral; only the edge creates a split.
         return point.X >= DocumentPanesGrid.ActualWidth - Math.Min(160, DocumentPanesGrid.ActualWidth * .25) ? true : null;
     }
@@ -79,9 +82,11 @@ public partial class MainWindow
             if (!_tabDragging) { FinishDocumentTabDrag(false); return; }
         }
         var previousTarget = _tabDropRight;
+        var previousIndex = _tabDropIndex;
         _tabDropRight = ResolveDocumentTabDrop(point);
-        if (_tabDropRight == RightDocuments.Contains(_dragDocument)) _tabDropRight = null;
-        if (previousTarget != _tabDropRight) ShowDocumentTabDropPreview();
+        _tabDropIndex = _tabDropRight is { } right ? ResolveDocumentTabDropIndex(point, right) : null;
+        if (_tabDropRight == RightDocuments.Contains(_dragDocument) && _tabDropIndex is null) _tabDropRight = null;
+        if (previousTarget != _tabDropRight || previousIndex != _tabDropIndex) ShowDocumentTabDropPreview();
         e.Handled = true;
     }
 
@@ -90,6 +95,22 @@ public partial class MainWindow
         if (_tabDropRight is not { } right)
         {
             if (_tabDropPreview is not null) _tabDropPreview.IsOpen = false;
+            return;
+        }
+        if (_tabDropIndex is { } insertion)
+        {
+            var tabs = right ? RightDocumentTabs : DocumentTabs;
+            var items = tabs.Items.OfType<DocumentViewModel>().Where(item => item != _dragDocument).ToArray();
+            if (items.Length == 0) return;
+            var anchor = (TabItem)tabs.ItemContainerGenerator.ContainerFromItem(items[Math.Min(insertion, items.Length - 1)]);
+            var position = anchor.TranslatePoint(new Point(insertion < items.Length ? 0 : anchor.ActualWidth, 0), DocumentPanesGrid);
+            _tabDropPreview ??= new Popup { PlacementTarget = DocumentPanesGrid, Placement = PlacementMode.Relative, AllowsTransparency = true, StaysOpen = true, IsHitTestVisible = false };
+            var marker = new Border { Width = 3, Height = anchor.ActualHeight, IsHitTestVisible = false };
+            marker.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+            _tabDropPreview.Child = marker;
+            _tabDropPreview.HorizontalOffset = position.X;
+            _tabDropPreview.VerticalOffset = position.Y;
+            _tabDropPreview.IsOpen = true;
             return;
         }
         var split = RightDocumentTabs.IsVisible;
@@ -120,16 +141,52 @@ public partial class MainWindow
     {
         var document = _dragDocument;
         var right = _tabDropRight;
+        var index = _tabDropIndex;
         _tabDragging = false;
         _dragDocument = null;
         _tabDropRight = null;
+        _tabDropIndex = null;
         if (_tabDropPreview is not null) _tabDropPreview.IsOpen = false;
         if (Mouse.Captured == DocumentPanesGrid) Mouse.Capture(null);
         if (apply && document is not null && right.HasValue && Documents.Contains(document))
         {
-            SetDocumentSplit(true);
-            MoveToPane(document, right.Value);
+            var sourceRight = RightDocuments.Contains(document);
+            if (sourceRight == right.Value)
+            {
+                if (index is { } order) MoveDocumentOrder(document, right.Value, order);
+            }
+            else
+            {
+                SetDocumentSplit(true);
+                MoveToPaneAt(document, right.Value, index);
+            }
             FocusCurrentDocumentAfterLayout();
         }
+    }
+
+    private int? ResolveDocumentTabDropIndex(Point point, bool right)
+    {
+        var target = right ? RightDocumentTabs : DocumentTabs;
+        if (!target.IsVisible || target.Items.Count == 0) return null;
+        var screen = DocumentPanesGrid.PointToScreen(point);
+        var local = target.PointFromScreen(screen);
+        if (local.Y < 0 || local.Y > target.ActualHeight) return null;
+
+        if (local.X < 0 || local.X > target.ActualWidth) return null;
+        var insertion = 0;
+        int? rowEnd = null;
+        foreach (var item in target.Items.OfType<DocumentViewModel>())
+        {
+            if (target.ItemContainerGenerator.ContainerFromItem(item) is not TabItem tab) continue;
+            var tabPoint = tab.PointFromScreen(screen);
+            var inRow = tabPoint.Y >= 0 && tabPoint.Y <= tab.ActualHeight;
+            if (inRow && tabPoint.X >= 0 && tabPoint.X <= tab.ActualWidth && item == _dragDocument)
+                return target.Items.IndexOf(item);
+            if (item == _dragDocument) continue;
+            if (inRow && tabPoint.X < tab.ActualWidth / 2) return insertion;
+            insertion++;
+            if (inRow) rowEnd = insertion;
+        }
+        return rowEnd;
     }
 }

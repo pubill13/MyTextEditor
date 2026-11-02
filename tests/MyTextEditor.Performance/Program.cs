@@ -57,6 +57,7 @@ internal static class Program
         if (args.Contains("--document-display")) return DocumentDisplayVerification.Run();
         if (args.Contains("--document-menu")) return DocumentMenuVerification.Run();
         if (args.Contains("--merge-clarity")) return MergeClarityVerification.Run();
+        if (args.Contains("--help-layout")) return HelpLayoutVerification.Run();
         if (args.Contains("--result-font")) return SearchResultFontVerification.Run();
         if (args.Contains("--merge-110")) return Merge110Verification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")

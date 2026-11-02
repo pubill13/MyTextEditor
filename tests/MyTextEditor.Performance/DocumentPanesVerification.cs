@@ -23,7 +23,7 @@ internal static class DocumentPanesVerification
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative) });
-        var window = new MainWindow { ShowInTaskbar = false };
+        var window = new MainWindow { ShowInTaskbar = false, Topmost = true };
         Set(window, "_settingsReady", false);
         Field<DispatcherTimer>(window, "_settingsSaveTimer").Stop();
         Call(window, "StopFileSync");
@@ -52,6 +52,7 @@ internal static class DocumentPanesVerification
             Field<MenuItem>(window, "SplitDocumentsMenuItem").IsChecked = false;
             Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs()); Pump();
             Check(window.LeftDocuments.Count == 2 && window.RightDocuments.Count == 0 && second.Text == "오른쪽 수정", "Unsplit lost document content");
+            VerifyTabReorder(window, first, second);
             VerifyDragTargets(window, second);
             second.Editor.MarkSaved(); second.IsModified = false;
             Call(window, "NewDocument", "", null); Pump();
@@ -72,6 +73,27 @@ internal static class DocumentPanesVerification
             foreach (var document in window.Documents) document.Editor.ReleaseResources();
             Set(window, "_allowClose", true); window.Close(); app.Shutdown();
         }
+    }
+
+    private static void VerifyTabReorder(MainWindow window, DocumentViewModel first, DocumentViewModel second)
+    {
+        Set(window, "_dragDocument", second);
+        Set(window, "_tabDropRight", false);
+        Set(window, "_tabDropIndex", 0);
+        Call(window, "FinishDocumentTabDrag", true); Pump();
+        Check(window.LeftDocuments.SequenceEqual(new[] { second, first }), "Same-pane tab reorder did not move the dragged tab to the requested index");
+        Check(typeof(MainWindow).GetProperty("CurrentDocument", Private)!.GetValue(window) == second, "Tab reorder changed the active document");
+
+        Set(window, "_dragDocument", second);
+        Set(window, "_tabDropRight", false);
+        Set(window, "_tabDropIndex", 1);
+        Call(window, "FinishDocumentTabDrag", true); Pump();
+        Check(window.LeftDocuments.SequenceEqual(new[] { first, second }), "Same-pane tab reorder could not restore the original order");
+        DragTabBefore(window, second, first);
+        Check(window.LeftDocuments.SequenceEqual(new[] { second, first }), "Physical same-pane tab drag did not reorder the tabs");
+        DragTabBefore(window, first, second);
+        Check(window.LeftDocuments.SequenceEqual(new[] { first, second }), "Physical same-pane tab drag could not restore the tab order");
+        Console.WriteLine("PASS same-pane document tab reorder preserves order and active document");
     }
 
     private static void VerifyDragTargets(MainWindow window, DocumentViewModel document)
@@ -142,6 +164,27 @@ internal static class DocumentPanesVerification
             for (var step = 1; step <= 12; step++)
             {
                 SetCursorPos((int)(start.X + (end.X - start.X) * step / 12), (int)(start.Y + (end.Y - start.Y) * step / 12));
+                Thread.Sleep(20); Pump();
+            }
+        }
+        finally { mouse_event(4, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(30); Pump(); }
+    }
+
+    private static void DragTabBefore(MainWindow window, DocumentViewModel dragged, DocumentViewModel before)
+    {
+        var tabs = Field<TabControl>(window, "DocumentTabs");
+        var source = (System.Windows.Controls.TabItem)tabs.ItemContainerGenerator.ContainerFromItem(dragged);
+        var target = (System.Windows.Controls.TabItem)tabs.ItemContainerGenerator.ContainerFromItem(before);
+        var start = source.PointToScreen(new Point(18, source.ActualHeight / 2));
+        var end = target.PointToScreen(new Point(3, target.ActualHeight / 2));
+        SetCursorPos((int)start.X, (int)start.Y); Pump();
+        mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(30); Pump();
+        try
+        {
+            for (var step = 1; step <= 10; step++)
+            {
+                SetCursorPos((int)(start.X + (end.X - start.X) * step / 10), (int)(start.Y + (end.Y - start.Y) * step / 10));
                 Thread.Sleep(20); Pump();
             }
         }

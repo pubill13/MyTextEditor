@@ -63,6 +63,13 @@ internal static class SearchResultFontVerification
                     var number = blocks.Single(b => b.Name == "ResultLineNumber");
                     Check(number.ActualWidth + 0.1 >= number.DesiredSize.Width, "Line number clipped");
                     Check(rows[0].ActualHeight >= number.DesiredSize.Height, "Result row height clipped");
+                    var rowGrid = (Grid)number.Parent;
+                    var compactHeight = rows[0].ActualHeight;
+                    rowGrid.Margin = new Thickness(4, 2, 4, 2);
+                    list.UpdateLayout();
+                    Check(rows[0].ActualHeight >= compactHeight + 3.9, "Compact row must save four vertical DIPs without clipping glyphs");
+                    rowGrid.Margin = new Thickness(4, 0, 4, 0);
+                    list.UpdateLayout();
                     list.SelectedItems.Add(session.Rows[0]); list.SelectedItems.Add(session.Rows[1]);
                     Check(list.SelectedItems.Count == 2, "Multiple selection changed");
                     list.SelectedItems.Clear();

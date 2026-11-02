@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
@@ -100,14 +100,28 @@ public partial class MainWindow
         FocusCurrentDocumentAfterLayout();
     }
 
-    private void MoveToPane(DocumentViewModel document, bool right)
+    private void MoveToPane(DocumentViewModel document, bool right) => MoveToPaneAt(document, right, null);
+
+    private void MoveToPaneAt(DocumentViewModel document, bool right, int? targetIndex)
     {
         var source = RightDocuments.Contains(document) ? RightDocuments : LeftDocuments;
         source.Remove(document);
         DocumentTabs.UpdateLayout(); RightDocumentTabs.UpdateLayout();
-        (right ? RightDocuments : LeftDocuments).Add(document);
+        var target = right ? RightDocuments : LeftDocuments;
+        target.Insert(Math.Clamp(targetIndex ?? target.Count, 0, target.Count), document);
         SelectDocument(document);
         NormalizeDocumentPanes();
+    }
+
+    private void MoveDocumentOrder(DocumentViewModel document, bool right, int targetIndex)
+    {
+        var documents = right ? RightDocuments : LeftDocuments;
+        var sourceIndex = documents.IndexOf(document);
+        if (sourceIndex < 0) return;
+        var finalIndex = Math.Clamp(targetIndex, 0, documents.Count - 1);
+        if (sourceIndex == finalIndex) return;
+        documents.Move(sourceIndex, finalIndex);
+        SelectDocument(document);
     }
 
     private void NormalizeDocumentPanes()
