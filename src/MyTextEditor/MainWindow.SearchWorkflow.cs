@@ -39,18 +39,25 @@ public partial class MainWindow
 
     private async Task CloseDocumentSetAsync(IReadOnlyList<DocumentViewModel> targets)
     {
-        if (_closingAllDocuments || _closingDocuments.Count > 0) return;
+        if (_windowClosed || _closingInProgress || _documentTransferRunning || _closingAllDocuments ||
+            _pendingFileOpens > 0 || _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || _encodingReloads.Count > 0) return;
         _closingAllDocuments = true;
         try
         {
-            foreach (var document in targets.Where(document => document.IsModified))
+            var approvedVersions = CaptureCloseVersions(targets.Where(Documents.Contains));
+            foreach (var document in targets.Where(document => Documents.Contains(document) && document.IsModified))
             {
                 SelectDocument(document);
                 var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?",
                     "탭 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (answer == MessageBoxResult.Cancel || answer == MessageBoxResult.Yes &&
-                    !await SaveDocumentAsync(document, false)) return;
+                    !await SaveDocumentCoreAsync(document, false, allowClosing: true)) return;
+                approvedVersions[document] = CloseVersion(document);
             }
+            if (!CloseVersionsMatch(approvedVersions)) return;
+            foreach (var document in targets.Where(Documents.Contains))
+                if (!await DiscardRecoveryAsync(document)) return;
+            if (!CloseVersionsMatch(approvedVersions)) return;
             foreach (var document in targets.Where(Documents.Contains))
                 RemoveDocument(document);
         }
@@ -121,7 +128,7 @@ public partial class MainWindow
 
     private async void SearchOpenDocuments_Click(object sender, RoutedEventArgs e)
     {
-        if (Documents.Count == 0 || _folderSearchCancellation is not null) return;
+        if (_windowClosed || _closingInProgress || Documents.Count == 0 || _folderSearchCancellation is not null) return;
         using var cancellation = new CancellationTokenSource();
         _folderSearchCancellation = cancellation;
         CancelFolderSearchButton.Visibility = Visibility.Visible;
@@ -136,7 +143,7 @@ public partial class MainWindow
             for (var index = 0; index < documents.Length; index++)
             {
                 cancellation.Token.ThrowIfCancellationRequested();
-                if (_closingInProgress) return;
+                if (_windowClosed || _closingInProgress) return;
                 var document = documents[index];
                 if (!Documents.Contains(document)) continue;
                 StatusMessage.Text = $"열린 파일 검색 중 · {index + 1:N0}/{documents.Length:N0} · {document.DisplayName}";
@@ -152,9 +159,10 @@ public partial class MainWindow
                 await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
             }
             cancellation.Token.ThrowIfCancellationRequested();
-            if (_closingInProgress) return;
+            if (_windowClosed || _closingInProgress) return;
             var count = groups.Sum(group => group.Item2.Count);
             await AddMultiSourceSessionAsync($"열린 파일 · {count:N0}", $"열린 문서 {groups.Count:N0}개에서 {count:N0}개 일치 · 결과를 누르면 해당 문서로 이동", groups, cancellation.Token);
+            if (_windowClosed || _closingInProgress) return;
             RecordRecentSearch(summary, options);
             StatusMessage.Text = $"열린 파일에서 {count:N0}개를 찾았습니다.";
         }
@@ -210,6 +218,7 @@ public partial class MainWindow
 
     private async void SearchFolder_Click(object sender, RoutedEventArgs e)
     {
+        if (_windowClosed || _closingInProgress) return;
         NormalizeFolderPattern();
         if (_folderSearchCancellation is not null) return;
         var folder = SearchFolderPathBox.Text;
@@ -228,15 +237,21 @@ public partial class MainWindow
             UpdateConditionSummary();
             StatusMessage.Text = $"{folder} 폴더 검색 중…";
             var progress = new Progress<FolderSearchProgress>(update =>
-                StatusMessage.Text = $"폴더 검색 중 · {update.FilesScanned:N0}개 파일 · {update.MatchingLines:N0}개 일치");
+            {
+                if (!_windowClosed && !_closingInProgress && !cancellation.IsCancellationRequested)
+                    StatusMessage.Text = $"폴더 검색 중 · {update.FilesScanned:N0}개 파일 · {update.MatchingLines:N0}개 일치";
+            });
             var result = await _folderSearch.SearchAsync(folder, condition, options,
                 new FolderSearchOptions(IncludeSubfoldersCheck.IsChecked == true, FolderPatternBox.Text), progress, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (_windowClosed || _closingInProgress) return;
             var groups = result.Files.Select(file =>
                 (Source: new SearchResultSource { DisplayName = Path.GetFileName(file.FilePath), FilePath = file.FilePath,
                     FileLength = file.Length, LastWriteTimeUtc = file.LastWriteUtc }, Matches: file.Matches)).ToArray();
             var count = groups.Sum(group => group.Matches.Count);
             await AddMultiSourceSessionAsync($"폴더 · {count:N0}",
                 $"{folder} · 검사 {result.FilesScanned:N0}개 · 일치 {count:N0}개 · 실패 {result.Failures.Count:N0}개", groups, cancellation.Token);
+            if (_windowClosed || _closingInProgress) return;
             if (result.Failures.Count > 0)
                 StatusMessage.Text = $"검색 완료 · {count:N0}개 일치 · 읽기 실패/변경 {result.Failures.Count:N0}개: {string.Join("; ", result.Failures.Take(3).Select(f => Path.GetFileName(f.FilePath) + " " + f.Message))}";
             else StatusMessage.Text = $"검색 완료 · {result.FilesScanned:N0}개 파일 · {count:N0}개 일치";
@@ -282,6 +297,7 @@ public partial class MainWindow
 
     private async Task NavigateExternalResultAsync(ListBox list, SearchResultRow row)
     {
+        if (_windowClosed || _closingInProgress) return;
         if (row.Source is not { } source) return;
         if (source.Document is { } document)
         {
@@ -323,6 +339,7 @@ public partial class MainWindow
                 return;
             }
             await OpenFileAsync(filePath);
+            if (_windowClosed || _closingInProgress) return;
             opened = Documents.FirstOrDefault(document => string.Equals(document.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
             if (opened is null) return;
             SelectDocument(opened);
@@ -337,7 +354,10 @@ public partial class MainWindow
 
     private async Task AddMultiSourceSessionAsync(string title, string description, IEnumerable<(SearchResultSource Source, IReadOnlyList<SearchResult> Matches)> groups, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_windowClosed || _closingInProgress) return;
         var session = new SearchResultSession { Title = title, ToolTip = description, ConditionSummary = title, Description = description };
+        var retainedSources = new List<SearchResultSource>();
         foreach (var (source, matches) in groups)
         {
             foreach (var match in matches)
@@ -347,11 +367,15 @@ public partial class MainWindow
                 {
                     await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (_closingInProgress) return;
+                    if (_windowClosed || _closingInProgress) return;
                 }
             }
-            if (source.Snapshot is { } snapshot) snapshot.ReferenceCount++;
+            retainedSources.Add(source);
         }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_windowClosed || _closingInProgress) return;
+        foreach (var source in retainedSources)
+            if (source.Snapshot is { } snapshot) snapshot.ReferenceCount++;
         SearchSessions.Add(session);
         SearchResultTabs.SelectedItem = session;
         ShowSearchResults();

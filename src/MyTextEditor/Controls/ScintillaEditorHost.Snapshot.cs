@@ -11,6 +11,8 @@ public sealed partial class ScintillaEditorHost
     public async Task<string> CaptureTextAsync(CancellationToken token)
     {
         Dispatcher.VerifyAccess();
+        token.ThrowIfCancellationRequested();
+        if (_resourcesReleased) throw new OperationCanceledException("편집기가 닫혔습니다.");
         var revision = ContentRevision;
         var bytes = new byte[Utf8ByteLength];
         for (var offset = 0; offset < bytes.Length; offset += 65536)

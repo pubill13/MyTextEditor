@@ -10,6 +10,12 @@ namespace MyTextEditor.Models;
 public sealed class DocumentViewModel : INotifyPropertyChanged
 {
     private bool _isModified;
+    private bool _recoveryModified;
+    public bool RecoveryModified
+    {
+        get => _recoveryModified;
+        set { if (_recoveryModified == value) return; _recoveryModified = value; OnPropertyChanged(nameof(IsModified)); OnPropertyChanged(nameof(TabTitle)); }
+    }
     private bool _encodingModified;
     private DocumentEncodingKind _savedEncoding = DocumentEncodingKind.Utf8;
     public bool EncodingModified
@@ -45,7 +51,7 @@ public sealed class DocumentViewModel : INotifyPropertyChanged
 
     public bool IsModified
     {
-        get => _isModified || _encodingModified;
+        get => _isModified || _encodingModified || _recoveryModified;
         set { if (_isModified == value) return; _isModified = value; OnPropertyChanged(); OnPropertyChanged(nameof(TabTitle)); }
     }
 

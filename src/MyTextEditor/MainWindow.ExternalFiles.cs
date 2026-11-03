@@ -9,7 +9,7 @@ public partial class MainWindow
     internal bool TryAcceptExternalFiles(string[] paths)
     {
         Dispatcher.VerifyAccess();
-        if (_checkingShutdown || _closingInProgress || _allowClose || _closingAllDocuments ||
+        if (_windowClosed || _documentTransferRunning || _checkingShutdown || _closingInProgress || _allowClose || _closingAllDocuments ||
             _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || !IsEnabled) return false;
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Show();

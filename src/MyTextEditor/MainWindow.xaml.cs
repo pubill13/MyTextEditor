@@ -77,7 +77,9 @@ public partial class MainWindow : Window
     private DocumentViewModel? CurrentDocument => ActiveDocumentTabs.SelectedItem as DocumentViewModel;
     private ScintillaEditorHost? CurrentEditor => CurrentDocument?.Editor;
 
-    public MainWindow()
+    public MainWindow() : this(createDocument: true) { }
+
+    internal MainWindow(bool createDocument)
     {
         InitializeComponent();
         DataContext = this;
@@ -110,7 +112,7 @@ public partial class MainWindow : Window
         InitializePanelInteraction();
         LocationChanged += (_, _) => MarkSettingsDirty();
         StateChanged += (_, _) => MarkSettingsDirty();
-        NewDocument();
+        if (createDocument) NewDocument();
         if (loadResult.Error is not null)
             Dispatcher.BeginInvoke(() => StatusMessage.Text = $"설정을 불러오지 못해 기본값을 사용했습니다: {loadResult.Error.Message}");
         else if (loadResult.NeedsSave)
@@ -127,6 +129,7 @@ public partial class MainWindow : Window
 
     private void NewDocument(string text = "", string? title = null)
     {
+        if (_windowClosed || _closingInProgress || _closingAllDocuments) return;
         var editor = new ScintillaEditorHost();
         var document = new DocumentViewModel { Editor = editor };
         if (!string.IsNullOrWhiteSpace(title)) document.FilePath = title;
@@ -168,12 +171,13 @@ public partial class MainWindow : Window
 
     private async Task OpenFilesAsync(IEnumerable<string> paths)
     {
+        if (_windowClosed || _closingInProgress || _closingAllDocuments || _documentTransferRunning) return;
         var files = paths.ToArray();
         _pendingFileOpens++;
         try
         {
             await _fileOpenGate.WaitAsync();
-            try { if (!_closingInProgress) await OpenFilesBatchAsync(files); }
+            try { if (!_windowClosed && !_closingInProgress && !_closingAllDocuments) await OpenFilesBatchAsync(files); }
             finally { _fileOpenGate.Release(); }
         }
         finally { _pendingFileOpens--; }
@@ -276,9 +280,11 @@ public partial class MainWindow : Window
 
     private Task<bool> SaveDocumentAsync(DocumentViewModel? document, bool saveAs) => SaveDocumentCoreAsync(document, saveAs);
 
-    private async Task<bool> SaveDocumentCoreAsync(DocumentViewModel? document, bool saveAs, bool allowEncodingReload = false)
+    private async Task<bool> SaveDocumentCoreAsync(DocumentViewModel? document, bool saveAs, bool allowEncodingReload = false, bool allowClosing = false)
     {
         if (document is null) return true;
+        if (_windowClosed || _documentTransferRunning || !Documents.Contains(document)) return false;
+        if (!allowClosing && (_closingInProgress || _closingAllDocuments || _closingDocuments.Contains(document))) return false;
         if (!allowEncodingReload && _encodingReloads.Contains(document))
         {
             StatusMessage.Text = $"{document.DisplayName} 파일을 인코딩으로 다시 여는 중입니다.";
@@ -343,16 +349,19 @@ public partial class MainWindow : Window
             else
             {
                 document.Editor.MarkSaved();
+                document.RecoveryModified = false;
                 document.IsModified = false;
             }
             document.NotifyIdentityChanged();
             await RefreshFileSyncBaselineAsync(document);
+            hasNewerChanges = document.ContentRevision != savedRevision || document.IsModified;
             AddRecentFile(path!);
             UpdateStatus();
             StatusMessage.Text = hasNewerChanges
                 ? $"{document.DisplayName} 파일을 저장했습니다. 저장 중 입력한 변경 내용은 아직 저장되지 않았습니다."
                 : $"{document.DisplayName} 파일을 저장했습니다.";
-            return !hasNewerChanges;
+            if (!hasNewerChanges) await DiscardRecoveryAsync(document);
+            return !hasNewerChanges && document.ContentRevision == savedRevision && !document.IsModified;
         }
         finally
         {
@@ -385,6 +394,7 @@ public partial class MainWindow : Window
 
     private async Task<bool> CloseDocumentAsync(DocumentViewModel document)
     {
+        if (_windowClosed || _closingInProgress || _documentTransferRunning || _savingDocuments.Contains(document) || _encodingReloads.Contains(document)) return false;
         if (_closingAllDocuments || !_closingDocuments.Add(document)) return false;
         try
         {
@@ -392,9 +402,10 @@ public partial class MainWindow : Window
             {
                 var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "문서 닫기", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (answer == MessageBoxResult.Cancel) return false;
-                if (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false)) return false;
+                if (answer == MessageBoxResult.Yes && !await SaveDocumentCoreAsync(document, false, allowClosing: true)) return false;
             }
             if (!Documents.Contains(document)) return false;
+            if (!await DiscardRecoveryAsync(document)) return false;
             RemoveDocument(document);
             return true;
         }
@@ -406,6 +417,8 @@ public partial class MainWindow : Window
 
     private void RemoveDocument(DocumentViewModel document)
     {
+        CancelRecoveryCapture(document);
+        DisconnectEditor(document.Editor);
         var wasCurrent = document == CurrentDocument;
         Documents.Remove(document);
         _fileSyncStates.Remove(document);
@@ -441,7 +454,7 @@ public partial class MainWindow : Window
         try
         {
             if (_closingInProgress) { e.Cancel = true; return; }
-            if (_closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || _pendingFileOpens > 0)
+            if (_documentTransferRunning || _closingAllDocuments || _closingDocuments.Count > 0 || _savingDocuments.Count > 0 || _encodingReloads.Count > 0 || _pendingFileOpens > 0)
             {
                 e.Cancel = true;
                 StatusMessage.Text = "진행 중인 파일 열기·저장·닫기가 끝난 뒤 다시 시도하세요.";
@@ -452,15 +465,11 @@ public partial class MainWindow : Window
                 e.Cancel = true;
                 return;
             }
-            if (_diffWorkspaceWindow is null && !Documents.Any(document => document.IsModified))
-            {
-                _closingInProgress = true;
-                CompleteShutdown();
-                return;
-            }
             e.Cancel = true;
             if (_closingInProgress) return;
             _closingInProgress = true;
+            // Closing cannot Hide or Close the same window until this event returns.
+            await Dispatcher.Yield(DispatcherPriority.Normal);
             if (!await ConfirmCloseDiffWindowsAsync())
             {
                 _macroWindow?.CancelPreparedClose();
@@ -475,6 +484,23 @@ public partial class MainWindow : Window
                 return;
             }
 
+            var approvedVersions = CaptureCloseVersions(Documents);
+            foreach (var document in Documents.ToArray())
+            {
+                if (await DiscardRecoveryAsync(document)) continue;
+                ResetDiffCloseApprovals();
+                _macroWindow?.CancelPreparedClose();
+                _closingInProgress = false;
+                return;
+            }
+            if (Documents.Count != approvedVersions.Count || !CloseVersionsMatch(approvedVersions))
+            {
+                ResetDiffCloseApprovals();
+                _macroWindow?.CancelPreparedClose();
+                _closingInProgress = false;
+                StatusMessage.Text = "종료 확인 후 문서가 변경되어 종료를 중단했습니다.";
+                return;
+            }
             CompleteShutdown();
             _allowClose = true;
             Close();
@@ -484,6 +510,8 @@ public partial class MainWindow : Window
 
     private void CompleteShutdown()
     {
+        ++_documentFocusGeneration;
+        ++_resultFocusGeneration;
         _folderSearchCancellation?.Cancel();
         CloseToolsWindowForShutdown();
         StopFileSync();
@@ -502,7 +530,11 @@ public partial class MainWindow : Window
             Hide();
         }
         foreach (var document in Documents)
+        {
+            CancelRecoveryCapture(document);
+            DisconnectEditor(document.Editor);
             document.Editor.ReleaseResources();
+        }
         _resultsWindow?.Close();
         SearchSessions.Clear();
         _searchSnapshots.Clear();
@@ -510,15 +542,26 @@ public partial class MainWindow : Window
 
     private async Task<bool> ConfirmCloseAllAsync()
     {
+        var approvedVersions = CaptureCloseVersions(Documents);
         foreach (var document in Documents.Where(item => item.IsModified).ToArray())
         {
             SelectDocument(document);
             var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "프로그램 종료", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) return false;
-            if (answer == MessageBoxResult.Yes && !await SaveDocumentAsync(document, false)) return false;
+            if (answer == MessageBoxResult.Yes && !await SaveDocumentCoreAsync(document, false, allowClosing: true)) return false;
+            approvedVersions[document] = CloseVersion(document);
         }
-        return true;
+        return Documents.Count == approvedVersions.Count && CloseVersionsMatch(approvedVersions);
     }
+
+    private static (long Revision, int CodePage, bool Bom) CloseVersion(DocumentViewModel document) =>
+        (document.ContentRevision, document.Encoding.CodePage, document.HasByteOrderMark);
+
+    private static Dictionary<DocumentViewModel, (long Revision, int CodePage, bool Bom)> CaptureCloseVersions(IEnumerable<DocumentViewModel> documents) =>
+        documents.ToDictionary(document => document, CloseVersion);
+
+    private bool CloseVersionsMatch(Dictionary<DocumentViewModel, (long Revision, int CodePage, bool Bom)> versions) =>
+        versions.All(entry => Documents.Contains(entry.Key) && CloseVersion(entry.Key) == entry.Value);
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
@@ -576,7 +619,15 @@ public partial class MainWindow : Window
         if (e.Shortcut is EditorShortcut.PreviousDifference or EditorShortcut.NextDifference or
             EditorShortcut.MergeRightToLeft or EditorShortcut.MergeLeftToRight) return;
         e.Handled = true;
-        Dispatcher.BeginInvoke(() => ExecuteShortcut(e.Shortcut));
+        var requestedDocument = sender is ScintillaEditorHost editor ? FindDocument(editor) : null;
+        var generation = _documentFocusGeneration;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_windowClosed || _closingInProgress || _documentTransferRunning ||
+                generation != _documentFocusGeneration || requestedDocument is null ||
+                !Documents.Contains(requestedDocument) || requestedDocument != CurrentDocument) return;
+            ExecuteShortcut(e.Shortcut);
+        });
     }
 
     private void ExecuteShortcut(EditorShortcut shortcut)
@@ -605,12 +656,16 @@ public partial class MainWindow : Window
 
     private async Task CloseAllDocumentsAsync()
     {
-        if (_closingAllDocuments || _closingDocuments.Count > 0) return;
+        if (_windowClosed || _closingInProgress || _documentTransferRunning || _pendingFileOpens > 0 || _savingDocuments.Count > 0 || _encodingReloads.Count > 0 || _closingAllDocuments || _closingDocuments.Count > 0) return;
         _closingAllDocuments = true;
         try
         {
             if (!await ConfirmCloseAllAsync()) return;
-            foreach (var document in Documents.ToArray()) RemoveDocument(document);
+            var approvedVersions = CaptureCloseVersions(Documents);
+            foreach (var document in Documents.ToArray())
+                if (!await DiscardRecoveryAsync(document)) return;
+            if (Documents.Count != approvedVersions.Count || !CloseVersionsMatch(approvedVersions)) return;
+            foreach (var document in approvedVersions.Keys) RemoveDocument(document);
         }
         finally
         {
@@ -697,16 +752,22 @@ public partial class MainWindow : Window
     {
         var editor = document.Editor;
         editor.SetWordWrap(_settings.DefaultWordWrap);
+        ConnectEditor(document);
+        editor.HighlightColor = _settings.HighlightColor;
+        ApplyEditorAppearance(editor);
+    }
+
+    private void ConnectEditor(DocumentViewModel document)
+    {
+        var editor = document.Editor;
         editor.EditorFocused += Editor_Focused;
         editor.CaretChanged += Editor_CaretChanged;
         editor.RevisionChanged += Editor_RevisionChanged;
         editor.DirtyChanged += Editor_DirtyChanged;
         editor.ShortcutRequested += Editor_ShortcutRequested;
-        editor.HighlightColor = _settings.HighlightColor;
         editor.HighlightColorChanged += SaveHighlightColor;
         editor.HighlightFailed += Editor_HighlightFailed;
         editor.FilesDropped += Editor_FilesDropped;
-        ApplyEditorAppearance(editor);
     }
 
     private void Editor_Focused(object? sender, EventArgs e)
@@ -1511,27 +1572,33 @@ public partial class MainWindow : Window
         if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths) await OpenFilesAsync(paths);
     }
 
+    private static FontChoice[]? _installedFonts;
     private void LoadInstalledFonts()
     {
-        (string Display, string FamilyName, string[] Aliases)[] preferredAliases =
+        if (_installedFonts is null)
         {
-            ("맑은 고딕 (Malgun Gothic)", "Malgun Gothic", ["Malgun Gothic", "맑은 고딕"]), ("D2Coding", "D2Coding", ["D2Coding"]),
-            ("나눔고딕 (NanumGothic)", "NanumGothic", ["NanumGothic", "나눔고딕"]), ("Noto Sans KR", "Noto Sans KR", ["Noto Sans KR"]),
-            ("Pretendard", "Pretendard", ["Pretendard"]), ("Cascadia Mono", "Cascadia Mono", ["Cascadia Mono"]), ("Consolas", "Consolas", ["Consolas"]),
-            ("JetBrains Mono", "JetBrains Mono", ["JetBrains Mono"]), ("굴림 (Gulim)", "Gulim", ["Gulim", "굴림"]),
-            ("돋움 (Dotum)", "Dotum", ["Dotum", "돋움"]), ("바탕 (Batang)", "Batang", ["Batang", "바탕"]),
-            ("궁서 (Gungsuh)", "Gungsuh", ["Gungsuh", "궁서"]), ("Segoe UI", "Segoe UI", ["Segoe UI"])
-        };
-        var installed = Fonts.SystemFontFamilies.Select(family => family.Source).Distinct(StringComparer.CurrentCultureIgnoreCase).ToArray();
-        var preferred = preferredAliases
-            .Where(item => item.Aliases.Any(alias => installed.Contains(alias, StringComparer.CurrentCultureIgnoreCase)))
-            .Select(item => new FontChoice(item.Display, item.FamilyName))
-            .ToArray();
-        var preferredInstalledNames = preferredAliases.SelectMany(item => item.Aliases).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
-        var orderedFonts = preferred
-            .Concat(installed.Where(name => !preferredInstalledNames.Contains(name))
-                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).Select(name => new FontChoice(name, name)))
-            .ToArray();
+            (string Display, string FamilyName, string[] Aliases)[] preferredAliases =
+            {
+                ("맑은 고딕 (Malgun Gothic)", "Malgun Gothic", ["Malgun Gothic", "맑은 고딕"]), ("D2Coding", "D2Coding", ["D2Coding"]),
+                ("나눔고딕 (NanumGothic)", "NanumGothic", ["NanumGothic", "나눔고딕"]), ("Noto Sans KR", "Noto Sans KR", ["Noto Sans KR"]),
+                ("Pretendard", "Pretendard", ["Pretendard"]), ("Cascadia Mono", "Cascadia Mono", ["Cascadia Mono"]), ("Consolas", "Consolas", ["Consolas"]),
+                ("JetBrains Mono", "JetBrains Mono", ["JetBrains Mono"]), ("굴림 (Gulim)", "Gulim", ["Gulim", "굴림"]),
+                ("돋움 (Dotum)", "Dotum", ["Dotum", "돋움"]), ("바탕 (Batang)", "Batang", ["Batang", "바탕"]),
+                ("궁서 (Gungsuh)", "Gungsuh", ["Gungsuh", "궁서"]), ("Segoe UI", "Segoe UI", ["Segoe UI"])
+            };
+            var installed = Fonts.SystemFontFamilies.Select(family => family.Source).Distinct(StringComparer.CurrentCultureIgnoreCase).ToArray();
+            var preferred = preferredAliases
+                .Where(item => item.Aliases.Any(alias => installed.Contains(alias, StringComparer.CurrentCultureIgnoreCase)))
+                .Select(item => new FontChoice(item.Display, item.FamilyName))
+                .ToArray();
+            var preferredInstalledNames = preferredAliases.SelectMany(item => item.Aliases).ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+            var discoveredFonts = preferred
+                .Concat(installed.Where(name => !preferredInstalledNames.Contains(name))
+                    .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).Select(name => new FontChoice(name, name)))
+                .ToArray();
+            _installedFonts = discoveredFonts;
+        }
+        var orderedFonts = _installedFonts;
         FontFamilyCombo.ItemsSource = orderedFonts;
         OverflowFontFamilyCombo.ItemsSource = orderedFonts;
         var selected = orderedFonts.FirstOrDefault(item => string.Equals(item.FamilyName, _settings.EditorFontFamily, StringComparison.CurrentCultureIgnoreCase)
@@ -1636,13 +1703,13 @@ public partial class MainWindow : Window
     private void MarkSettingsDirty()
     {
         if (!_settingsReady || _closingInProgress) return;
-        CaptureWorkState();
         _settingsSaveTimer.Stop(); _settingsSaveTimer.Start();
     }
 
     private bool SaveSettings(bool showError = true)
     {
-        if (_settingsReady) CaptureWorkState();
+        if (!_settingsReady) return true;
+        CaptureWorkState();
         _settings.WindowWidth = RestoreBounds.Width;
         _settings.WindowHeight = RestoreBounds.Height;
         _settings.WindowLeft = RestoreBounds.Left;

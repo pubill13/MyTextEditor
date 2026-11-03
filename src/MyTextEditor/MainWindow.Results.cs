@@ -57,7 +57,7 @@ public partial class MainWindow
         var generation = ++_resultFocusGeneration;
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
-            if (generation != _resultFocusGeneration || _closingInProgress || _allowClose) return;
+            if (generation != _resultFocusGeneration || _windowClosed || _closingInProgress || _allowClose || _documentTransferRunning) return;
             if (SearchSessions.Count == 0)
             {
                 if (TransformPreviewView.Visibility == Visibility.Visible) PreviewGrid.Focus();
@@ -66,8 +66,15 @@ public partial class MainWindow
                     Activate();
                     // Result tabs can be closed while their source selection is being updated;
                     // use the selected document first and the visible document as a safe fallback.
-                    (CurrentEditor ?? Documents.FirstOrDefault()?.Editor)?.FocusEditor();
-                    Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => (CurrentEditor ?? Documents.FirstOrDefault()?.Editor)?.FocusEditor()));
+                    var document = CurrentDocument ?? Documents.FirstOrDefault();
+                    document?.Editor.FocusEditor();
+                    Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+                    {
+                        if (generation != _resultFocusGeneration || _windowClosed || _closingInProgress || _allowClose ||
+                            _documentTransferRunning || document is null || !Documents.Contains(document) ||
+                            !ReferenceEquals(CurrentDocument ?? Documents.FirstOrDefault(), document)) return;
+                        document.Editor.FocusEditor();
+                    }));
                 }
             }
             else if (_activeResultsList is { } list && list.DataContext == ActiveSearchSession && list.Items.Count > 0)

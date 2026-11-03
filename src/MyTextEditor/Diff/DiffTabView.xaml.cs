@@ -761,20 +761,26 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private async Task<bool> ApplyToSourceAsync(bool left, bool force)
     {
+        if (_resourcesReleased) return false;
         var endpoint = left ? _left : _right;
         var editor = left ? _leftEditor : _rightEditor;
         if (endpoint.SourceDocumentId is not { } id) return false;
+        var revision = editor.ContentRevision;
         var applied = await _callbacks.ApplyToSourceAsync(id, editor.GetText(), endpoint.SourceRevision, force);
-        if (applied)
+        return Dispatcher.Invoke(() =>
         {
-            endpoint.SourceRevision = _callbacks.GetSourceRevision(id);
-            if (left) _leftDirty = false; else _rightDirty = false;
-            editor.MarkSaved();
-            RefreshEndpointHeaders(); CheckStaleSources();
-            StatusText.Text = "원본 탭에 반영했습니다. 디스크에는 아직 저장하지 않았습니다.";
-        }
-        else { CheckStaleSources(); StatusText.Text = "원본이 변경되어 반영하지 않았습니다."; }
-        return applied;
+            if (_resourcesReleased || !ReferenceEquals(endpoint, left ? _left : _right) || editor.ContentRevision != revision) return false;
+            if (applied)
+            {
+                endpoint.SourceRevision = _callbacks.GetSourceRevision(id);
+                if (left) _leftDirty = false; else _rightDirty = false;
+                editor.MarkSaved();
+                RefreshEndpointHeaders(); CheckStaleSources();
+                StatusText.Text = "원본 탭에 반영했습니다. 디스크에는 아직 저장하지 않았습니다.";
+            }
+            else { CheckStaleSources(); StatusText.Text = "원본이 변경되어 반영하지 않았습니다."; }
+            return applied;
+        });
     }
 
     private async void ReloadStale_Click(object sender, RoutedEventArgs e)
@@ -825,6 +831,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private async Task<bool> SaveEndpointAsync(bool left)
     {
+        if (_resourcesReleased) return false;
         var endpoint = left ? _left : _right;
         var editor = left ? _leftEditor : _rightEditor;
         if (endpoint.SourceDocumentId is { } id)
@@ -850,20 +857,31 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             FilePath = destination, Text = editor.GetText(), Encoding = endpoint.Encoding,
             HasByteOrderMark = endpoint.HasByteOrderMark, NewLine = endpoint.NewLine, IsModified = true
         };
+        var revision = editor.ContentRevision;
         try
         {
             await _fileService.SaveAsync(state, destination);
-            var info = new FileInfo(destination);
-            endpoint.FilePath = info.FullName; endpoint.DisplayName = info.Name;
-            endpoint.SourceFileLength = info.Length; endpoint.SourceFileLastWriteUtc = info.LastWriteTimeUtc;
-            endpoint.Text = editor.GetText(); editor.MarkSaved();
-            if (left) _leftDirty = false; else _rightDirty = false;
-            RefreshEndpointHeaders(); StatusText.Text = $"저장됨: {destination}";
-            return true;
+            return Dispatcher.Invoke(() =>
+            {
+                if (_resourcesReleased || !ReferenceEquals(endpoint, left ? _left : _right)) return false;
+                var info = new FileInfo(destination);
+                endpoint.FilePath = info.FullName; endpoint.DisplayName = info.Name;
+                endpoint.SourceFileLength = info.Length; endpoint.SourceFileLastWriteUtc = info.LastWriteTimeUtc;
+                endpoint.Text = state.Text;
+                if (editor.ContentRevision != revision)
+                {
+                    StatusText.Text = "저장 중 추가 편집한 내용은 아직 저장되지 않았습니다.";
+                    return false;
+                }
+                editor.MarkSaved();
+                if (left) _leftDirty = false; else _rightDirty = false;
+                RefreshEndpointHeaders(); StatusText.Text = $"저장됨: {destination}";
+                return true;
+            });
         }
         catch (Exception exception)
         {
-            WpfMessageBox.Show(Window.GetWindow(this), exception.Message, "저장 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            Dispatcher.Invoke(() => WpfMessageBox.Show(Window.GetWindow(this), exception.Message, "저장 실패", MessageBoxButton.OK, MessageBoxImage.Error));
             return false;
         }
     }
@@ -984,6 +1002,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             if (choice == MessageBoxResult.Yes && !await SaveEndpointAsync(left)) return false;
         }
 
+        if (_resourcesReleased) return false;
         if (left) _left = endpoint; else _right = endpoint;
         if (_initialized)
         {

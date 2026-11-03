@@ -228,12 +228,16 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         Child = null;
         _surface.Dispose();
         CaretChanged = null;
+        EditorFocused = null;
         RevisionChanged = null;
         DirtyChanged = null;
         ViewportChanged = null;
         VerticalScrolled = null;
         ShortcutRequested = null;
         FilesDropped = null;
+        // WindowsFormsHost also owns an InputManager subscription and native adapter.
+        // Disposing only Child leaves that adapter rooted after the document closes.
+        Dispose();
     }
 
     public void ReloadUtf8(ReadOnlyMemory<byte> utf8)
@@ -479,8 +483,12 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         Background = new MediaBrush(MediaColor.FromRgb(editorBack.R, editorBack.G, editorBack.B));
     }
 
+    private (string FontFamily, float FontSize, ThemePalette Palette, float DpiScale)? _appliedAppearance;
+
     public void ApplyAppearance(string fontFamily, float fontSize, ThemePalette palette, float dpiScale = 1f)
     {
+        var appearance = (fontFamily, fontSize, palette, dpiScale);
+        if (_appliedAppearance == appearance) return;
         ApplyFontAppearance(fontFamily, fontSize, palette.IsDark, dpiScale);
         _editor.Styles[ScintillaNET.Style.Default].ForeColor = palette.EditorForeground;
         _editor.Styles[ScintillaNET.Style.Default].BackColor = palette.EditorBackground;
@@ -526,6 +534,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         }
         Background = new MediaBrush(MediaColor.FromRgb(palette.EditorBackground.R, palette.EditorBackground.G, palette.EditorBackground.B));
         UpdateScrollBars();
+        _appliedAppearance = appearance;
     }
 
     private void ConfigureDiffMarkers(bool darkTheme)

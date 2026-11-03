@@ -17,10 +17,20 @@ public partial class MainWindow
     private TabControl ActiveDocumentTabs => _activeDocumentTabs ?? DocumentTabs;
 
     private long _documentFocusGeneration;
+    private bool _windowClosed;
 
     private void InitializeDocumentPanes()
     {
         InitializeDocumentTabDrag();
+        Closed += (_, _) =>
+        {
+            _windowClosed = true;
+            ++_documentFocusGeneration;
+            ++_resultFocusGeneration;
+            var application = System.Windows.Application.Current;
+            if (ReferenceEquals(application.MainWindow, this))
+                application.MainWindow = application.Windows.OfType<MainWindow>().FirstOrDefault(window => window != this);
+        };
         Deactivated += (_, _) => ++_documentFocusGeneration;
         PreviewMouseDown += (_, _) => ++_documentFocusGeneration;
         PreviewKeyDown += (_, _) => ++_documentFocusGeneration;
@@ -46,6 +56,7 @@ public partial class MainWindow
 
     private void SelectDocument(DocumentViewModel document)
     {
+        if (_windowClosed || !Documents.Contains(document)) return;
         var tabs = RightDocuments.Contains(document) ? RightDocumentTabs : DocumentTabs;
         _activeDocumentTabs = tabs;
         tabs.SelectedItem = document;
@@ -145,7 +156,7 @@ public partial class MainWindow
         var expectedDocument = CurrentDocument;
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
         {
-            if (_closingInProgress || _closingAllDocuments || generation != _documentFocusGeneration ||
+            if (_windowClosed || _documentTransferRunning || _closingInProgress || _closingAllDocuments || generation != _documentFocusGeneration ||
                 !ReferenceEquals(expectedDocument, CurrentDocument)) return;
             if (CurrentDocument is { } document)
             {

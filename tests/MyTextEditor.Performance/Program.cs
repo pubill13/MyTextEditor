@@ -32,6 +32,10 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (args.Contains("--document-transfer-stress")) return DocumentTransferStressVerification.Run();
+        if (args.Contains("--document-window-stress")) return DocumentTransferStressVerification.Run(windowLifetimeOnly: true);
+        if (args.Contains("--recovery-store")) return RecoveryStoreVerification.Run(args);
+        if (args.Contains("--recovery-ui")) return RecoveryIntegrationVerification.Run();
         if (args.Length >= 2 && args[0] == "--instance199") return Instance199Verification.Run(args[1]);
         if (args.Length > 0 && args[0] == "--large-workspace")
             return LargeWorkspaceVerification.Run(args.Length > 1 ? int.Parse(args[1]) : 4, args.Length > 2 ? int.Parse(args[2]) : 8);
@@ -62,6 +66,7 @@ internal static class Program
         if (args.Contains("--help-layout")) return HelpLayoutVerification.Run();
         if (args.Contains("--result-font")) return SearchResultFontVerification.Run();
         if (args.Contains("--merge-110")) return Merge110Verification.Run();
+        if (args.Contains("--merge-lifetime")) return MergeLifetimeVerification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))

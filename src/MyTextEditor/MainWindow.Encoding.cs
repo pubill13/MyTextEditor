@@ -68,6 +68,7 @@ public partial class MainWindow
 
     private async Task ReloadWithEncodingAsync(DocumentViewModel document, DocumentEncodingKind kind)
     {
+        if (_windowClosed || _closingInProgress || _documentTransferRunning || _closingAllDocuments || _closingDocuments.Contains(document)) return;
         if (!Documents.Contains(document) || _savingDocuments.Contains(document) || !_encodingReloads.Add(document)) return;
         try
         {
@@ -88,11 +89,13 @@ public partial class MainWindow
             document.Encoding = buffer.OriginalEncoding;
             document.HasByteOrderMark = buffer.HasByteOrderMark;
             document.AcceptEncodingChanges();
+            document.RecoveryModified = false;
             document.IsModified = false;
             document.NewLine = buffer.NewLine;
             document.Editor.SetNewLine(buffer.NewLine);
             document.Editor.GoToLine(line + 1, focusEditor: false);
             TrackFileSyncDocument(document, after);
+            await DiscardRecoveryAsync(document);
             UpdateStatus();
             StatusMessage.Text = $"{document.DisplayName}: {DocumentEncodings.GetDisplayName(kind)}로 다시 열었습니다.";
         }

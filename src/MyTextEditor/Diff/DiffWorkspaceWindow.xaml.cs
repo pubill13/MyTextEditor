@@ -217,6 +217,7 @@ public partial class DiffWorkspaceWindow : Window
         try
         {
             var endpoints = await Task.WhenAll(files.Select(DiffTabView.LoadFileEndpointAsync));
+            if (_resourcesReleased) return;
             var view = Views.FirstOrDefault(candidate => candidate.IsCompletelyEmpty) ?? AddTab(DiffEndpoint.Empty("왼쪽"), DiffEndpoint.Empty("오른쪽"));
             Select(view);
             await view.SetEndpointAsync(true, endpoints[0], false);
