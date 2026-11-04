@@ -32,6 +32,7 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (args.Contains("--tool-window-appearance")) return ToolWindowAppearanceVerification.Run();
         if (args.Contains("--document-transfer-stress")) return DocumentTransferStressVerification.Run();
         if (args.Contains("--document-window-stress")) return DocumentTransferStressVerification.Run(windowLifetimeOnly: true);
         if (args.Contains("--recovery-store")) return RecoveryStoreVerification.Run(args);
