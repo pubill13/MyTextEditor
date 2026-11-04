@@ -117,6 +117,11 @@ public static class SettingsService
         settings.Diff ??= new DiffUserSettings();
         settings.Diff.FontSize = double.IsFinite(settings.Diff.FontSize) ? Math.Clamp(Math.Round(settings.Diff.FontSize), 6, 72) : 11;
         settings.Help ??= new HelpUserSettings();
+        settings.Macro ??= new MacroUserSettings();
+        settings.Macro.WindowWidth = double.IsFinite(settings.Macro.WindowWidth) ? Math.Max(900, settings.Macro.WindowWidth) : 1180;
+        settings.Macro.WindowHeight = double.IsFinite(settings.Macro.WindowHeight) ? Math.Max(600, settings.Macro.WindowHeight) : 800;
+        if (settings.Macro.WindowLeft is double macroLeft && !double.IsFinite(macroLeft)) settings.Macro.WindowLeft = null;
+        if (settings.Macro.WindowTop is double macroTop && !double.IsFinite(macroTop)) settings.Macro.WindowTop = null;
 
         settings.RecentFiles.RemoveAll(item => item is null);
         settings.FavoriteToolIds.RemoveAll(item => string.IsNullOrWhiteSpace(item) || item == "cleanup-log");

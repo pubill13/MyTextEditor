@@ -38,6 +38,15 @@ public sealed class UserSettings
     public TransformInputState TransformState { get; set; } = new();
     public DiffUserSettings Diff { get; set; } = new();
     public HelpUserSettings Help { get; set; } = new();
+    public MacroUserSettings Macro { get; set; } = new();
+}
+
+public sealed class MacroUserSettings
+{
+    public double WindowWidth { get; set; } = 1180;
+    public double WindowHeight { get; set; } = 800;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
 }
 
 public sealed class DiffUserSettings

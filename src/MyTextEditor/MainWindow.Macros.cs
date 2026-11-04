@@ -43,7 +43,17 @@ public partial class MainWindow
             },
             ReportStatus = message => StatusMessage.Text = message,
             ShowHelp = () => ShowHelpTopic("macros")
-        }) { Owner = this };
+        }, placement: new MacroWindowPlacement(_settings.Macro.WindowWidth, _settings.Macro.WindowHeight,
+            _settings.Macro.WindowLeft, _settings.Macro.WindowTop)) { Owner = this };
+        window.Resources.MergedDictionaries.Add(Resources);
+        window.PlacementChangedByUser += placement =>
+        {
+            _settings.Macro.WindowWidth = placement.Width;
+            _settings.Macro.WindowHeight = placement.Height;
+            _settings.Macro.WindowLeft = placement.Left;
+            _settings.Macro.WindowTop = placement.Top;
+            MarkSettingsDirty();
+        };
         window.IsVisibleChanged += (_, _) => MacroToggleButton.IsChecked = window.IsVisible;
         window.Closed += (_, _) => { if (ReferenceEquals(_macroWindow, window)) _macroWindow = null; MacroToggleButton.IsChecked = false; };
         _macroWindow = window;

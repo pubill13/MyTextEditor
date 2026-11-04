@@ -66,6 +66,7 @@ public partial class MainWindow
             return existing;
 
         var workspace = new DiffWorkspaceWindow(GetDiffOptions(), CreateDiffCallbacks(), GetDiffAppearance()) { Owner = this };
+        workspace.Resources.MergedDictionaries.Add(Resources);
         workspace.ResourcesReleased += DiffWorkspace_ResourcesReleased;
         workspace.Closed += DiffWorkspace_Closed;
         _diffWorkspaceWindow = workspace;

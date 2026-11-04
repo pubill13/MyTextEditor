@@ -15,8 +15,12 @@ using MessageBox = System.Windows.MessageBox;
 
 namespace MyTextEditor.Macros;
 
+public sealed record MacroWindowPlacement(double Width, double Height, double? Left, double? Top);
+
 public sealed class MacroWindow : Window
 {
+    private bool _placementReady;
+    public event Action<MacroWindowPlacement>? PlacementChangedByUser;
     private TextComposition? _composition;
     private bool _escapeOwnedByInput;
     private readonly MacroWindowCallbacks _callbacks;
@@ -53,13 +57,43 @@ public sealed class MacroWindow : Window
         [MacroOperation.RemoveBlankLines]="빈 줄 제거", [MacroOperation.CollapseBlankLines]="연속 빈 줄 합치기"
     };
 
-    public MacroWindow(MacroWindowCallbacks callbacks, MacroStore? store = null)
+    public MacroWindow(MacroWindowCallbacks callbacks, MacroStore? store = null, MacroWindowPlacement? placement = null)
     {
         _callbacks = callbacks; _store = store ?? new MacroStore();
         Title = "작업 매크로 — OmniEdit"; Width = 1180; Height = 800; MinWidth = 900; MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        if (placement is not null)
+        {
+            if (double.IsFinite(placement.Width)) Width = Math.Max(MinWidth, placement.Width);
+            if (double.IsFinite(placement.Height)) Height = Math.Max(MinHeight, placement.Height);
+            if (placement.Left is double left && placement.Top is double top && double.IsFinite(left) && double.IsFinite(top))
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = left; Top = top;
+            }
+        }
+        Loaded += (_, _) =>
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            var area = System.Windows.Forms.Screen.FromHandle(handle).WorkingArea;
+            var source = System.Windows.Interop.HwndSource.FromHwnd(handle);
+            var workArea = Rect.Transform(new Rect(area.X, area.Y, area.Width, area.Height), source.CompositionTarget.TransformFromDevice);
+            Width = Math.Min(Width, Math.Max(MinWidth, workArea.Width));
+            Height = Math.Min(Height, Math.Max(MinHeight, workArea.Height));
+            Left = Math.Clamp(Left, workArea.Left, Math.Max(workArea.Left, workArea.Right - Width));
+            Top = Math.Clamp(Top, workArea.Top, Math.Max(workArea.Top, workArea.Bottom - Height));
+            _placementReady = true;
+            SavePlacement();
+        };
+        LocationChanged += (_, _) => SavePlacement();
+        SizeChanged += (_, _) => SavePlacement();
         SetResourceReference(BackgroundProperty, "WindowBrush");
         SetResourceReference(ForegroundProperty, "TextBrush");
+        foreach (var preview in new[] { _before, _after })
+        {
+            preview.SetResourceReference(FontFamilyProperty, "EditorFontFamily");
+            preview.SetResourceReference(FontSizeProperty, "EditorFontSize");
+        }
         var compactButton = new Style(typeof(Button), (Style)FindResource(typeof(Button)));
         compactButton.Setters.Add(new Setter(HeightProperty, 26d));
         compactButton.Setters.Add(new Setter(PaddingProperty, new Thickness(8, 2, 8, 2)));
@@ -123,7 +157,14 @@ public sealed class MacroWindow : Window
         try { _saved = _store.Load(); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException or InvalidOperationException or NotSupportedException) { _loadFailed = true; SetStatus("매크로 파일을 읽지 못했습니다. 기존 파일 보호를 위해 저장을 중단합니다: " + ex.Message); }
         LoadDraft(_saved.FirstOrDefault() ?? _draft); RefreshLibrary();
         Closing += OnClosing; Closed += (_, _) => { _closed = true; _execution?.Cancel(); ClearExecutionResult(); };
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { _callbacks.ShowHelp?.Invoke(); e.Handled = true; } };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Handled) return;
+            if (e.Key == Key.F1 && Keyboard.Modifiers == ModifierKeys.None)
+            { _callbacks.ShowHelp?.Invoke(); e.Handled = true; }
+            else if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control && _composition is null)
+            { Save(); e.Handled = true; }
+        };
         TextCompositionManager.AddPreviewTextInputStartHandler(this, (_, e) => _composition = e.TextComposition);
         TextCompositionManager.AddPreviewTextInputHandler(this, (_, _) => _composition = null);
         PreviewKeyDown += (_, e) =>
@@ -142,6 +183,12 @@ public sealed class MacroWindow : Window
         };
         Activated += (_, _) => RefreshDocumentState();
         RefreshDocumentState();
+    }
+
+    private void SavePlacement()
+    {
+        if (_placementReady && !_closed && WindowState == WindowState.Normal)
+            PlacementChangedByUser?.Invoke(new(ActualWidth, ActualHeight, Left, Top));
     }
 
     public void RefreshDocumentState()

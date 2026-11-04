@@ -4,6 +4,9 @@
         Background="{DynamicResource WindowBrush}" Loaded="Window_Loaded"
         PreviewKeyDown="Window_PreviewKeyDown" AllowDrop="True" Drop="Root_Drop" DragOver="Root_DragOver">
     <UserControl.Resources>
+        <Style x:Key="MergeMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+            <Setter Property="ItemContainerStyle" Value="{DynamicResource MergeMenuItem}"/>
+        </Style>
         <Style x:Key="CompactToolbar" TargetType="ToolBar">
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToolBar">
                 <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
@@ -63,7 +66,7 @@
 <Button x:Name="NextButton" Style="{StaticResource CompactCommandButton}" Width="26" Padding="0" ToolTip="다음 차이 (F8 / Alt+↓)" AutomationProperties.Name="다음 차이 (F8 / Alt+↓)" Click="Next_Click"><Path Width="12" Height="12" Stretch="Uniform" Stroke="{DynamicResource TextBrush}" StrokeThickness="1.4" Data="M 1,5 L 6,10 L 11,5 M 6,0 L 6,10"/></Button>
 <TextBlock x:Name="PositionText" Margin="6,0" VerticalAlignment="Center" Text="0 / 0"/><Separator/>
 <Button x:Name="SwapButton" Style="{StaticResource CompactCommandButton}" Content="좌우 교환" Click="Swap_Click" ToolBar.OverflowMode="AsNeeded"/>
-<Menu Background="Transparent" ToolBar.OverflowMode="AsNeeded"><MenuItem x:Name="OptionsMenu" Header="옵션" Padding="8,3">
+<Menu Style="{StaticResource {x:Type Menu}}" ItemContainerStyle="{StaticResource MergeMenuItem}" Background="Transparent" ToolBar.OverflowMode="AsNeeded"><MenuItem x:Name="OptionsMenu" Header="옵션" Padding="8,3">
 <MenuItem x:Name="IgnoreWhitespaceCheck" Header="공백 무시" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="Option_Changed" Unchecked="Option_Changed"/>
 <MenuItem x:Name="IgnoreCaseCheck" Header="대소문자 무시" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="Option_Changed" Unchecked="Option_Changed"/>
 <MenuItem x:Name="IgnoreEmptyLinesCheck" Header="빈 줄 무시" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="Option_Changed" Unchecked="Option_Changed"/>
