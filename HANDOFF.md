@@ -90,3 +90,17 @@
 - 실제 소유 창 2개와 5개 테마, 6/15/72pt, Merge 독립 크기, 최소 배치, 숨김/재표시, Undo, 배치 복원, Ctrl+S, 종료 취소 검증을 통과했습니다.
 
 - v1.11.6 배포 완료: 00f46de / https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.6 . 최신 소스의 Windows x64 자체 포함 EXE(1.11.6.0)·ZIP을 업로드했고 서버 SHA-256/크기 검증을 통과했습니다. 도구 창 테마·글꼴·배치·메뉴 개선과 실제 시연을 반영했습니다. 자동화 Ctrl+S 한 회는 포커스 타이밍으로 흔들렸으나 기존 매크로 저장 검증과 실제 단축키 경로는 확인했습니다. .gitignore 사용자 변경은 커밋하지 않았습니다.
+
+## 텍스트 정리 18개 감사 — 진행 중 (2026-11-04, 미배포)
+- 사용자 승인 계획: 18개 Core/실제 버튼 3회/EXE 조작/30·300MB 검증, 이름·설명 보완, 필요성 및 대안 문서. 삭제·통합·배포 제외. 최신 추가 요청: 설명은 한 줄 요약 + 자세히 접기 방식. MainWindow.TransformDescriptions.cs와 XAML에 반영, Release 0경고/0오류.
+- Core TransformAuditTests:100 출력+11 오류 사례×3, 전체43/43 통과. 번호 int overflow(long 내부계산), Trim enum 사전 검증 수정. UI 빈 join 구분자 허용, no-op 본문 비교로 Undo 오염 방지, 개행만 변경 시 적용 허용.
+- --transform-audit:18개 전부 preview/apply/Undo/Redo/direct x3 통과. 이후 stale preview 안내창 자동 닫기가 실패해 전체 suite 미완료. artifacts/transform-audit-hang.dmp 스택 TryValidateResultSource MessageBox 대기 확인. 테스트 프로세스26740 현재 종료. 검사를 삭제/약화하지 말고 모달 응답을 수정할 것.
+- --transform-audit-large:30MB trim/delete/split 성공, join 결과성공이나 UI 약4.2초 지연. 이후 LoadUtf8→ClearUserHighlights→ScintillaNET.CharToBytePosition에서 장기지연 덤프 확인(artifacts/transform-large-slow.dmp). 기존 다른 경로와 동일한 native byte IndicatorClearRange로 ClearUserHighlights 수정. 프로세스19824 종료 후 재측정 중.
+- docs/TEXT-TOOLS-REVIEW.md에18개 필요성/대안 작성. 실제 EXE 18개 물리 조작, 최종 도움말/좁은 화면 시각 검증, 상태 문서 결과 확정은 남음. .gitignore 보존. 다른 에이전트 사용량 한도 종료, 남은 파일 직접 검토 필요.
+
+## v1.11.7 최종 검증 / 배포 준비 (2026-11-06)
+- Solarized Light 기본 본문/UI #4F656C, 보조 #657B83·배경 유지. 짧은 요약+접힌 상세 설명 적용.
+- 이전 --transform-audit 전체 완료:18기능×3, 오류/no-op/빈 join/stale preview/이동·해제 후 완료 보호 PASS. 모달 확인 버튼 ID2 및 테스트 창 Normal 설정 수정.
+- 300MB join 덤프에서 UpdateStatus→GetColumn 반복을 확인. native 위치 조회 및 revision/position/tabWidth 열 캐시로 줄·열 조회 비용 축소. LoadUtf8에서 캐시 무효화.
+- 동일 진단 실행 전후:30MB total4659.4→3334.7ms, UI최대4051.7→2670.4ms.300MB total47333.4→32095.8ms, UI최대44024.4→26228.5ms. 덤프 수집/환경 영향 있으므로 단일 표본이며 지연 해소 아님. 결과 문자열 일치.
+- 실제 EXE18개 전체 수동 조작 미완료. 이전 실제 EXE의 접기/펼치기 화면은 확인. 배포 노트에 제약 명시. 사용자 최신 요청으로 배포 포함.

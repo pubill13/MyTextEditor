@@ -90,7 +90,11 @@ public sealed partial class ScintillaEditorHost
     {
         _highlightTimer.Stop(); _highlightCancellation?.Cancel();
         _highlightRules.Clear();
-        if (!_editor.IsDisposed) { _editor.IndicatorCurrent = UserIndicator; _editor.IndicatorClearRange(0, _editor.TextLength); }
+        if (!_editor.IsDisposed)
+        {
+            _editor.IndicatorCurrent = UserIndicator;
+            _editor.DirectMessage(SciIndicatorClearRange, IntPtr.Zero, _editor.DirectMessage(SciGetLength));
+        }
     }
 
     public void RemoveCurrentHighlight()

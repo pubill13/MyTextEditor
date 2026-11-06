@@ -321,12 +321,11 @@
                             <StackPanel>
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
-                                        <DockPanel><Button DockPanel.Dock="Right" Content="?" ToolTip="텍스트 정리 도움말" Click="TransformHelp_Click"/><TextBlock Text="유용한 기능" FontSize="17" FontWeight="SemiBold" /></DockPanel>
-                                        <TextBlock Text="각 줄을 기준으로 자르기·꾸미기·분할 작업을 적용합니다." Margin="0,5,0,10" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
-                                        <ComboBox x:Name="TrimOperationCombo" SelectionChanged="TrimOperationCombo_SelectionChanged">
-                                            <ComboBoxItem Content="머리 자르기 · 기준 앞 제거" IsSelected="True" />
-                                            <ComboBoxItem Content="꼬리 자르기 · 기준 뒤 제거" />
-                                            <ComboBoxItem Content="두 기준 사이 지우기" />
+                                        <DockPanel><Button DockPanel.Dock="Right" Content="?" ToolTip="텍스트 정리 도움말" Click="TransformHelp_Click"/><TextBlock Text="줄 단위 편집" FontSize="17" FontWeight="SemiBold" /></DockPanel>
+                                        <ComboBox x:Name="TrimOperationCombo" Margin="0,6,0,0" SelectionChanged="TrimOperationCombo_SelectionChanged">
+                                            <ComboBoxItem Content="기준 앞 텍스트 삭제" IsSelected="True" />
+                                            <ComboBoxItem Content="기준 뒤 텍스트 삭제" />
+                                            <ComboBoxItem Content="두 기준 사이 삭제" />
                                             <ComboBoxItem Content="두 기준 사이만 남기기" />
                                             <ComboBoxItem Content="왼쪽 글자 수만큼 삭제" />
                                             <ComboBoxItem Content="오른쪽 글자 수만큼 삭제" />
@@ -337,6 +336,19 @@
                                             <ComboBoxItem Content="줄 번호 추가" />
                                             <ComboBoxItem Content="줄 번호 제거" />
                                         </ComboBox>
+                                        <TextBlock x:Name="TransformSummaryText" Margin="0,8,0,4" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"/>
+                                        <Expander x:Name="TransformDetails" Header="자세히 · 예시" IsExpanded="False">
+                                            <Border Margin="0,5,0,4" Padding="10" Background="{DynamicResource SurfaceAltBrush}" CornerRadius="4">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="TransformDescriptionText" TextWrapping="Wrap" LineHeight="20"/>
+                                                    <Separator Margin="0,8"/>
+                                                    <TextBlock x:Name="TransformExampleText" TextWrapping="Wrap" LineHeight="22"/>
+                                                    <Separator Margin="0,8"/>
+                                                    <TextBlock Text="적용 범위: 현재 문서 전체 (선택 영역과 무관)" TextWrapping="Wrap" LineHeight="20" Foreground="{DynamicResource MutedBrush}"/>
+                                                    <TextBlock Text="미리보기로 확인한 뒤 적용하거나, 바로 적용할 수 있습니다. 실행 취소: Ctrl+Z" TextWrapping="Wrap" LineHeight="20" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Expander>
                                         <StackPanel x:Name="MarkerInputsPanel">
                                             <TextBlock Text="시작 기준" Margin="0,10,0,4" />
                                             <TextBox x:Name="StartMarkerBox" />
@@ -368,17 +380,15 @@
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
                                         <TextBlock Text="빠른 정리" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                                            <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="중복 줄 제거"/><Button Grid.Row="0" Grid.Column="1" Content="미리보기" Tag="Duplicate" ToolTip="중복 줄 제거" Click="QuickTransform_Click"/><Button Grid.Row="0" Grid.Column="2" Content="적용" Tag="Duplicate" ToolTip="중복 줄 제거" Click="ApplyQuickTransform_Click"/>
-                                            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="빈 줄 제거"/><Button Grid.Row="1" Grid.Column="1" Content="미리보기" Tag="Blank" ToolTip="빈 줄 제거" Click="QuickTransform_Click"/><Button Grid.Row="1" Grid.Column="2" Content="적용" Tag="Blank" ToolTip="빈 줄 제거" Click="ApplyQuickTransform_Click"/>
-                                            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="빈 줄 합치기"/><Button Grid.Row="2" Grid.Column="1" Content="미리보기" Tag="Collapse" ToolTip="빈 줄 합치기" Click="QuickTransform_Click"/><Button Grid.Row="2" Grid.Column="2" Content="적용" Tag="Collapse" ToolTip="빈 줄 합치기" Click="ApplyQuickTransform_Click"/>
-                                            <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="앞뒤 공백 제거"/><Button Grid.Row="3" Grid.Column="1" Content="미리보기" Tag="Whitespace" ToolTip="앞뒤 공백 제거" Click="QuickTransform_Click"/><Button Grid.Row="3" Grid.Column="2" Content="적용" Tag="Whitespace" ToolTip="앞뒤 공백 제거" Click="ApplyQuickTransform_Click"/>
-                                        </Grid>
+                                        <StackPanel Margin="0,0,0,10"><DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="미리보기" Tag="Duplicate" ToolTip="같은 내용은 처음 나온 줄만 남깁니다. 대소문자는 구분하지 않고 앞뒤 공백은 구분합니다." Click="QuickTransform_Click"/><Button Content="바로 적용" Tag="Duplicate" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel><TextBlock Text="중복 줄 제거" TextWrapping="Wrap" FontWeight="SemiBold"/></DockPanel><TextBlock Text="같은 내용은 처음 나온 줄만 남깁니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0"/><Expander Header="자세히" Margin="0,3,0,0"><TextBlock Text="같은 내용은 처음 나온 줄만 남깁니다. 대소문자는 구분하지 않고 앞뒤 공백은 구분합니다." TextWrapping="Wrap" Margin="8,5" LineHeight="20"/></Expander></StackPanel>
+                                        <StackPanel Margin="0,0,0,10"><DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="미리보기" Tag="Blank" ToolTip="내용이 없거나 공백·탭만 있는 줄을 모두 삭제합니다." Click="QuickTransform_Click"/><Button Content="바로 적용" Tag="Blank" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel><TextBlock Text="빈 줄 제거" TextWrapping="Wrap" FontWeight="SemiBold"/></DockPanel><TextBlock Text="내용이 없거나 공백·탭만 있는 줄을 모두 삭제합니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0"/><Expander Header="자세히" Margin="0,3,0,0"><TextBlock Text="내용이 없거나 공백·탭만 있는 줄을 모두 삭제합니다." TextWrapping="Wrap" Margin="8,5" LineHeight="20"/></Expander></StackPanel>
+                                        <StackPanel Margin="0,0,0,10"><DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="미리보기" Tag="Collapse" ToolTip="이어진 빈 줄을 첫 빈 줄 하나로 줄입니다. 한 줄씩 떨어진 빈 줄은 유지합니다." Click="QuickTransform_Click"/><Button Content="바로 적용" Tag="Collapse" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel><TextBlock Text="연속 빈 줄 줄이기" TextWrapping="Wrap" FontWeight="SemiBold"/></DockPanel><TextBlock Text="이어진 빈 줄을 첫 빈 줄 하나로 줄입니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0"/><Expander Header="자세히" Margin="0,3,0,0"><TextBlock Text="이어진 빈 줄을 첫 빈 줄 하나로 줄입니다. 한 줄씩 떨어진 빈 줄은 유지합니다." TextWrapping="Wrap" Margin="8,5" LineHeight="20"/></Expander></StackPanel>
+                                        <StackPanel Margin="0,0,0,10"><DockPanel><WrapPanel DockPanel.Dock="Right"><Button Content="미리보기" Tag="Whitespace" ToolTip="각 줄 앞뒤의 공백·탭을 지웁니다. 글자 사이 공백과 줄 수는 유지합니다." Click="QuickTransform_Click"/><Button Content="바로 적용" Tag="Whitespace" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel><TextBlock Text="줄 앞뒤 공백 제거" TextWrapping="Wrap" FontWeight="SemiBold"/></DockPanel><TextBlock Text="각 줄 앞뒤의 공백·탭을 지웁니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0"/><Expander Header="자세히" Margin="0,3,0,0"><TextBlock Text="각 줄 앞뒤의 공백·탭을 지웁니다. 글자 사이 공백과 줄 수는 유지합니다." TextWrapping="Wrap" Margin="8,5" LineHeight="20"/></Expander></StackPanel>
+
                                         <Separator Margin="0,10" />
-                                        <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="3,0,0,0" Padding="7,3" Background="{DynamicResource SurfaceAltBrush}"><TextBlock Text="특정 문장 포함 줄 삭제" FontWeight="SemiBold" FontSize="14" /></Border>
-                                        <TextBlock Text="포함된 문장" Margin="0,7,0,3" /><TextBox x:Name="DeleteContainingBox" ToolTip="예: 연결 시간 초과" />
+                                        <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="3,0,0,0" Padding="7,3" Background="{DynamicResource SurfaceAltBrush}"><TextBlock Text="특정 텍스트 포함 줄 삭제" FontWeight="SemiBold" FontSize="14" /></Border>
+                                        <TextBlock Text="입력한 텍스트가 있는 줄을 통째로 삭제합니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,0"/>
+                                        <TextBlock Text="줄에서 찾을 텍스트" Margin="0,7,0,3" /><TextBox x:Name="DeleteContainingBox" ToolTip="예: 연결 시간 초과" />
                                         <CheckBox x:Name="DeleteContainingMatchCaseCheck" Content="대소문자 구분" ToolTip="켜면 ABC와 abc를 서로 다른 텍스트로 검색합니다." />
                                         <WrapPanel>
                                             <Button Content="삭제 미리보기" Tag="DeleteContaining" Foreground="{DynamicResource DangerBrush}" Click="PreviewDeleteContaining_Click" />
@@ -386,6 +396,10 @@
                                         </WrapPanel>
                                         <Separator Margin="0,10" />
                                         <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="3,0,0,0" Padding="7,3" Background="{DynamicResource SurfaceAltBrush}"><TextBlock Text="일괄 치환" FontWeight="SemiBold" FontSize="14" /></Border>
+                                        <TextBlock Text="일치하는 텍스트를 모두 바꿉니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,0"/>
+                                        <Expander Header="자세히 · 예시" IsExpanded="False" Margin="0,3,0,0">
+                                            <TextBlock Text="대소문자는 구분하지 않습니다. 바꿀 텍스트를 비우면 일치 부분만 삭제합니다.&#10;예: apple → 사과" TextWrapping="Wrap" Margin="8,5" LineHeight="20"/>
+                                        </Expander>
                                         <TextBlock Text="찾을 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceFromBox" />
                                         <TextBlock Text="바꿀 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceToBox" />
                                         <WrapPanel>

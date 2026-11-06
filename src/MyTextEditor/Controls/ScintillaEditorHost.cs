@@ -157,7 +157,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         get => _editor.ReadOnly;
         set => _editor.ReadOnly = value;
     }
-    public bool HasSelection => _editor.SelectionStart != _editor.SelectionEnd;
+    public bool HasSelection => _editor.DirectMessage(2143) != _editor.DirectMessage(2145);
     public bool IsEditorFocused => _editor.ContainsFocus;
     public string SelectedText => _editor.SelectedText;
     public EditorTextRange SelectionRange
@@ -197,8 +197,22 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         return true;
     }
     public int LineCount => _editor.Lines.Count;
-    public int CurrentLine => _editor.LineFromPosition(_editor.CurrentPosition);
-    public int CurrentColumn => _editor.GetColumn(_editor.CurrentPosition);
+    public int CurrentLine => (int)_editor.DirectMessage(2166, _editor.DirectMessage(2008), IntPtr.Zero);
+    private (long Revision, IntPtr Position, int TabWidth, int Column)? _cachedColumn;
+    public int CurrentColumn
+    {
+        get
+        {
+            var position = _editor.DirectMessage(2008);
+            var tabWidth = _editor.TabWidth;
+            if (_cachedColumn is { } cached && cached.Revision == ContentRevision && cached.Position == position && cached.TabWidth == tabWidth)
+                return cached.Column;
+            // Native positions avoid scanning a long line twice to convert UTF-16 and UTF-8 offsets.
+            var column = (int)_editor.DirectMessage(2129, position, IntPtr.Zero);
+            _cachedColumn = (ContentRevision, position, tabWidth, column);
+            return column;
+        }
+    }
     public int FirstVisibleLine => _editor.FirstVisibleLine;
     public int LinesOnScreen => _editor.LinesOnScreen;
 
@@ -271,6 +285,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             _editor.EmptyUndoBuffer();
             _editor.SetSavePoint();
             ContentRevision = 0;
+            _cachedColumn = null;
         }
         finally
         {

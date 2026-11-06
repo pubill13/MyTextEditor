@@ -28,6 +28,12 @@ public partial class MainWindow
                 StatusMessage.Text = "문서가 변경되거나 탭이 전환되어 정리 결과를 적용하지 않았습니다. 다시 실행하세요.";
                 return;
             }
+            if (string.Equals(text, result.Text, StringComparison.Ordinal))
+            {
+                ClearTransformPreview();
+                StatusMessage.Text = $"{title}: 변경할 내용이 없습니다.";
+                return;
+            }
             if (preview) ShowTransformPreview(result, title);
             else ApplyTransformDirect(result, title);
         }

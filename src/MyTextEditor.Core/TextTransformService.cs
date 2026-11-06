@@ -8,12 +8,13 @@ public sealed class TextTransformService
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(options);
+        if (!Enum.IsDefined(options.Operation)) throw new ArgumentOutOfRangeException(nameof(options));
         ValidateNewLine(newLine);
         if (string.IsNullOrEmpty(options.StartMarker))
             throw new ArgumentException("기준 텍스트를 입력해야 합니다.", nameof(options));
         if (options.Operation is TrimOperation.RemoveBetween or TrimOperation.KeepBetween
             && string.IsNullOrEmpty(options.EndMarker))
-            throw new ArgumentException("사이 지우기에는 종료 기준 텍스트가 필요합니다.", nameof(options));
+            throw new ArgumentException("두 기준 사이를 처리하려면 종료 기준 텍스트가 필요합니다.", nameof(options));
 
         return TransformEachLine(text, newLine, (line, _) => TrimLine(line, options));
     }
@@ -86,7 +87,8 @@ public sealed class TextTransformService
         ArgumentNullException.ThrowIfNull(text);
         ArgumentException.ThrowIfNullOrEmpty(separator);
         ValidateNewLine(newLine);
-        var number = startNumber;
+        // The start value is an int, but subsequent line numbers must not wrap to negatives.
+        long number = startNumber;
         return TransformEachLine(text, newLine, (line, _) =>
         {
             if (!includeBlankLines && string.IsNullOrWhiteSpace(line))

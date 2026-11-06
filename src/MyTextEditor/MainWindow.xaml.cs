@@ -57,17 +57,17 @@ public partial class MainWindow : Window
     private bool _settingsReady;
     private static readonly ToolDescriptor[] TextTools =
     [
-        new(TextToolIds.RemoveBefore, "머리 자르기", 0), new(TextToolIds.RemoveAfter, "꼬리 자르기", 1),
-        new(TextToolIds.RemoveBetween, "사이 지우기", 2), new(TextToolIds.KeepBetween, "사이만 남기기", 3),
-        new(TextToolIds.RemoveCharactersLeft, "왼쪽 글자 삭제", 4), new(TextToolIds.RemoveCharactersRight, "오른쪽 글자 삭제", 5),
-        new(TextToolIds.AddPrefix, "접두사 추가", 6), new(TextToolIds.AddSuffix, "접미사 추가", 7),
-        new(TextToolIds.SplitByDelimiter, "줄 나누기", 8), new(TextToolIds.JoinLines, "줄 합치기", 9),
+        new(TextToolIds.RemoveBefore, "기준 앞 텍스트 삭제", 0), new(TextToolIds.RemoveAfter, "기준 뒤 텍스트 삭제", 1),
+        new(TextToolIds.RemoveBetween, "두 기준 사이 삭제", 2), new(TextToolIds.KeepBetween, "두 기준 사이만 남기기", 3),
+        new(TextToolIds.RemoveCharactersLeft, "왼쪽 글자 수만큼 삭제", 4), new(TextToolIds.RemoveCharactersRight, "오른쪽 글자 수만큼 삭제", 5),
+        new(TextToolIds.AddPrefix, "각 줄 앞에 텍스트 추가", 6), new(TextToolIds.AddSuffix, "각 줄 뒤에 텍스트 추가", 7),
+        new(TextToolIds.SplitByDelimiter, "구분자로 줄 나누기", 8), new(TextToolIds.JoinLines, "여러 줄을 한 줄로 합치기", 9),
         new(TextToolIds.AddLineNumbers, "줄 번호 추가", 10), new(TextToolIds.RemoveLineNumbers, "줄 번호 제거", 11),
-        new(TextToolIds.RemoveLinesContaining, "포함 줄 삭제"), new(TextToolIds.Replace, "일괄 치환"),
+        new(TextToolIds.RemoveLinesContaining, "특정 텍스트 포함 줄 삭제"), new(TextToolIds.Replace, "일괄 치환"),
         new(TextToolIds.RemoveDuplicateLines, "중복 줄 제거", QuickOperation: "Duplicate"),
         new(TextToolIds.RemoveBlankLines, "빈 줄 제거", QuickOperation: "Blank"),
-        new(TextToolIds.CollapseBlankLines, "빈 줄 합치기", QuickOperation: "Collapse"),
-        new(TextToolIds.TrimWhitespace, "앞뒤 공백 제거", QuickOperation: "Whitespace"),
+        new(TextToolIds.CollapseBlankLines, "연속 빈 줄 줄이기", QuickOperation: "Collapse"),
+        new(TextToolIds.TrimWhitespace, "줄 앞뒤 공백 제거", QuickOperation: "Whitespace"),
     ];
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
@@ -82,6 +82,7 @@ public partial class MainWindow : Window
     internal MainWindow(bool createDocument)
     {
         InitializeComponent();
+        UpdateTransformDescription();
         DataContext = this;
         InitializeDocumentPanes();
         var loadResult = SettingsService.LoadWithResult();
@@ -1156,6 +1157,7 @@ public partial class MainWindow : Window
     private void TrimOperationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (EndMarkerPanel is null) return;
+        UpdateTransformDescription();
         var index = TrimOperationCombo.SelectedIndex;
         var markerOperation = index is >= 0 and <= 3;
         var between = index is 2 or 3;
@@ -1198,7 +1200,7 @@ public partial class MainWindow : Window
         }
         else if (index is >= 6 and <= 9)
         {
-            if (index is 8 or 9 && string.IsNullOrEmpty(ValueInputBox.Text)) { ShowInputMessage("구분자를 입력하세요.", ValueInputBox); return; }
+            if (index == 8 && string.IsNullOrEmpty(ValueInputBox.Text)) { ShowInputMessage("나눌 구분자를 입력하세요.", ValueInputBox); return; }
             transform = text => index switch
             {
                 6 => _transformService.AddPrefix(text, value, includeBlank, newLine),
@@ -1229,13 +1231,13 @@ public partial class MainWindow : Window
     private void QuickTransform_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentDocument is null || sender is not FrameworkElement { Tag: string operation }) return;
-        RunQuickTransform(operation, ((Button)sender).ToolTip?.ToString() ?? "빠른 정리", preview: true);
+        RunQuickTransform(operation, QuickTransformTitle(operation), preview: true);
     }
 
     private void ApplyQuickTransform_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentDocument is null || sender is not FrameworkElement { Tag: string operation }) return;
-        RunQuickTransform(operation, ((Button)sender).ToolTip?.ToString() ?? "빠른 정리", preview: false);
+        RunQuickTransform(operation, QuickTransformTitle(operation), preview: false);
     }
 
     private void RunQuickTransform(string operation, string title, bool preview = true)
@@ -1313,7 +1315,7 @@ public partial class MainWindow : Window
         var matchCase = DeleteContainingMatchCaseCheck.IsChecked == true;
         var newLine = CurrentDocument.NewLine;
         _ = RunTransformAsync(text => _transformService.RemoveLinesContaining(text, value, matchCase, newLine),
-            "특정 문장 포함 줄 삭제", preview);
+            "특정 텍스트 포함 줄 삭제", preview);
     }
 
     private void PreviewReplace_Click(object sender, RoutedEventArgs e)
@@ -1335,15 +1337,11 @@ public partial class MainWindow : Window
     private void ApplyTransformDirect(TextTransformResult result, string title)
     {
         if (CurrentDocument is null) return;
-        if (result.Summary.ChangedLines == 0)
-        {
-            StatusMessage.Text = $"{title}: 변경할 내용이 없습니다.";
-            return;
-        }
-
         ClearTransformPreview();
         CurrentEditor?.ReplaceAll(result.Text);
-        StatusMessage.Text = $"{title}: {result.Summary.ChangedLines:N0}개 항목을 적용했습니다. Ctrl+Z로 되돌릴 수 있습니다.";
+        StatusMessage.Text = result.Summary.ChangedLines > 0
+            ? $"{title}: {result.Summary.ChangedLines:N0}개 항목을 적용했습니다. Ctrl+Z로 되돌릴 수 있습니다."
+            : $"{title}: 줄바꿈 형식을 맞췄습니다. Ctrl+Z로 되돌릴 수 있습니다.";
         UpdateStatus();
     }
 
@@ -1357,7 +1355,7 @@ public partial class MainWindow : Window
         SearchResultsView.Visibility = Visibility.Collapsed;
         TransformPreviewView.Visibility = Visibility.Visible;
         ApplyTransformButton.Visibility = Visibility.Visible;
-        ApplyTransformButton.IsEnabled = result.Summary.ChangedLines > 0;
+        ApplyTransformButton.IsEnabled = result.Summary.ChangedLines > 0 || result.Text != CurrentDocument?.Text;
         ExpandResults();
         StatusMessage.Text = "변경 전과 변경 후를 확인한 다음 적용하세요.";
     }
@@ -1408,6 +1406,7 @@ public partial class MainWindow : Window
         ApplyPreviewFilter();
         _pendingTransformedText = null;
         _resultDocument = null;
+        ApplyTransformButton.IsEnabled = false;
         _resultSourceRevision = 0;
         _resultInvalidated = false;
         TransformPreviewView.Visibility = Visibility.Collapsed;
