@@ -116,3 +116,4 @@
 - Merge 검색/치환 및 native 가로 스크롤, CtrlShiftS 연결 완료. 열린 문서 연결은 사본 저장 후 유지.
 - Release 빌드, --merge-scroll 검색·단어치환·좌우 독립·Undo/Redo와 가로 범위 이동, --merge-lifetime 저장/종료 경합 PASS. 이전 --merge-clarity 5테마/최소창 PASS.
 - OS 다른 이름 저장 대화상자 실기 및 한글 IME 조합은 미검증. 대용량 모두 치환은 UI 동기 처리이며 기존 대용량 단일줄 지연 제약 유지.
+- v1.11.8 배포 완료:6a6be01, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.8 . EXE/ZIP 서버 SHA-256·크기 일치 검증 후 공개. --word-wrap 추가 PASS. .gitignore 보존.
