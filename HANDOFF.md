@@ -104,3 +104,4 @@
 - 300MB join 덤프에서 UpdateStatus→GetColumn 반복을 확인. native 위치 조회 및 revision/position/tabWidth 열 캐시로 줄·열 조회 비용 축소. LoadUtf8에서 캐시 무효화.
 - 동일 진단 실행 전후:30MB total4659.4→3334.7ms, UI최대4051.7→2670.4ms.300MB total47333.4→32095.8ms, UI최대44024.4→26228.5ms. 덤프 수집/환경 영향 있으므로 단일 표본이며 지연 해소 아님. 결과 문자열 일치.
 - 실제 EXE18개 전체 수동 조작 미완료. 이전 실제 EXE의 접기/펼치기 화면은 확인. 배포 노트에 제약 명시. 사용자 최신 요청으로 배포 포함.
+- v1.11.7 배포 완료:58b784d, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.7 . EXE/ZIP 서버 SHA-256·크기 일치 확인 후 공개. 최종 transform-audit/tool-window-appearance/document-display/help-layout 통과. .gitignore 보존. 실제 EXE18개 전체 수동 검증 및 대용량 단일 줄 UI지연은 제약으로 공개.
