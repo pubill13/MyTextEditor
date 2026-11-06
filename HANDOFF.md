@@ -105,3 +105,14 @@
 - 동일 진단 실행 전후:30MB total4659.4→3334.7ms, UI최대4051.7→2670.4ms.300MB total47333.4→32095.8ms, UI최대44024.4→26228.5ms. 덤프 수집/환경 영향 있으므로 단일 표본이며 지연 해소 아님. 결과 문자열 일치.
 - 실제 EXE18개 전체 수동 조작 미완료. 이전 실제 EXE의 접기/펼치기 화면은 확인. 배포 노트에 제약 명시. 사용자 최신 요청으로 배포 포함.
 - v1.11.7 배포 완료:58b784d, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.7 . EXE/ZIP 서버 SHA-256·크기 일치 확인 후 공개. 최종 transform-audit/tool-window-appearance/document-display/help-layout 통과. .gitignore 보존. 실제 EXE18개 전체 수동 검증 및 대용량 단일 줄 UI지연은 제약으로 공개.
+
+## Merge 기본 조작 보완 (진행 중)
+- Ctrl+F/H, F3/Shift+F3, 좌우 대상·대소문자·단어 검색, 치환/전체치환, 검색 Esc 닫기 구현. 아직 최종 검증 중.
+- 가로 막대는 보이지만3000자 입력 후 native ScrollWidth=1, maximum=0 재현. 원인 조사 중.
+- CtrlShiftS 다른 이름 저장은 미연결로 확인. 기존 복사/붙여넣기/Undo는 공통 native 경로 사용.
+- 후속: native HScrollBar 비활성에서 width1, 활성화 후24032 확인. native 가로 막대를 사용하고 custom 가로 막대 숨김. --merge-scroll 좌우 스크롤 범위/이동 및 단어치환/대상독립/Undo·Redo PASS. native 가로 막대는 OS 모양을 따름. 미배포.
+
+## v1.11.8 배포 준비
+- Merge 검색/치환 및 native 가로 스크롤, CtrlShiftS 연결 완료. 열린 문서 연결은 사본 저장 후 유지.
+- Release 빌드, --merge-scroll 검색·단어치환·좌우 독립·Undo/Redo와 가로 범위 이동, --merge-lifetime 저장/종료 경합 PASS. 이전 --merge-clarity 5테마/최소창 PASS.
+- OS 다른 이름 저장 대화상자 실기 및 한글 IME 조합은 미검증. 대용량 모두 치환은 UI 동기 처리이며 기존 대용량 단일줄 지연 제약 유지.

@@ -15,7 +15,8 @@ public sealed partial class ScintillaEditorHost
 
     private void InitializeExtras()
     {
-        _editor.HScrollBar = false;
+        _editor.HScrollBar = true;
+        _horizontalBar.Visible = false;
         _editor.VScrollBar = false;
         _editor.ScrollWidthTracking = true;
         _editor.ScrollWidth = 1;
@@ -44,7 +45,7 @@ public sealed partial class ScintillaEditorHost
         if (WordWrap == enabled) return;
         var topDocumentLine = _editor.DocLineFromVisible(FirstVisibleLine);
         _editor.WrapMode = enabled ? WrapMode.Word : WrapMode.None;
-        _horizontalBar.Visible = !enabled;
+        _editor.HScrollBar = !enabled;
         if (enabled) _editor.XOffset = 0;
         // Scintilla computes wrapping during layout/paint, before display indices can be used.
         _editor.Refresh();

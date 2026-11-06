@@ -32,6 +32,7 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (args.Contains("--merge-scroll")) return MergeScrollVerification.Run();
         if (args.Contains("--transform-audit")) return TransformAuditVerification.Run();
         if (args.Contains("--transform-audit-large")) return TransformAuditVerification.Run(large: true);
         if (args.Contains("--transform-audit-join")) return TransformAuditVerification.Run(large: true, joinOnly: true);

@@ -141,6 +141,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _rightEditor.VerticalScrolled += RightEditor_VerticalScrolled;
         _leftEditor.ShortcutRequested += Editor_ShortcutRequested;
         _rightEditor.ShortcutRequested += Editor_ShortcutRequested;
+        _leftEditor.EditorFocused += SearchEditor_Focused;
+        _rightEditor.EditorFocused += SearchEditor_Focused;
         RefreshEndpointHeaders();
         _leftEditor.FilesDropped += LeftEditor_FilesDropped;
         _rightEditor.FilesDropped += RightEditor_FilesDropped;
@@ -829,17 +831,18 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void ExtractLeft_Click(object sender, RoutedEventArgs e) => _ = _callbacks.CreateDocumentAsync($"{_left.DisplayName} 추출", _leftEditor.GetText());
     private void ExtractRight_Click(object sender, RoutedEventArgs e) => _ = _callbacks.CreateDocumentAsync($"{_right.DisplayName} 추출", _rightEditor.GetText());
 
-    private async Task<bool> SaveEndpointAsync(bool left)
+    private Task<bool> SaveEndpointAsync(bool left) => SaveEndpointCoreAsync(left, false);
+    private async Task<bool> SaveEndpointCoreAsync(bool left, bool saveAs)
     {
         if (_resourcesReleased) return false;
         var endpoint = left ? _left : _right;
         var editor = left ? _leftEditor : _rightEditor;
-        if (endpoint.SourceDocumentId is { } id)
+        if (!saveAs && endpoint.SourceDocumentId is { } id)
         {
             if (!await ApplyToSourceAsync(left, false)) return false;
             return await _callbacks.SaveSourceAsync(id);
         }
-        var destination = endpoint.FilePath;
+        var destination = saveAs ? null : endpoint.FilePath;
         if (destination is not null && HasExternalChange(endpoint))
         {
             var choice = WpfMessageBox.Show(Window.GetWindow(this), "파일이 외부에서 변경되었습니다.\n\n예: 덮어쓰기   아니요: 다른 이름으로 저장", "외부 변경 감지", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
@@ -864,6 +867,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             return Dispatcher.Invoke(() =>
             {
                 if (_resourcesReleased || !ReferenceEquals(endpoint, left ? _left : _right)) return false;
+                if (saveAs && endpoint.SourceDocumentId is not null) { StatusText.Text = $"사본 저장됨: {destination} (원본 연결 유지)"; return true; }
                 var info = new FileInfo(destination);
                 endpoint.FilePath = info.FullName; endpoint.DisplayName = info.Name;
                 endpoint.SourceFileLength = info.Length; endpoint.SourceFileLastWriteUtc = info.LastWriteTimeUtc;
@@ -898,14 +902,19 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (!_isActive || _resourcesReleased || e.Handled) return;
         switch (e.Shortcut)
         {
+            case EditorShortcut.Find: OpenFind(sender as ScintillaEditorHost); e.Handled = true; break;
+            case EditorShortcut.Replace: OpenFind(sender as ScintillaEditorHost); ReplaceInputs.Visibility = Visibility.Visible; e.Handled = true; break;
+            case EditorShortcut.FindNext: FindSide.SelectedIndex = ReferenceEquals(sender, _rightEditor) ? 1 : 0; FindInEditor(false); e.Handled = true; break;
+            case EditorShortcut.FindPrevious: FindSide.SelectedIndex = ReferenceEquals(sender, _rightEditor) ? 1 : 0; FindInEditor(true); e.Handled = true; break;
             case EditorShortcut.DiffPrevious: NavigateDifference(-1); e.Handled = true; break;
             case EditorShortcut.DiffNext: NavigateDifference(1); e.Handled = true; break;
             case EditorShortcut.DiffRecompare: RequestComparison(); e.Handled = true; break;
             case EditorShortcut.MergeLeft: MergeCurrent(DiffSide.Right); e.Handled = true; break;
             case EditorShortcut.MergeRight: MergeCurrent(DiffSide.Left); e.Handled = true; break;
+            case EditorShortcut.SaveDocumentAs: _ = SaveEndpointCoreAsync(ReferenceEquals(sender, _leftEditor), true); e.Handled = true; break;
             case EditorShortcut.SaveDocument: _ = SaveEndpointAsync(ReferenceEquals(sender, _leftEditor)); e.Handled = true; break;
             case EditorShortcut.CloseDocument: CloseRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; break;
-            case EditorShortcut.CloseWindow: CloseWorkspaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; break;
+            case EditorShortcut.CloseWindow: if (FindBar.Visibility == Visibility.Visible) CloseFind_Click(this, new RoutedEventArgs()); else CloseWorkspaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; break;
             case EditorShortcut.NextDocument: CycleTabRequested?.Invoke(this, new(1)); e.Handled = true; break;
             case EditorShortcut.PreviousDocument: CycleTabRequested?.Invoke(this, new(-1)); e.Handled = true; break;
             case EditorShortcut.Help: _callbacks.ShowHelp?.Invoke(); e.Handled = true; break;
@@ -920,6 +929,14 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (!_isActive || _resourcesReleased || e.Handled) return;
         var focused = _leftEditor?.IsEditorFocused == true ? _leftEditor : _rightEditor?.IsEditorFocused == true ? _rightEditor : null;
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
+        { OpenFind(focused); e.Handled = true; return; }
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.H)
+        { OpenFind(focused); ReplaceInputs.Visibility = Visibility.Visible; e.Handled = true; return; }
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None && FindBar.Visibility == Visibility.Visible && !FindSide.IsDropDownOpen)
+        { CloseFind_Click(this, e); e.Handled = true; return; }
+        if (e.Key == Key.F3 && (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Shift))
+        { FindInEditor(Keyboard.Modifiers == ModifierKeys.Shift); e.Handled = true; return; }
         if (focused is not null && Keyboard.Modifiers == ModifierKeys.Control)
         {
             switch (e.Key)
