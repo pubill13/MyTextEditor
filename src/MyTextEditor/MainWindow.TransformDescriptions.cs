@@ -20,18 +20,17 @@ public partial class MainWindow
 
     private void UpdateTransformDescription()
     {
-        if (TransformHelpButton is null) return;
+        if (TrimOperationCombo is null) return;
         var index = TrimOperationCombo.SelectedIndex;
         if (index < 0 || index >= TransformDescriptions.Length) return;
-        CloseTransformTip();
-        SetTransformTip(TransformHelpButton, TransformDescriptions[index].Description + "\n" + TransformDescriptions[index].Example);
+        SetTransformTip(TrimOperationCombo, TransformDescriptions[index].Description + "\n" + TransformDescriptions[index].Example);
     }
     private static string QuickTransformTitle(string operation) => operation switch
     {
         "Duplicate" => "중복 줄 제거",
-        "Blank" => "빈 줄 제거",
-        "Collapse" => "연속 빈 줄 줄이기",
-        "Whitespace" => "줄 앞뒤 공백 제거",
+        "Blank" => "빈 줄 모두 제거",
+        "Collapse" => "연속 빈 줄을 한 줄로",
+        "Whitespace" => "줄 공백 정리",
         _ => "빠른 정리"
     };
 }

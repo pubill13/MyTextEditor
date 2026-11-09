@@ -65,9 +65,9 @@ public partial class MainWindow : Window
         new(TextToolIds.AddLineNumbers, "줄 번호 추가", 10), new(TextToolIds.RemoveLineNumbers, "줄 번호 제거", 11),
         new(TextToolIds.RemoveLinesContaining, "특정 텍스트 포함 줄 삭제"), new(TextToolIds.Replace, "일괄 치환"),
         new(TextToolIds.RemoveDuplicateLines, "중복 줄 제거", QuickOperation: "Duplicate"),
-        new(TextToolIds.RemoveBlankLines, "빈 줄 제거", QuickOperation: "Blank"),
-        new(TextToolIds.CollapseBlankLines, "연속 빈 줄 줄이기", QuickOperation: "Collapse"),
-        new(TextToolIds.TrimWhitespace, "줄 앞뒤 공백 제거", QuickOperation: "Whitespace"),
+        new(TextToolIds.RemoveBlankLines, "빈 줄 모두 제거", QuickOperation: "Blank"),
+        new(TextToolIds.CollapseBlankLines, "연속 빈 줄을 한 줄로", QuickOperation: "Collapse"),
+        new(TextToolIds.TrimWhitespace, "줄 공백 정리", QuickOperation: "Whitespace"),
     ];
 
     public ObservableCollection<DocumentViewModel> Documents { get; } = [];
@@ -1243,13 +1243,14 @@ public partial class MainWindow : Window
     private void RunQuickTransform(string operation, string title, bool preview = true)
     {
         if (CurrentDocument is null) return;
+        var trimBoth = QuickWhitespaceMode.SelectedIndex == 1;
         var newLine = CurrentDocument.NewLine;
         _ = RunTransformAsync(text => operation switch
         {
             "Duplicate" => _transformService.RemoveDuplicateLines(text, false, newLine),
             "Blank" => _transformService.RemoveBlankLines(text, newLine),
             "Collapse" => _transformService.CollapseBlankLines(text, newLine),
-            "Whitespace" => _transformService.TrimWhitespace(text, newLine),
+            "Whitespace" => trimBoth ? _transformService.TrimWhitespace(text, newLine) : _transformService.TrimTrailingWhitespace(text, newLine),
             _ => throw new ArgumentException("지원하지 않는 빠른 정리 기능입니다.", nameof(operation))
         }, title, preview);
     }

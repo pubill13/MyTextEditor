@@ -52,7 +52,7 @@ internal static class TransformAuditVerification
         new("duplicates", -1, "A\na\nb\nA", "A\nb", Quick: "Duplicate"),
         new("blank-delete", -1, "a\n \n\t\nb", "a\nb", Quick: "Blank"),
         new("blank-collapse", -1, "a\n\n\nb", "a\n\nb", Quick: "Collapse"),
-        new("whitespace", -1, " a \n\tb\t", "a\nb", Quick: "Whitespace"),
+        new("whitespace", -1, " a \n\tb\t", " a\n\tb", Quick: "Whitespace"),
         new("contains-delete", 12, "keep\nDROP x\nlast", "keep\nlast", "drop"),
         new("replace", 13, "aAa\nkeep", "bbb\nkeep", "a")
     ];
@@ -69,22 +69,16 @@ internal static class TransformAuditVerification
             window.Show(); Call(window, "SetToolsVisible", true, false);
             Field<System.Windows.Controls.TabControl>(window, "ToolTabs").SelectedIndex = 1; Pump();
             if (large) { RunLarge(window, joinOnly); return 0; }
-            var helpButton = Field<Button>(window, "TransformHelpButton");
             var combo = Field<ComboBox>(window, "TrimOperationCombo");
             var scroll = Field<System.Windows.Controls.ScrollViewer>(window, "TransformScrollViewer");
             for (var index = 0; index < 12; index++)
             {
                 combo.SelectedIndex = index; Pump();
-                var tooltip = (System.Windows.Controls.ToolTip)helpButton.ToolTip;
+                var tooltip = (System.Windows.Controls.ToolTip)combo.ToolTip;
                 Check(((System.Windows.Controls.TextBlock)tooltip.Content).Text.Contains("예시"), "Function tip lacks example");
-                var height = scroll.ExtentHeight; var offset = scroll.VerticalOffset;
-                helpButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-                Check(Field<System.Windows.Controls.Primitives.Popup>(window, "_transformTip").IsOpen, "Click tip did not open");
-                Check(scroll.ExtentHeight == height && scroll.VerticalOffset == offset, "Tip changed layout/scroll");
-                Call(window, "CloseTransformTip");
             }
-            Check(Buttons(scroll).Count(b => b.ToolTip is System.Windows.Controls.ToolTip) == 7, "Missing title tooltips");
-            Console.WriteLine("PASS 12 dynamic function tips, six title tips, click popup and stable layout");
+            Check(Buttons(scroll).Count(b => b.ToolTip is System.Windows.Controls.ToolTip) == 6, "Missing title tooltips");
+            Console.WriteLine("PASS 12 dynamic function tips, six title tips");
             var document = window.Documents[0];
             foreach (var test in Cases)
             {

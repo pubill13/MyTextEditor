@@ -138,6 +138,17 @@ public sealed class TextTransformService
         });
     }
 
+    public TextTransformResult TrimTrailingWhitespace(string text, string newLine = "\r\n")
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ValidateNewLine(newLine);
+        return ProcessLines(text, newLine, (_, line) =>
+        {
+            var length = line.Span.TrimEnd().Length;
+            return (line.Slice(0, length),
+                length == line.Length ? TextChangeStatus.Unchanged : TextChangeStatus.Changed, true);
+        });
+    }
     public TextTransformResult TrimWhitespace(string text, string newLine = "\r\n")
     {
         ArgumentNullException.ThrowIfNull(text);
