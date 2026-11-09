@@ -15,6 +15,15 @@ public partial class App : System.Windows.Application
     private DispatcherTimer? _recoveryTimer;
     private bool _recoveryTickRunning;
 
+    private bool TryOpenAdditionalWindow()
+    {
+        if (Dispatcher.HasShutdownStarted || !Windows.OfType<MainWindow>().Any(window => window.CanReceiveDocument))
+            return false;
+        var window = new MainWindow();
+        window.Show();
+        window.Activate();
+        return true;
+    }
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -30,7 +39,7 @@ public partial class App : System.Windows.Application
         {
             paths = e.Args.Select(Path.GetFullPath).ToArray();
             _fileOpenCoordinator = new FileOpenCoordinator(Dispatcher);
-            if (!_fileOpenCoordinator.TryBecomeReceiver() && paths.Length > 0)
+            if (!_fileOpenCoordinator.TryBecomeReceiver())
             {
                 await _fileOpenCoordinator.ForwardAsync(paths);
                 Shutdown();
@@ -77,7 +86,7 @@ public partial class App : System.Windows.Application
         // Queue the launch files before enabling external requests; the normal open gate preserves order.
         var startup = paths.Length > 0 ? window.OpenStartupFilesAsync(paths) : Task.CompletedTask;
         _fileOpenCoordinator.Start(
-            files => Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsActive)?.TryAcceptExternalFiles(files)
+            files => files.Length == 0 ? TryOpenAdditionalWindow() : Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsActive)?.TryAcceptExternalFiles(files)
                 ?? Windows.OfType<MainWindow>().FirstOrDefault()?.TryAcceptExternalFiles(files) ?? false,
             error => Windows.OfType<MainWindow>().FirstOrDefault()?.ReportFileOpenDeliveryError(error));
         await startup;

@@ -65,11 +65,24 @@ internal static class DocumentDetachVerification
             target.Top = 0;
             target.Activate(); Pump();
             var targetGrid = (System.Windows.Controls.Grid)typeof(MainWindow).GetField("DocumentPanesGrid", Private)!.GetValue(target)!;
+            Call(source, "NewDocument", "", null); Pump();
+            var existing = source.Documents.Single();
+            var sourceTabs = (System.Windows.Controls.TabControl)typeof(MainWindow).GetField("DocumentTabs", Private)!.GetValue(source)!;
+            var existingHeader = (System.Windows.Controls.TabItem)sourceTabs.ItemContainerGenerator.ContainerFromItem(existing);
+            var headerDrop = targetGrid.PointFromScreen(existingHeader.PointToScreen(new Point(5, existingHeader.ActualHeight / 2)));
+            var drag = typeof(DocumentPanesVerification).GetMethod("DragTab", BindingFlags.Static | BindingFlags.NonPublic)!;
+            drag.Invoke(null, new object[] { target, document, headerDrop });
+            Check(source.LeftDocuments.SequenceEqual(new[] { document, existing }), "Tab header drop did not insert before existing tab");
+            Check((bool)Call(source, "MoveDocumentToWindow", document, target, false, 0)!, "Header drop setup failed");
+            target.Activate(); Pump();
             var returnDrop = targetGrid.PointFromScreen(grid.PointToScreen(new Point(120, 100)));
             typeof(DocumentPanesVerification).GetMethod("DragTab", BindingFlags.Static | BindingFlags.NonPublic)!
                 .Invoke(null, new object[] { target, document, returnDrop });
             Check(source.Documents.Contains(document) && target.Documents.Count == 0 && app.Windows.OfType<MainWindow>().Count() == 2,
                 "Physical return drag spawned a window or failed to merge");
+            Check(source.LeftDocuments.SequenceEqual(new[] { existing, document }), "Body drop did not append to target pane");
+            Call(source, "RemoveDocument", existing);
+            Console.WriteLine("PASS physical drops on tab header and editor body preserve insertion order");
             Check((bool)Call(source, "MoveDocumentToWindow", document, target, false, 0)!, "Return setup failed");
             Pump();
             for (var round = 0; round < 50; round++)

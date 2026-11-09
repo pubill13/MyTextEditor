@@ -56,13 +56,16 @@ internal static class DocumentPanesVerification
             VerifyDragTargets(window, second);
             second.Editor.MarkSaved(); second.IsModified = false;
             Call(window, "NewDocument", "", null); Pump();
-            window.Documents.Last().Editor.FocusEditor(); Pump();
+            var tabs = Field<TabControl>(window, "DocumentTabs");
+            var tab = (System.Windows.Controls.TabItem)tabs.ItemContainerGenerator.ContainerFromItem(window.Documents.Last());
+            tab.Focus(); Pump();
+            Check(tab.IsKeyboardFocused, "Expected tab header focus before Ctrl+W");
             for (var remaining = 2; remaining >= 0; remaining--)
             {
                 SendCloseKeys();
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 while (window.Documents.Count > remaining && watch.ElapsedMilliseconds < 2500) { Thread.Sleep(10); Pump(); }
-                Check(window.Documents.Count == remaining, $"Repeated native Ctrl+W: expected {remaining}, actual {window.Documents.Count}, selected={Field<TabControl>(window, "DocumentTabs").SelectedIndex}, focus={System.Windows.Input.Keyboard.FocusedElement?.GetType().Name}");
+                Check(window.Documents.Count == remaining, $"Repeated Ctrl+W: expected {remaining}, actual {window.Documents.Count}, selected={Field<TabControl>(window, "DocumentTabs").SelectedIndex}, focus={System.Windows.Input.Keyboard.FocusedElement?.GetType().Name}");
             }
             Console.WriteLine("PASS split/unsplit native editors, active-pane Undo, document preservation and three consecutive Ctrl+W closes");
             return 0;

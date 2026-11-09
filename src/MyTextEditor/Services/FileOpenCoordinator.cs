@@ -8,7 +8,7 @@ using System.Windows.Threading;
 
 namespace MyTextEditor.Services;
 
-/// <summary>One receiver per user/session; other no-argument launches remain independent windows.</summary>
+/// <summary>One receiver per user/session; forwards file paths or an empty request to open an additional window.</summary>
 public sealed class FileOpenCoordinator : IDisposable
 {
     private const int MaxMessageBytes = 1024 * 1024;
@@ -92,11 +92,11 @@ public sealed class FileOpenCoordinator : IDisposable
             await client.FlushAsync(timeout.Token);
             var reply = new byte[1];
             await client.ReadExactlyAsync(reply, timeout.Token);
-            if (reply[0] != 1) throw new IOException("기존 창이 종료 또는 저장 확인 중이라 파일 열기를 접수하지 않았습니다. 확인을 마친 뒤 다시 열어 주세요.");
+            if (reply[0] != 1) throw new IOException("기존 창이 종료 또는 저장 확인 중이라 요청을 접수하지 않았습니다. 확인을 마친 뒤 다시 열어 주세요.");
         }
         catch (OperationCanceledException exception)
         {
-            throw new IOException("3초 안에 기존 창의 파일 열기 접수를 확인하지 못했습니다. 기존 창을 확인한 뒤 다시 시도하세요.", exception);
+            throw new IOException("3초 안에 기존 창의 요청 접수를 확인하지 못했습니다. 기존 창을 확인한 뒤 다시 시도하세요.", exception);
         }
     }
 
@@ -121,7 +121,7 @@ public sealed class FileOpenCoordinator : IDisposable
                     var bytes = new byte[length];
                     await pipe.ReadExactlyAsync(bytes, request.Token);
                     var paths = JsonSerializer.Deserialize<string[]>(bytes);
-                    if (paths is null || paths.Length == 0 || paths.Any(p => string.IsNullOrWhiteSpace(p) || !Path.IsPathFullyQualified(p)))
+                    if (paths is null || paths.Any(p => string.IsNullOrWhiteSpace(p) || !Path.IsPathFullyQualified(p)))
                         throw new IOException("파일 열기 요청에 올바른 절대 경로가 없습니다.");
                     var accepted = await _dispatcher.InvokeAsync(() =>
                         !request.IsCancellationRequested && !_disposed && _accept!(paths), DispatcherPriority.Normal, request.Token);

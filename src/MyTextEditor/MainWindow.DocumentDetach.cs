@@ -15,7 +15,7 @@ public partial class MainWindow
         _savingDocuments.Count == 0 && _pendingFileOpens == 0 && !_encodingReloads.Contains(document) &&
         Documents.Contains(document) && IsEnabled;
 
-    private bool CanReceiveDocument =>
+    internal bool CanReceiveDocument =>
         !_windowClosed && !_closingInProgress && !_checkingShutdown && !_allowClose &&
         !_documentTransferRunning && !_closingAllDocuments && _closingDocuments.Count == 0 &&
         _savingDocuments.Count == 0 && _pendingFileOpens == 0 && IsEnabled && IsVisible;

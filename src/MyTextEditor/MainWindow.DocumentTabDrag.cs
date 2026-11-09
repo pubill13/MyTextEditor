@@ -33,6 +33,15 @@ public partial class MainWindow
         DocumentPanesGrid.LostMouseCapture += (_, _) => { if (_tabDragging) FinishDocumentTabDrag(false); };
         PreviewKeyDown += (_, e) =>
         {
+            if (!_tabDragging && (e.Key is Key.W or Key.F4) && Keyboard.Modifiers == ModifierKeys.Control &&
+                (_dragDocument is not null || Keyboard.FocusedElement is TabItem { DataContext: DocumentViewModel }) &&
+                (_dragDocument ?? CurrentDocument) is { } document)
+            {
+                e.Handled = true;
+                FinishDocumentTabDrag(false);
+                _ = CloseDocumentAsync(document);
+                return;
+            }
             if (_tabDragging && e.Key == Key.Escape) { FinishDocumentTabDrag(false); e.Handled = true; }
         };
         Deactivated += (_, _) => FinishDocumentTabDrag(false);
@@ -198,7 +207,14 @@ public partial class MainWindow
 
     private void DocumentTabDragEnd(object sender, MouseButtonEventArgs e)
     {
-        if (!_tabDragging) { FinishDocumentTabDrag(false); return; }
+        if (!_tabDragging)
+        {
+            var clickedDocument = _dragDocument;
+            FinishDocumentTabDrag(false);
+            if (clickedDocument is not null && ActiveDocumentTabs.ItemContainerGenerator.ContainerFromItem(clickedDocument) is TabItem tab)
+                tab.Focus();
+            return;
+        }
         FinishDocumentTabDrag(true);
         e.Handled = true;
     }
