@@ -1,0 +1,709 @@
+﻿{
+    "GeneratedUtc":  "\/Date(1794231770779)\/",
+    "BaseCommit":  "40bda90a8e92f1cf9d1ba6586b22141de4f52d9f",
+    "Total":  103,
+    "Passed":  103,
+    "Failed":  0,
+    "BuildManifest":  "build-manifest.json",
+    "Results":  [
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M01",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge both-empty source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M02",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge both-empty source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M03",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge empty-left source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M04",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge empty-left source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M05",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge empty-right source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M06",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge empty-right source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M07",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge equal source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M08",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge equal source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M09",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge replace source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M10",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge replace source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M11",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge insert-top source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M12",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge insert-top source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M13",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge insert-bottom source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M14",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge insert-bottom source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M15",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge remove-blank source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M16",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge remove-blank source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M17",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge multiple-blocks source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M18",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge multiple-blocks source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M19",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge unicode source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M20",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge unicode source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M21",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge eol-only source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M22",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge eol-only source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M23",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge terminal-newline source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M24",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge terminal-newline source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M25",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge tabs source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M26",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge tabs source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M27",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge repeated-lines source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M28",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge repeated-lines source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M29",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge long-line source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M30",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge long-line source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M31",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge all-different source=Left; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "M32",
+                        "Outcome":  "PASS",
+                        "Scenario":  "block merge all-different source=Right; exact Undo/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "O-IgnoreWhitespaceCheck",
+                        "Outcome":  "PASS",
+                        "Scenario":  "comparison option changes result without changing either document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "O-IgnoreCaseCheck",
+                        "Outcome":  "PASS",
+                        "Scenario":  "comparison option changes result without changing either document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "O-IgnoreEmptyLinesCheck",
+                        "Outcome":  "PASS",
+                        "Scenario":  "comparison option changes result without changing either document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "K01",
+                        "Outcome":  "PASS",
+                        "Scenario":  "physical Ctrl+H, replacement button, Ctrl+Z/Redo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "K02",
+                        "Outcome":  "PASS",
+                        "Scenario":  "physical F8/F7, Alt+Right merge, Ctrl+Z",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "K03",
+                        "Outcome":  "PASS",
+                        "Scenario":  "locked target rejects typing, merge and replacement; unlock restores editing",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-substring",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all substring; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-case-sensitive",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all case-sensitive; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-whole-word",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all whole-word; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-unicode",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all unicode; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-emoji",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all emoji; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-delete",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all delete; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-no-match",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all no-match; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-identical-replacement",
+                        "Outcome":  "PASS",
+                        "Scenario":  "replace all identical-replacement; other side unaffected",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-enter",
+                        "Outcome":  "PASS",
+                        "Scenario":  "Enter in replacement field should apply the replacement",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-button-enter",
+                        "Outcome":  "PASS",
+                        "Scenario":  "Enter on focused replacement button should activate that button",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "U-empty-target",
+                        "Outcome":  "PASS",
+                        "Scenario":  "copy populated side into untouched empty side",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf8-LF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf8-CRLF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf8-bom-LF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf8-bom-CRLF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf16-le-LF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf16-le-CRLF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf16-be-LF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-utf16-be-CRLF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-cp949-LF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "F-cp949-CRLF",
+                        "Outcome":  "PASS",
+                        "Scenario":  "load/edit/save/reload encoding and line endings",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "L-900",
+                        "Outcome":  "PASS",
+                        "Scenario":  "search/replace and editor visibility at window size",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "L-1200",
+                        "Outcome":  "PASS",
+                        "Scenario":  "search/replace and editor visibility at window size",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "L-1600",
+                        "Outcome":  "PASS",
+                        "Scenario":  "search/replace and editor visibility at window size",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T01",
+                        "Outcome":  "PASS",
+                        "Scenario":  "two consecutive physical Ctrl+Tab presses and independent tab state",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T02",
+                        "Outcome":  "PASS",
+                        "Scenario":  "swap preserves identity/text/selection; Undo works after manually unlocking",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-tab-type",
+                        "Outcome":  "PASS",
+                        "Scenario":  "typing after Ctrl+Tab edits visible tab and leaves previous tab unchanged",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-swap-free",
+                        "Outcome":  "PASS",
+                        "Scenario":  "swap with both sides editable preserves Undo history",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-lock-swap-False-False",
+                        "Outcome":  "PASS",
+                        "Scenario":  "swapping lock state follows each document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-lock-swap-True-False",
+                        "Outcome":  "PASS",
+                        "Scenario":  "swapping lock state follows each document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-lock-swap-False-True",
+                        "Outcome":  "PASS",
+                        "Scenario":  "swapping lock state follows each document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-lock-swap-True-True",
+                        "Outcome":  "PASS",
+                        "Scenario":  "swapping lock state follows each document",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "U-copy-empty-Left",
+                        "Outcome":  "PASS",
+                        "Scenario":  "whole copy fills either empty side with one Undo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "U-copy-empty-Right",
+                        "Outcome":  "PASS",
+                        "Scenario":  "whole copy fills either empty side with one Undo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "U-copy-empty-string",
+                        "Outcome":  "PASS",
+                        "Scenario":  "copying empty source prepares empty target without dirty or Undo",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "U-copy-locked-empty",
+                        "Outcome":  "PASS",
+                        "Scenario":  "whole copy respects a locked empty target",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "U-noop-dirty",
+                        "Outcome":  "PASS",
+                        "Scenario":  "identical copy preserves existing dirty state and Undo history",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-repeat-enter",
+                        "Outcome":  "PASS",
+                        "Scenario":  "repeated replacement Enter stays in input and never inserts document newlines",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-find-enter-focus",
+                        "Outcome":  "PASS",
+                        "Scenario":  "find Enter/Shift+Enter wrap and retain focus without editing",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "S-combo-keys",
+                        "Outcome":  "PASS",
+                        "Scenario":  "search-side dropdown Enter/Escape keeps default selection behavior",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-three-tabs",
+                        "Outcome":  "PASS",
+                        "Scenario":  "Ctrl+Tab/Shift+Tab/PageUp/PageDown restore the correct native editor",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-pending-search",
+                        "Outcome":  "PASS",
+                        "Scenario":  "queued tab focus does not steal newly chosen search input",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "exploration",
+                        "Id":  "T-reactivate",
+                        "Outcome":  "PASS",
+                        "Scenario":  "opening a comparison in a hidden workspace focuses the new visible tab",
+                        "Evidence":  ""
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "SOURCE-RELOAD-CACHE",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Reload via actual Button.Click routed event: initial differences=1, displayed text matches new source=True, differences after reload=0, expected=0; native revision=0"
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "SOURCE-RELOAD-MERGE-SAFETY",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Equal displayed buffers expose no stale difference to merge after reload."
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "SOURCE-RELOAD-PARTIAL-CANCEL",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Both linked originals stale; actual Reload Button.Click routed event reloads clean left, then owned native No declines dirty right replacement. Initial differences=1, left latest=True, right local text/dirty preserved=True, left source revision=1, right source revision=0, left dirty=False, current differences=0, expected fresh differences=0, right stale banner=Visible. Native response is restricted to the test process, owner window and UI thread."
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "CLIPBOARD-LOCK-METADATA",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Unlock/edit/relock round trip: text changed=True, unlocked consistent=True, unlocked metadata=\u0027클립보드 스냅샷 · 편집 가능\u0027, relocked readOnly=True, relocked consistent=True, relocked metadata=\u0027클립보드 스냅샷 · 읽기 전용\u0027"
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "OVERLAPPING-SAVE-1",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Two same-side saves (64 MiB then 19 chars): overlap observed=True, first accepted=False, second accepted=True, disk matches latest=True, editor matches latest=True, native modified=False, view unsaved=False. No external-change baseline was set on this fixture."
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "OVERLAPPING-SAVE-2",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Two same-side saves (64 MiB then 19 chars): overlap observed=True, first accepted=False, second accepted=True, disk matches latest=True, editor matches latest=True, native modified=False, view unsaved=False. No external-change baseline was set on this fixture."
+                    },
+                    {
+                        "Suite":  "source",
+                        "Id":  "OVERLAPPING-SAVE-3",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Two same-side saves (64 MiB then 19 chars): overlap observed=True, first accepted=False, second accepted=True, disk matches latest=True, editor matches latest=True, native modified=False, view unsaved=False. No external-change baseline was set on this fixture."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-01-MAIN-ENTRY",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Actual MainWindow comparison toggle Click routed event opens one empty Merge tab."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-02-HIDE-RESTORE",
+                        "Outcome":  "PASS",
+                        "Evidence":  "MainWindow toggle hide/show retains the same workspace, tab and unsaved native editor text."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-03-OPEN-DOCUMENT-SNAPSHOT",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Real MainWindow snapshot builder/callbacks used via reflection; Merge local edit remains isolated until Apply."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-04-APPLY-ORIGINAL-UNDO",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Actual Apply button Click routed event updates real MainWindow document; one native Undo restores original."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-05-STALE-APPLY-REJECTION",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Actual MainWindow callbacks reject stale Apply and preserve both newer original and unsaved Merge proposal."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-06-REAL-LINKED-RELOAD-CACHE",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Actual MainWindow source callbacks + Reload button routed event: refreshed text and comparison agree."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-07-EXTRACT-NEW-DOCUMENT",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Actual new-document button routed event creates a real main document with exact Unicode text."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-08-CLOSE-CANCEL",
+                        "Outcome":  "PASS",
+                        "Evidence":  "CloseTabAsync UI handler operation via reflection; native owned save prompt Cancel preserves dirty tab and exact text."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-09-CLOSE-DISCARD",
+                        "Outcome":  "PASS",
+                        "Evidence":  "CloseTabAsync UI operation via reflection; native owned prompt No discards and releases only selected comparison."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-10-DROP-ONE",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Public drop-handler operation (not physical drag) loads one Unicode-path file into empty left side."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-11-DROP-TWO",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Public drop operation reuses empty tab, keeps left/right input order, and compares both files."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-12-DROP-THREE",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Three-file drop loads first two in order and explicitly reports one excluded item: 두 파일을 비교했습니다. 1개 항목은 제외했습니다."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-13-DROP-MISSING-ATOMIC",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Missing+valid pair reports failure and preserves existing tab count, selection and both contents."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-14-EXTERNAL-CHANGE-SAVE-CANCEL",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Actual loaded file baseline + Save UI handler via reflection; native external-change Cancel preserves disk and unsaved local buffer."
+                    },
+                    {
+                        "Suite":  "workflow",
+                        "Id":  "WF-15-IDENTICAL-COPY-DIRTY",
+                        "Outcome":  "PASS",
+                        "Evidence":  "Identical-content full-copy menu Click routed event creates neither dirty state nor a new Undo action."
+                    }
+                ]
+}

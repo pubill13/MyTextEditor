@@ -1,0 +1,68 @@
+﻿[
+    {
+        "Project":  "tests/MyTextEditor.Core.Tests",
+        "Scenario":  "",
+        "ExitCode":  0,
+        "Milliseconds":  2170
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--editor-shortcuts",
+        "ExitCode":  0,
+        "Milliseconds":  1731
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-exploration",
+        "ExitCode":  0,
+        "Milliseconds":  140904
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-source-exploration",
+        "ExitCode":  0,
+        "Milliseconds":  28938
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-workflow-exploration",
+        "ExitCode":  0,
+        "Milliseconds":  12758
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-scroll",
+        "ExitCode":  0,
+        "Milliseconds":  1930
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-lifetime",
+        "ExitCode":  0,
+        "Milliseconds":  4529
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--omni-merge",
+        "ExitCode":  0,
+        "Milliseconds":  4860
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-clarity",
+        "ExitCode":  0,
+        "Milliseconds":  5290
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--merge-110",
+        "ExitCode":  0,
+        "Milliseconds":  5572
+    },
+    {
+        "Project":  "tests/MyTextEditor.Performance",
+        "Scenario":  "--help-layout",
+        "ExitCode":  0,
+        "Milliseconds":  2554
+    }
+]

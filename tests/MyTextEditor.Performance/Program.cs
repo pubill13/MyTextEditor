@@ -32,6 +32,15 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (args.Contains("--editor-shortcuts"))
+        {
+            var shortcutApp = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            try { VerifyEditorShortcutsAndRelease(); return 0; }
+            finally { shortcutApp.Shutdown(); }
+        }
+        if (args.Contains("--merge-exploration")) return MergeExplorationVerification.Run(args.FirstOrDefault(arg => arg.StartsWith("--cases="))?[8..]);
+        if (args.Contains("--merge-source-exploration")) return MergeSourceExploration.Run(args.FirstOrDefault(arg => arg.StartsWith("--cases="))?[8..]);
+        if (args.Contains("--merge-workflow-exploration")) return MergeWorkflowExploration.Run();
         if (args.Contains("--merge-scroll")) return MergeScrollVerification.Run();
         if (args.Contains("--transform-audit")) return TransformAuditVerification.Run();
         if (args.Contains("--transform-audit-large")) return TransformAuditVerification.Run(large: true);
@@ -166,6 +175,14 @@ internal static class Program
     private static void VerifyEditorShortcutsAndRelease()
     {
         var host = new ScintillaEditorHost();
+        var input = new System.Windows.Controls.TextBox();
+        var panel = new System.Windows.Controls.DockPanel();
+        System.Windows.Controls.DockPanel.SetDock(input, System.Windows.Controls.Dock.Top);
+        panel.Children.Add(input); panel.Children.Add(host);
+        var window = new Window { Content = panel, Width = 800, Height = 500, ShowInTaskbar = false };
+        window.Show(); window.Activate(); host.FocusEditor();
+        window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (!host.IsEditorFocused) throw new InvalidOperationException("Shortcut verification requires native editor focus.");
         var editor = typeof(ScintillaEditorHost).GetField("_editor", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(host)
             ?? throw new InvalidOperationException("Scintilla editor instance was not found.");
         var processCmdKey = editor.GetType().GetMethod("ProcessCmdKey", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -214,12 +231,24 @@ internal static class Program
             processCmdKey.Invoke(editor, arguments);
             if (requested is not null) throw new InvalidOperationException($"Editor command was intercepted: {key}.");
         }
+        input.Focus();
+        window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (host.IsEditorFocused || !input.IsKeyboardFocused)
+            throw new InvalidOperationException("Could not move focus to the WPF input for accelerator verification.");
+        foreach (var key in new[] { Forms.Keys.Alt | Forms.Keys.Down, Forms.Keys.Control | Forms.Keys.S })
+        {
+            requested = null;
+            var arguments = new object[] { Forms.Message.Create(IntPtr.Zero, 0, IntPtr.Zero, IntPtr.Zero), key };
+            if (processCmdKey.Invoke(editor, arguments) is not false || requested is not null)
+                throw new InvalidOperationException($"Unfocused native editor intercepted a WPF command: {key}.");
+        }
         var releaseStopwatch = Stopwatch.StartNew();
         host.ReleaseResources();
         releaseStopwatch.Stop();
         if (releaseStopwatch.Elapsed > TimeSpan.FromMilliseconds(500))
             throw new InvalidOperationException($"빈 편집기 해제가 종료 기준을 초과했습니다: {releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms");
         host.ReleaseResources();
+        window.Close();
         Console.WriteLine($"PASS editor shortcut forwarding and idempotent resource release ({releaseStopwatch.Elapsed.TotalMilliseconds:F0}ms)");
     }
 

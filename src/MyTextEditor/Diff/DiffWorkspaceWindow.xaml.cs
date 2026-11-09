@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace MyTextEditor.Diff;
 
@@ -16,6 +17,8 @@ public partial class DiffWorkspaceWindow : Window
     private bool _closePromptRunning;
     private bool _resourcesReleased;
     private bool _updatingFontSize;
+    private int _tabFocusGeneration;
+    private bool _tabFocusPending;
     private string _highlightColor;
 
     public DiffWorkspaceWindow(DiffWindowOptions options, DiffWindowCallbacks callbacks, DiffAppearance appearance)
@@ -36,6 +39,8 @@ public partial class DiffWorkspaceWindow : Window
             Left = left;
             Top = top;
         }
+        Activated += (_, _) => RestoreSelectedTabFocus();
+        IsVisibleChanged += (_, _) => { if (IsVisible) RestoreSelectedTabFocus(); };
     }
 
     public event EventHandler? ResourcesReleased;
@@ -242,8 +247,41 @@ public partial class DiffWorkspaceWindow : Window
     private void ComparisonTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!ReferenceEquals(e.Source, ComparisonTabs)) return;
+        ++_tabFocusGeneration;
         foreach (var item in Views) item.SetActive(ReferenceEquals(item, CurrentView));
-        if (CurrentView is { } view) StatusText.Text = view.IsReady ? view.TabTitle : "좌우에 파일을 놓거나 소스를 선택하세요.";
+        _tabFocusPending = CurrentView is not null;
+        if (CurrentView is not { } view) return;
+        StatusText.Text = view.IsReady ? view.TabTitle : "좌우에 파일을 놓거나 소스를 선택하세요.";
+        RestoreSelectedTabFocus();
+    }
+
+    private void RestoreSelectedTabFocus()
+    {
+        if (!_tabFocusPending || _resourcesReleased || !IsActive || !IsVisible ||
+            CurrentView is not { } view || ComparisonTabs.SelectedItem is not TabItem tab) return;
+        if (Keyboard.FocusedElement is DependencyObject focused && view.IsAncestorOf(focused))
+        {
+            _tabFocusPending = false;
+            return;
+        }
+
+        // Move focus out of the old native editor before its tab becomes hidden.
+        tab.Focus();
+        var focusGeneration = _tabFocusGeneration;
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            if (!_tabFocusPending || _resourcesReleased || focusGeneration != _tabFocusGeneration || !IsActive || !IsVisible ||
+                !ReferenceEquals(CurrentView, view) || !view.IsLoaded || !view.IsVisible) return;
+            // Do not steal focus if the user already chose a search field or another command.
+            if (Keyboard.FocusedElement is { } currentFocus &&
+                !ReferenceEquals(currentFocus, tab) && !ReferenceEquals(currentFocus, ComparisonTabs))
+            {
+                _tabFocusPending = false;
+                return;
+            }
+            view.FocusLastEditor();
+            _tabFocusPending = false;
+        }));
     }
 
     private void RefreshFontSize()

@@ -39,6 +39,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private static readonly SemaphoreSlim _compareGate = new(1, 1);
     private CancellationTokenSource? _comparisonCancellation;
     private bool _updatingEditors;
+    private bool _updatingReadOnlyChecks;
     private bool _syncingScroll;
     private bool _resourcesReleased;
     private bool _initialized;
@@ -115,6 +116,12 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (_initialized && _result is null && IsReady && _needsComparison) _ = CompareNowAsync();
         ApplyAppearance(_appearance);
         RebuildMergeGutter();
+    }
+
+    internal void FocusLastEditor()
+    {
+        if (!_initialized || !_isActive || _resourcesReleased) return;
+        (_lastFocusedEditor ?? _leftEditor).FocusEditor();
     }
 
     public void SetHighlightColor(string color)
@@ -384,14 +391,24 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void CopyAll(DiffSide sourceSide)
     {
-        if (_result is null) return;
+        if (!_initialized || _resourcesReleased || !(sourceSide == DiffSide.Left ? _left.IsReady : _right.IsReady)) return;
         var target = sourceSide == DiffSide.Left ? _rightEditor : _leftEditor;
         if (target.IsReadOnly) { StatusText.Text = "대상이 읽기 전용이어서 복사할 수 없습니다."; return; }
+        PromoteTypedEndpoint(sourceSide == DiffSide.Right);
         ReplaceMergedSide(_mergeService.ApplyAll(_leftEditor.GetText(), _rightEditor.GetText(), sourceSide, _left.NewLine, _right.NewLine));
     }
 
     private void ReplaceMergedSide(TextMergeResult merged)
     {
+        var target = merged.ChangedSide == DiffSide.Left ? _leftEditor : _rightEditor;
+        var text = merged.ChangedSide == DiffSide.Left ? merged.LeftText : merged.RightText;
+        if (target.GetText() == text)
+        {
+            RefreshEndpointHeaders();
+            StatusText.Text = "변경할 내용이 없습니다.";
+            if (_result is null) _ = CompareNowAsync();
+            return;
+        }
         _updatingEditors = true;
         try
         {
@@ -669,12 +686,12 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void ReadOnly_Changed(object sender, RoutedEventArgs e)
     {
-        if (!IsLoaded) return;
-        _leftEditor.IsReadOnly = LeftReadOnlyCheck.IsChecked == true;
-        _rightEditor.IsReadOnly = RightReadOnlyCheck.IsChecked == true;
-        _left.IsReadOnly = _leftEditor.IsReadOnly;
-        _right.IsReadOnly = _rightEditor.IsReadOnly;
-        RefreshReadyState();
+        if (!_initialized || _resourcesReleased || _updatingReadOnlyChecks) return;
+        if (ReferenceEquals(sender, LeftReadOnlyCheck))
+            _left.IsReadOnly = _leftEditor.IsReadOnly = LeftReadOnlyCheck.IsChecked == true;
+        else if (ReferenceEquals(sender, RightReadOnlyCheck))
+            _right.IsReadOnly = _rightEditor.IsReadOnly = RightReadOnlyCheck.IsChecked == true;
+        RefreshEndpointHeaders();
         RebuildMergeGutter();
     }
 
@@ -684,8 +701,13 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         RightTitleText.Text = _right.DisplayName + (_rightDirty ? " •" : string.Empty);
         LeftMetaText.Text = DescribeEndpoint(_left);
         RightMetaText.Text = DescribeEndpoint(_right);
-        LeftReadOnlyCheck.IsChecked = _left.IsReadOnly;
-        RightReadOnlyCheck.IsChecked = _right.IsReadOnly;
+        _updatingReadOnlyChecks = true;
+        try
+        {
+            LeftReadOnlyCheck.IsChecked = _left.IsReadOnly;
+            RightReadOnlyCheck.IsChecked = _right.IsReadOnly;
+        }
+        finally { _updatingReadOnlyChecks = false; }
         ApplyLeftSourceButton.Visibility = _left.SourceDocumentId.HasValue ? Visibility.Visible : Visibility.Collapsed;
         ApplyRightSourceButton.Visibility = _right.SourceDocumentId.HasValue ? Visibility.Visible : Visibility.Collapsed;
         RefreshReadyState();
@@ -698,7 +720,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         DiffEndpointKind.Scratch => "직접 입력 · 저장되지 않은 비교 버퍼",
         DiffEndpointKind.OpenDocument => endpoint.FilePath ?? "열린 문서",
         DiffEndpointKind.File => endpoint.FilePath ?? "파일",
-        DiffEndpointKind.Clipboard => "클립보드 스냅샷 · 읽기 전용",
+        DiffEndpointKind.Clipboard => endpoint.IsReadOnly ? "클립보드 스냅샷 · 읽기 전용" : "클립보드 스냅샷 · 편집 가능",
         _ => "선택 영역 스냅샷 · 읽기 전용"
     };
 
@@ -787,11 +809,14 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private async void ReloadStale_Click(object sender, RoutedEventArgs e)
     {
-        if (_left.SourceDocumentId is { } leftId && _callbacks.GetSourceRevision(leftId) != _left.SourceRevision)
-            if (!ReloadSource(true, leftId)) return;
-        if (_right.SourceDocumentId is { } rightId && _callbacks.GetSourceRevision(rightId) != _right.SourceRevision)
-            if (!ReloadSource(false, rightId)) return;
-        await CompareNowAsync();
+        try
+        {
+            if (_left.SourceDocumentId is { } leftId && _callbacks.GetSourceRevision(leftId) != _left.SourceRevision)
+                if (!ReloadSource(true, leftId)) return;
+            if (_right.SourceDocumentId is { } rightId && _callbacks.GetSourceRevision(rightId) != _right.SourceRevision)
+                if (!ReloadSource(false, rightId)) return;
+        }
+        finally { if (_needsComparison) await CompareNowAsync(); }
     }
 
     private bool ReloadSource(bool left, Guid documentId)
@@ -801,6 +826,13 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             return false;
         var snapshot = _callbacks.GetSourceSnapshot(documentId);
         if (snapshot is null) { StatusText.Text = "원본 문서가 이미 닫혀 다시 불러올 수 없습니다."; return false; }
+        _comparisonCancellation?.Cancel();
+        _inlineCancellation?.Cancel();
+        _recompareTimer.Stop();
+        _generation++;
+        ClearSnapshotCache();
+        InvalidateDisplayedResult();
+        _needsComparison = true;
         var endpoint = left ? _left : _right;
         var editor = left ? _leftEditor : _rightEditor;
         endpoint.DisplayName = snapshot.DisplayName; endpoint.Text = snapshot.Text; endpoint.FilePath = snapshot.FilePath;
@@ -947,7 +979,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
                 case Key.G: focused.ShowGoToLineDialog(); e.Handled = true; return;
             }
         }
-        if (Keyboard.Modifiers != ModifierKeys.Alt) return;
+        if (Keyboard.Modifiers != ModifierKeys.Alt || FindSide.IsKeyboardFocusWithin || FindSide.IsDropDownOpen) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key == Key.Up) { NavigateDifference(-1); e.Handled = true; }
         else if (key == Key.Down) { NavigateDifference(1); e.Handled = true; }
@@ -1063,8 +1095,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         RightDropZone.Visibility = _right.IsReady ? Visibility.Collapsed : Visibility.Visible;
         SwapButton.IsEnabled = IsReady;
         PreviousButton.IsEnabled = NextButton.IsEnabled = IsReady && _result is { Blocks.Count: > 0 };
-        CopyAllLeftButton.IsEnabled = IsReady && _result is not null && _initialized && !_leftEditor.IsReadOnly;
-        CopyAllRightButton.IsEnabled = IsReady && _result is not null && _initialized && !_rightEditor.IsReadOnly;
+        CopyAllLeftButton.IsEnabled = _initialized && _right.IsReady && !_leftEditor.IsReadOnly;
+        CopyAllRightButton.IsEnabled = _initialized && _left.IsReady && !_rightEditor.IsReadOnly;
         CopyDifferenceButton.IsEnabled = IsReady && _result is not null && _result.Blocks.Count > 0;
         if (!IsReady) { StatusText.Text = "좌우 비교 소스를 선택하세요."; BusyProgress.Visibility = Visibility.Collapsed; }
     }

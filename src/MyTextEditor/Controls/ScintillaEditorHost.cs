@@ -750,8 +750,12 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
         public void SetShortcutProcessor(Func<Forms.Keys, bool>? shortcutProcessor) => _shortcutProcessor = shortcutProcessor;
 
-        protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData) =>
-            _shortcutProcessor?.Invoke(keyData) == true || base.ProcessCmdKey(ref msg, keyData);
+        protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData)
+        {
+            // WindowsFormsHost also offers accelerators while a WPF control has focus.
+            if (!ContainsFocus) return false;
+            return _shortcutProcessor?.Invoke(keyData) == true || base.ProcessCmdKey(ref msg, keyData);
+        }
 
         protected override void WndProc(ref Forms.Message message)
         {

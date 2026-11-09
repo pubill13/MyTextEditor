@@ -30,7 +30,12 @@ public partial class DiffTabView
         var snapshot = left ? _leftSnapshot : _rightSnapshot;
         if (snapshot is { } cached && cached.Revision == editor.ContentRevision) return cached.Text;
         var revision = editor.ContentRevision;
+        var generation = _generation;
         var text = await editor.CaptureTextAsync(token);
+        // A reload may reset the native revision while an older capture is still completing.
+        token.ThrowIfCancellationRequested();
+        if (generation != _generation || revision != editor.ContentRevision)
+            throw new OperationCanceledException(token);
         if (left) { _leftSnapshot = (revision, text); _leftIndex = null; }
         else { _rightSnapshot = (revision, text); _rightIndex = null; }
         return text;

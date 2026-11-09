@@ -1,0 +1,48 @@
+﻿{
+    "GeneratedUtc":  "\/Date(1794231627076)\/",
+    "BaseCommit":  "40bda90a8e92f1cf9d1ba6586b22141de4f52d9f",
+    "ProductAssemblySHA256":  "757D30669E51AB9C1A391CA64BB22475C4574C548BE9B4B2B0654DE534DBA738",
+    "VerificationAssemblySHA256":  "7A9993D5B3D25227D5C3806F0DA4C1A40EC830D00BA032DD5D06BCD4D159205C",
+    "Sources":  [
+                    {
+                        "Path":  "src/MyTextEditor/Controls/ScintillaEditorHost.cs",
+                        "SHA256":  "3892C8909F70229E94237204F5FCC830EB951D22BBE00D832FF62191E2E5CB68"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.Comparison110.cs",
+                        "SHA256":  "0FFE188B778F1DF368BECFCADB636EA4463BCF963CDE5D737B777AD27A4FEB11"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.Search.cs",
+                        "SHA256":  "E8F0DCB1DE25DF7682272F6B9B49E938901C707C63111852ADB6F248CE357C89"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.xaml",
+                        "SHA256":  "00F0261988B932C6A249CD74D86625B91E395F9AC4B19530E41355AFE19F3C23"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.xaml.cs",
+                        "SHA256":  "E090378468D333F8C7FE523F6588DFA84CCCBF40C21C216821E77B9377176D4D"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffWorkspaceWindow.xaml.cs",
+                        "SHA256":  "85BD1B976AE2FC532C6F5473872A44DE2E650748D068E3326B326E7F8183DFD8"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/Program.cs",
+                        "SHA256":  "2E1D456876076D93EF1AFD691DD4FDCD76426D6F3CF895968E6F7ABFF7A1D2C5"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeExplorationVerification.cs",
+                        "SHA256":  "5798ACB92A476D2694207A6C9946AE6691E08416F1ADC3707254E37244CB79E3"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeSourceExploration.cs",
+                        "SHA256":  "0375BFF64C1807412549BC0AA060DE3EBB7CAA443BBE984F93D8E6684ED484E4"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeWorkflowExploration.cs",
+                        "SHA256":  "FFF393423AA436502B936777CCF26833CB01B7AB5907232A2681CAA61C74F58A"
+                    }
+                ]
+}

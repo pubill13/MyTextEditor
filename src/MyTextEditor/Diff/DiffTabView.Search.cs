@@ -106,9 +106,31 @@ public partial class DiffTabView
     private void FindBar_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         // IME composition keys must remain with the text input control.
-        if (e.Key == Key.ImeProcessed) return;
+        if (e.Handled || e.Key == Key.ImeProcessed) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (FindSide.IsKeyboardFocusWithin && Keyboard.Modifiers == ModifierKeys.Alt && key is Key.Up or Key.Down)
+        {
+            // Handle the combo before WindowsFormsHost preprocesses the system key.
+            FindSide.IsDropDownOpen = !FindSide.IsDropDownOpen;
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Enter && (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Shift))
-        { FindInEditor(Keyboard.Modifiers == ModifierKeys.Shift); e.Handled = true; }
+        {
+            if (FindInput.IsKeyboardFocusWithin)
+            {
+                FindInEditor(Keyboard.Modifiers == ModifierKeys.Shift);
+                FindInput.Focus();
+                e.Handled = true;
+            }
+            else if (ReplaceInput.IsKeyboardFocusWithin)
+            {
+                if (Keyboard.Modifiers == ModifierKeys.Shift) FindInEditor(true);
+                else ReplaceCurrent_Click(ReplaceInput, e);
+                ReplaceInput.Focus();
+                e.Handled = true;
+            }
+        }
         else if (e.Key == Key.Escape && !FindSide.IsDropDownOpen)
         { CloseFind_Click(sender, e); e.Handled = true; }
     }
