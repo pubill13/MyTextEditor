@@ -117,3 +117,10 @@
 - Release 빌드, --merge-scroll 검색·단어치환·좌우 독립·Undo/Redo와 가로 범위 이동, --merge-lifetime 저장/종료 경합 PASS. 이전 --merge-clarity 5테마/최소창 PASS.
 - OS 다른 이름 저장 대화상자 실기 및 한글 IME 조합은 미검증. 대용량 모두 치환은 UI 동기 처리이며 기존 대용량 단일줄 지연 제약 유지.
 - v1.11.8 배포 완료:6a6be01, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.8 . EXE/ZIP 서버 SHA-256·크기 일치 검증 후 공개. --word-wrap 추가 PASS. .gitignore 보존.
+
+## 텍스트 정리 설명 툴팁 통일 (미배포)
+- 펼침 설명·상시 설명 제거. ?에 선택한 기능 설명, 빠른 정리/삭제/치환 제목에 설명 툴팁. 제목은 Button으로 Tab/Enter 접근 가능.
+- 클릭 설명은 별도 Popup(StaysOpen=false), Esc·바깥 클릭·기능 변경 닫기. 빠른 정리 제목 전체 폭 + 다음 줄 버튼 배치. 기존 처리 로직/ID 유지.
+- --transform-audit:12개 설명·6개 제목 툴팁 및 클릭 팝업의 높이/스크롤 유지,18기능×3 및 stale/이동/해제 보호 PASS. --verify-tools-window, --help-layout PASS. Release 컴파일 성공.
+- 실제 마우스 hover/외부 클릭, 최소폭 실기 시각 및 전체 테마 팝업 검증은 아직 미실시. .gitignore 보존.
+- v1.11.9: 텍스트 정리 툴팁, 26px 버튼, 폭에 따라 줄을 바꾸는 빠른 정리 및 미리보기 대비 개선. Release 빌드·텍스트 정리 UI/분리 회귀 통과. 전체 테마 실기 시각 검증 미실시.

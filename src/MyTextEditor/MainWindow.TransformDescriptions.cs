@@ -20,15 +20,12 @@ public partial class MainWindow
 
     private void UpdateTransformDescription()
     {
-        if (TransformDescriptionText is null || TransformExampleText is null) return;
+        if (TransformHelpButton is null) return;
         var index = TrimOperationCombo.SelectedIndex;
         if (index < 0 || index >= TransformDescriptions.Length) return;
-        TransformDescriptionText.Text = TransformDescriptions[index].Description;
-        TransformSummaryText.Text = TransformDescriptions[index].Description.Split('.')[0] + ".";
-        TransformDetails.IsExpanded = false;
-        TransformExampleText.Text = TransformDescriptions[index].Example + "\n↵는 줄바꿈 표시이며 예시는 입력값과 별개입니다.";
+        CloseTransformTip();
+        SetTransformTip(TransformHelpButton, TransformDescriptions[index].Description + "\n" + TransformDescriptions[index].Example);
     }
-
     private static string QuickTransformTitle(string operation) => operation switch
     {
         "Duplicate" => "중복 줄 제거",
