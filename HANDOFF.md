@@ -146,3 +146,5 @@
 
 ## v1.11.12 배포 준비
 - 비교·병합 개선을 새 버전 1.11.12로 게시한다. 검증한 구현 소스 해시 유지 확인, 버전/README 갱신, Release 빌드 0경고·0오류. Windows x64 자체 포함 EXE·ZIP 생성 및 GitHub 첨부 크기/SHA-256 검증 후 공개 예정.
+
+- v1.11.12 배포 완료: a620fd4, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.12 . Windows x64 자체 포함 EXE(1.11.12.0)·ZIP 공개, 서버 크기/SHA-256 및 원격 태그 일치 확인. latest 공개 릴리즈 확인(published 2026-11-09T14:04:39Z). 검증 기록과 첨부 해시는 docs/verification/v1.11.12/에 포함. 사용자 .gitignore 변경 보존.

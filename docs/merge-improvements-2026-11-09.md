@@ -48,3 +48,7 @@ dotnet run --project tests/MyTextEditor.Performance -c Release --no-build --no-r
 ```
 
 파일 선택·다른 이름 저장 대화상자의 전체 실기, 한국어 IME 조합, 혼합 DPI, 300MB 전체 비교는 이 검증의 범위에 포함하지 않는다. 위 검증 시점에는 버전 변경·커밋·릴리즈 배포를 수행하지 않았다. 후속 배포는 HANDOFF.md에 기록한다.
+
+## 릴리즈 배포
+
+[OmniEdit v1.11.12](https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.12)로 배포 완료했다. 릴리즈 커밋은 a620fd4이며 Windows x64 자체 포함 EXE(1.11.12.0)와 ZIP을 공개했다. GitHub 서버의 두 첨부 파일 크기·SHA-256이 [로컬 배포 파일 기록](verification/v1.11.12/asset-hashes.json)과 일치함을 확인했다. 제품 구현은 위 검증 당시와 동일하며 릴리즈를 위해 버전 메타데이터를 갱신했다.
