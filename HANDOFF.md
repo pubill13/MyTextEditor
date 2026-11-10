@@ -168,3 +168,5 @@
 - 최종 Release 0경고/0오류, Core 43/43 및 GUI 8묶음 모두 통과했다. 최초 document-panes 자동화에서 ‘Left Undo affected right document’ 1회 실패했으며 단독 재실행과 전체 재실행은 통과했다. 원인은 확정하지 못했고 최초 실패도 docs/verification/v1.11.13/initial-validation-failure.json에 보존했다.
 - Windows x64 자체 포함 EXE·ZIP 생성. 실제 배포 EXE 1.11.13.0의 창 생성·정상 종료(종료 코드 0)를 확인했다. 최종 검증·소스 해시·첨부 해시는 docs/verification/v1.11.13/에 기록했다.
 - 새 태그 v1.11.13으로 게시하며 기존 태그·릴리즈는 변경하지 않는다. 사용자 .gitignore 변경은 제외한다. 업그레이드 전 기존 메인·비교/병합 창을 모두 종료해야 한다.
+
+- v1.11.13 배포 완료: 15ff304, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.13 . Windows x64 자체 포함 EXE(1.11.13.0)·ZIP을 공개했다. 서버 크기/SHA-256, 원격 태그 일치와 공개 API의 latest·최종 다운로드 주소를 확인했다(published 2026-11-10T01:43:36Z). 배포 증빙은 docs/verification/v1.11.13/publication.json에 기록했다. 사용자 .gitignore 해시와 변경 상태를 보존했다.
