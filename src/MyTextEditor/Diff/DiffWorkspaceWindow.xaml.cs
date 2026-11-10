@@ -10,7 +10,7 @@ namespace MyTextEditor.Diff;
 
 public partial class DiffWorkspaceWindow : Window
 {
-    private readonly DiffWindowCallbacks _callbacks;
+    private DiffWindowCallbacks _callbacks;
     private DiffWindowOptions _defaults;
     private DiffAppearance _appearance;
     private bool _closingApproved;

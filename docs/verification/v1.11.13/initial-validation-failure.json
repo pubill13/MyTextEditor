@@ -1,0 +1,7 @@
+﻿{
+    "Scenario":  "document-panes",
+    "ExitCode":  1,
+    "Error":  "Left Undo affected right document",
+    "StandaloneRerunExitCode":  0,
+    "Note":  "Initial focus-based GUI verification failure; exact cause unconfirmed. Full validation rerun required."
+}

@@ -471,15 +471,8 @@ public partial class MainWindow : Window
             _closingInProgress = true;
             // Closing cannot Hide or Close the same window until this event returns.
             await Dispatcher.Yield(DispatcherPriority.Normal);
-            if (!await ConfirmCloseDiffWindowsAsync())
-            {
-                _macroWindow?.CancelPreparedClose();
-                _closingInProgress = false;
-                return;
-            }
             if (!await ConfirmCloseAllAsync())
             {
-                ResetDiffCloseApprovals();
                 _macroWindow?.CancelPreparedClose();
                 _closingInProgress = false;
                 return;
@@ -489,14 +482,12 @@ public partial class MainWindow : Window
             foreach (var document in Documents.ToArray())
             {
                 if (await DiscardRecoveryAsync(document)) continue;
-                ResetDiffCloseApprovals();
                 _macroWindow?.CancelPreparedClose();
                 _closingInProgress = false;
                 return;
             }
             if (Documents.Count != approvedVersions.Count || !CloseVersionsMatch(approvedVersions))
             {
-                ResetDiffCloseApprovals();
                 _macroWindow?.CancelPreparedClose();
                 _closingInProgress = false;
                 StatusMessage.Text = "종료 확인 후 문서가 변경되어 종료를 중단했습니다.";
@@ -518,11 +509,9 @@ public partial class MainWindow : Window
         StopFileSync();
         _settingsSaveTimer.Stop();
         Hide();
-        _diffWorkspaceWindow?.Hide();
         _helpWindow?.Hide();
         _macroWindow?.Hide();
         _macroWindow?.Close();
-        _diffWorkspaceWindow?.Close();
         _helpWindow?.Close();
         if (!SaveSettings(false))
         {
@@ -530,6 +519,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, StatusMessage.Text, "설정 저장", MessageBoxButton.OK, MessageBoxImage.Warning);
             Hide();
         }
+        DetachDiffWorkspace();
         foreach (var document in Documents)
         {
             CancelRecoveryCapture(document);
@@ -804,8 +794,9 @@ public partial class MainWindow : Window
     {
         var valid = SimpleDescriptions().Length > 0;
         ConditionSummaryText.Text = UseConditionSearchCheck.IsChecked == true
-            ? !valid ? "검색 조건을 입력하세요." : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다."
-            : string.IsNullOrEmpty(LiteralFindBox.Text) ? "찾을 텍스트를 입력하세요." : $"'{LiteralFindBox.Text}'을(를) 찾습니다.";
+            ? !valid ? string.Empty : $"{string.Join(", ", SimpleDescriptions())}인 줄을 찾습니다."
+            : string.IsNullOrEmpty(LiteralFindBox.Text) ? string.Empty : $"'{LiteralFindBox.Text}'을(를) 찾습니다.";
+        ConditionSummaryBorder.Visibility = string.IsNullOrEmpty(ConditionSummaryText.Text) ? Visibility.Collapsed : Visibility.Visible;
         ConditionInputsPanel.Visibility = UseConditionSearchCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         LiteralFindBox.IsEnabled = UseConditionSearchCheck.IsChecked != true;
         LiteralFindBox.ToolTip = LiteralFindBox.IsEnabled ? "단어 또는 문장을 입력하고 Enter로 다음 위치를 찾습니다." : "포함·제외 조건 사용 중입니다. 아래 조건으로 검색합니다.";

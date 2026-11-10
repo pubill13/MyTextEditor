@@ -71,7 +71,20 @@ internal static class PanelUxVerification
         var boxes = new[] { all, any, exclude };
         Call(window, "SetToolsVisible", true, false);
         Field<System.Windows.Controls.TabControl>(window, "ToolTabs").SelectedIndex = 0;
+        all.Clear(); any.Clear(); exclude.Clear();
+        var summary = Field<Border>(window, "ConditionSummaryBorder");
+        Check(summary.Visibility == Visibility.Collapsed, "Empty condition summary still reserves space");
+        var resultOptions = Field<Expander>(window, "SearchResultOptionsExpander");
+        var context = Field<ComboBox>(window, "ContextLinesCombo");
+        Check(!resultOptions.IsExpanded, "Result display options should initially be folded");
+        context.SelectedIndex = 3;
+        resultOptions.IsExpanded = true; Pump();
+        resultOptions.IsExpanded = false; Pump();
+        Check(((ComboBoxItem)context.SelectedItem).Content.ToString() == "3", "Folding display options reset the saved context count");
+        var searchOptions = Call(window, "CurrentSearchOptions") as MyTextEditor.Core.Models.SearchOptions;
+        Check(searchOptions?.ContextLines == 3, "Folded display option no longer reaches search");
         all.Text = "AAA, 한글"; any.Text = "BBB"; exclude.Text = "CC";
+        Check(summary.Visibility == Visibility.Visible && Field<TextBlock>(window, "ConditionSummaryText").Text.Contains("AAA"), "Nonempty condition summary missing");
         foreach (var (box, name) in boxes.Zip(new[] { "All", "Any", "Exclude" }))
         {
             box.BringIntoView(); box.Focus(); box.Select(1, 0); Pump();
@@ -96,7 +109,10 @@ internal static class PanelUxVerification
         Check(exclude.IsKeyboardFocused && exclude.SelectedText == exclude.Text, "Latest Find request lost to Replace");
         conditionMode.IsChecked = false;
         var literal = Field<TextBox>(window, "LiteralFindBox");
+        literal.Clear();
+        Check(summary.Visibility == Visibility.Collapsed, "Empty literal search still displays an instruction box");
         literal.Text = "기존 단어";
+        Check(summary.Visibility == Visibility.Visible, "Literal search summary missing");
         Call(window, "ShowSearchInput"); Pump();
         Check(literal.IsKeyboardFocused && literal.SelectedText == literal.Text,
             "Ordinary Find did not select the current literal query");
@@ -179,6 +195,17 @@ internal static class PanelUxVerification
             foreach (double width in new[] { 1040d, 1920d })
             {
                 window.Width = width; window.Height = 720; window.UpdateLayout(); Pump();
+                Field<CheckBox>(window, "UseConditionSearchCheck").IsChecked = true;
+                Field<ColumnDefinition>(window, "ToolColumn").Width = new GridLength(280);
+                window.UpdateLayout(); Pump();
+                foreach (var hint in new[] { Field<TextBlock>(window, "ConditionInputHint"), Field<TextBlock>(window, "ConditionInputExample") })
+                {
+                    var text = new FormattedText(hint.Text, System.Globalization.CultureInfo.CurrentUICulture,
+                        hint.FlowDirection, new Typeface(hint.FontFamily, hint.FontStyle, hint.FontWeight, hint.FontStretch),
+                        hint.FontSize, hint.Foreground, VisualTreeHelper.GetDpi(hint).PixelsPerDip);
+                    Check(hint.ActualWidth >= text.WidthIncludingTrailingWhitespace && hint.ActualHeight < text.Height * 1.5,
+                        $"Condition hint clipped or wrapped at minimum panel width: {hint.Text}/{palette.Id}");
+                }
                 Point before = search.TranslatePoint(new Point(), window);
                 scroll.ScrollToBottom(); Pump();
                 Check(Math.Abs(search.TranslatePoint(new Point(), window).Y - before.Y) < 1, "Search button moved when scrolling");
@@ -187,7 +214,29 @@ internal static class PanelUxVerification
                     Point position = button.TranslatePoint(new Point(), window);
                     Check(position.X >= -1 && position.Y >= -1 && position.X + button.ActualWidth <= window.ActualWidth + 1 && position.Y + button.ActualHeight <= window.ActualHeight + 1, $"Primary command clipped: {button.Content} at {width}/{palette.Id}");
                 }
-                if (width == 1040) Capture(window, palette.Id);
+                if (width == 1040)
+                {
+                    scroll.ScrollToTop(); Pump();
+                    Capture(window, palette.Id);
+                    Field<Expander>(window, "SearchResultOptionsExpander").IsExpanded = true;
+                    scroll.ScrollToBottom(); Pump();
+                    Capture(window, palette.Id + "-options");
+                    Field<Expander>(window, "SearchResultOptionsExpander").IsExpanded = false;
+                    Field<System.Windows.Controls.TabControl>(window, "ToolTabs").SelectedIndex = 1; Pump();
+                    Capture(window, palette.Id + "-tools");
+                    Field<ScrollViewer>(window, "TransformScrollViewer").ScrollToBottom(); Pump();
+                    Capture(window, palette.Id + "-tools-bottom");
+                    Field<System.Windows.Controls.TabControl>(window, "ToolTabs").SelectedIndex = 0; Pump();
+                    Call(window, "DetachTools_Click", window, new RoutedEventArgs()); Pump();
+                    var detached = Field<Window>(window, "_toolsWindow");
+                    detached.Width = detached.MinWidth;
+                    detached.Height = 700;
+                    scroll.ScrollToTop(); detached.UpdateLayout(); Pump();
+                    var hint = Field<TextBlock>(window, "ConditionInputHint");
+                    Check(hint.IsVisible && hint.ActualWidth >= 210, "Detached condition hint is clipped");
+                    Capture(detached, palette.Id + "-detached");
+                    Call(window, "DetachTools_Click", window, new RoutedEventArgs()); Pump();
+                }
             }
         }
         Console.WriteLine("PASS fixed Find command and primary button bounds at 1040/1920 logical pixels, all five palettes");

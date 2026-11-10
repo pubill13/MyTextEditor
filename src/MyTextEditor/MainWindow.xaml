@@ -8,6 +8,36 @@
         AllowDrop="True" PreviewDragOver="Window_PreviewDragOver" Drop="Window_Drop" DpiChanged="Window_DpiChanged">
     <Window.Resources>
         <models:PointsToDipsConverter x:Key="PointsToDips"/>
+        <Style x:Key="PanelSectionHeader" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+            <Setter Property="Padding" Value="7,4"/>
+            <Setter Property="Margin" Value="0,0,0,7"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="TextElement.FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="PanelFunctionTitle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Padding" Value="7,4"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="2">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="CompactToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Height" Value="26"/><Setter Property="Padding" Value="9,2"/><Setter Property="Margin" Value="2"/>
         </Style>
@@ -266,7 +296,7 @@
                             <StackPanel>
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
-                                        <TextBlock Text="검색" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                        <Border Style="{StaticResource PanelSectionHeader}"><TextBlock Text="검색" FontSize="17"/></Border>
                                         <TextBlock Text="찾을 텍스트"/><TextBox x:Name="LiteralFindBox" ToolTip="단어 또는 문장을 입력하고 Enter로 다음 위치를 찾습니다." KeyDown="LiteralFindBox_KeyDown" TextChanged="SimpleCondition_TextChanged" />
                                         <CheckBox x:Name="UseConditionSearchCheck" Content="포함·제외 조건 사용" ToolTip="일반 찾을 텍스트 대신 아래 모두 포함·하나라도 포함·제외 조건으로 검색합니다." Checked="SearchMode_Changed" Unchecked="SearchMode_Changed" Margin="0,7,0,0" />
                                         <CheckBox x:Name="FolderSearchCheck" Content="폴더 내 검색" Margin="0,7,0,0" Checked="FolderSearchMode_Changed" Unchecked="FolderSearchMode_Changed" ToolTip="폴더를 선택한 뒤 모두 찾기로 검색합니다." />
@@ -281,8 +311,9 @@
                                             <TextBlock Text="파일 형식 (; 구분)"/><TextBox x:Name="FolderPatternBox" Text="{x:Static core:FolderSearchOptions.DefaultFilePatterns}" LostKeyboardFocus="FolderPattern_LostFocus" ToolTip="예: *.txt;*.log — 세미콜론으로 구분합니다. 비우면 기본 형식 목록으로 복원합니다." />
                                         </StackPanel>
                                         <StackPanel x:Name="ConditionInputsPanel" Visibility="Collapsed">
-                                            <TextBlock Text="조건 검색" FontWeight="SemiBold" Margin="0,16,0,7" />
-                                            <TextBlock Text="쉼표로 여러 검색어를 구분할 수 있습니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8" />
+                                            <Border Style="{StaticResource PanelSectionHeader}" Margin="0,12,0,7"><TextBlock Text="조건 검색"/></Border>
+                                            <TextBlock x:Name="ConditionInputHint" Text="여러 검색어는 쉼표로 구분합니다." TextWrapping="NoWrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,3"/>
+                                            <TextBlock x:Name="ConditionInputExample" Text="예: 오류, 경고, 실패" TextWrapping="NoWrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,8"/>
                                             <TextBlock Text="모두 포함" Margin="0,5,0,3"/><TextBox x:Name="SimpleAllBox" ToolTip="예: AAA, BBB — 쉼표로 추가" TextChanged="SimpleCondition_TextChanged" KeyDown="SearchInput_KeyDown" GotKeyboardFocus="SearchField_GotKeyboardFocus"/>
                                             <WrapPanel x:Name="SimpleAllTags" Margin="0,4,0,0" />
                                             <TextBlock Text="하나라도 포함" Margin="0,8,0,3"/><TextBox x:Name="SimpleAnyBox" ToolTip="예: 오류, 경고 — 쉼표로 추가" TextChanged="SimpleCondition_TextChanged" KeyDown="SearchInput_KeyDown" GotKeyboardFocus="SearchField_GotKeyboardFocus"/>
@@ -290,24 +321,31 @@
                                             <TextBlock Text="제외" Margin="0,8,0,3"/><TextBox x:Name="SimpleExcludeBox" ToolTip="예: 테스트 — 쉼표로 추가" TextChanged="SimpleCondition_TextChanged" KeyDown="SearchInput_KeyDown" GotKeyboardFocus="SearchField_GotKeyboardFocus"/>
                                             <WrapPanel x:Name="SimpleExcludeTags" Margin="0,4,0,0" />
                                         </StackPanel>
-                                        <Border Margin="0,10,0,0" Padding="9" CornerRadius="5" Background="{DynamicResource SurfaceAltBrush}">
-                                            <TextBlock x:Name="ConditionSummaryText" Text="검색 조건을 입력하세요." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" />
+                                        <Border x:Name="ConditionSummaryBorder" Visibility="Collapsed" Margin="0,10,0,0" Padding="9" CornerRadius="5" Background="{DynamicResource SurfaceAltBrush}">
+                                            <TextBlock x:Name="ConditionSummaryText" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" />
                                         </Border>
                                     </StackPanel>
                                 </Border>
                                 <Border Style="{StaticResource PanelCard}">
                                     <StackPanel>
-                                        <TextBlock Text="검색 옵션" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <Border Style="{StaticResource PanelSectionHeader}"><TextBlock Text="검색 옵션"/></Border>
+                                        <TextBlock Text="검색 방식" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,4"/>
                                         <WrapPanel>
                                             <CheckBox x:Name="MatchCaseCheck" Content="대소문자 구분" ToolTip="켜면 ABC와 abc를 서로 다른 텍스트로 검색합니다." />
                                             <CheckBox x:Name="WholeWordCheck" Content="완전한 단어" ToolTip="예: error 검색 시 errors 같은 단어의 일부는 제외합니다." />
                                         </WrapPanel>
-                                        <DockPanel Margin="4,4">
-                                            <TextBlock Text="앞뒤 함께 볼 줄 수" ToolTip="2이면 일치 줄 앞뒤 2줄을 함께 표시합니다. 열린 파일 전체 검색은 일치 줄만 표시합니다." />
-                                            <ComboBox x:Name="ContextLinesCombo" AutomationProperties.Name="앞뒤 함께 볼 줄 수" ToolTip="0은 일치 줄만, 2는 앞뒤 2줄도 표시합니다. 열린 파일 전체 검색에는 적용되지 않습니다." Width="70" HorizontalAlignment="Right">
+                                        <Expander x:Name="SearchResultOptionsExpander" Header="결과 표시" IsExpanded="False" Margin="0,8,0,0" Foreground="{DynamicResource TextBrush}">
+                                            <StackPanel Margin="0,5,0,0">
+                                            <Grid Margin="4,4">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/></Grid.ColumnDefinitions>
+                                            <TextBlock Text="주변 줄 함께 보기" VerticalAlignment="Center" ToolTip="선택한 줄 수만큼 일치 줄의 앞뒤를 함께 표시합니다."/>
+                                            <ComboBox x:Name="ContextLinesCombo" Grid.Column="1" AutomationProperties.Name="주변 줄 함께 보기" ToolTip="0은 일치 줄만, 2는 앞뒤 2줄도 표시합니다. 열린 파일 전체 검색에는 적용되지 않습니다." HorizontalAlignment="Stretch">
                                                 <ComboBoxItem Content="0" IsSelected="True"/><ComboBoxItem Content="1"/><ComboBoxItem Content="2"/><ComboBoxItem Content="3"/><ComboBoxItem Content="5"/>
                                             </ComboBox>
-                                        </DockPanel>
+                                            </Grid>
+                                            <TextBlock Text="현재 문서·폴더 검색에 적용됩니다.&#10;열린 파일 전체 검색에는 적용되지 않습니다." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="4,3,4,0"/>
+                                            </StackPanel>
+                                        </Expander>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -335,7 +373,7 @@
                                 <Setter Property="Padding" Value="6,1"/>
                                 <Setter Property="Margin" Value="0,0,4,0"/>
                             </Style>
-                        </DockPanel.Resources><TextBlock Text="줄 단위 편집" FontSize="17" FontWeight="SemiBold" /></DockPanel>
+                        </DockPanel.Resources><Border Style="{StaticResource PanelSectionHeader}"><TextBlock Text="줄 단위 편집" FontSize="17"/></Border></DockPanel>
                                         <ComboBox x:Name="TrimOperationCombo" Margin="0,6,0,0" SelectionChanged="TrimOperationCombo_SelectionChanged">
                                             <ComboBoxItem Content="기준 앞 텍스트 삭제" IsSelected="True" />
                                             <ComboBoxItem Content="기준 뒤 텍스트 삭제" />
@@ -380,35 +418,35 @@
                                 </Border>
                                 <Border Style="{StaticResource PanelCard}" Padding="8">
                                     <StackPanel>
-                                        <TextBlock Text="빠른 정리" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                        <Border Style="{StaticResource PanelSectionHeader}"><TextBlock Text="빠른 정리" FontSize="17"/></Border>
                                         <Grid Margin="0,0,0,4" SizeChanged="QuickTransformRow_SizeChanged">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                            <Button Content="중복 줄 제거" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontWeight="SemiBold" Tag="같은 내용은 처음 나온 줄만 남깁니다. 대소문자는 구분하지 않고 앞뒤 공백은 구분합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
+                                            <Button Content="중복 줄 제거" Style="{StaticResource PanelFunctionTitle}" Tag="같은 내용은 처음 나온 줄만 남깁니다. 대소문자는 구분하지 않고 앞뒤 공백은 구분합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
                                             <WrapPanel Grid.Column="1"><Button Style="{StaticResource TransformActionButton}" Content="미리보기" Tag="Duplicate" ToolTip="같은 내용은 처음 나온 줄만 남깁니다. 대소문자는 구분하지 않고 앞뒤 공백은 구분합니다." Click="QuickTransform_Click"/><Button Style="{StaticResource TransformActionButton}" Content="바로 적용" Tag="Duplicate" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel>
                                         </Grid>
                                         <Grid Margin="0,0,0,4" SizeChanged="QuickTransformRow_SizeChanged">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                            <Button Content="빈 줄 모두 제거" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontWeight="SemiBold" Tag="내용이 없거나 공백·탭만 있는 줄을 모두 삭제합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
+                                            <Button Content="빈 줄 모두 제거" Style="{StaticResource PanelFunctionTitle}" Tag="내용이 없거나 공백·탭만 있는 줄을 모두 삭제합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
                                             <WrapPanel Grid.Column="1"><Button Style="{StaticResource TransformActionButton}" Content="미리보기" Tag="Blank" ToolTip="내용이 없거나 공백·탭만 있는 줄을 모두 삭제합니다." Click="QuickTransform_Click"/><Button Style="{StaticResource TransformActionButton}" Content="바로 적용" Tag="Blank" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel>
                                         </Grid>
                                         <Grid Margin="0,0,0,4" SizeChanged="QuickTransformRow_SizeChanged">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                            <Button Content="연속 빈 줄을 한 줄로" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontWeight="SemiBold" Tag="이어진 빈 줄을 첫 빈 줄 하나로 줄입니다. 한 줄씩 떨어진 빈 줄은 유지합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
+                                            <Button Content="연속 빈 줄을 한 줄로" Style="{StaticResource PanelFunctionTitle}" Tag="이어진 빈 줄을 첫 빈 줄 하나로 줄입니다. 한 줄씩 떨어진 빈 줄은 유지합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
                                             <WrapPanel Grid.Column="1"><Button Style="{StaticResource TransformActionButton}" Content="미리보기" Tag="Collapse" ToolTip="이어진 빈 줄을 첫 빈 줄 하나로 줄입니다. 한 줄씩 떨어진 빈 줄은 유지합니다." Click="QuickTransform_Click"/><Button Style="{StaticResource TransformActionButton}" Content="바로 적용" Tag="Collapse" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel>
                                         </Grid>
                                         <Grid Margin="0,0,0,4" SizeChanged="QuickTransformRow_SizeChanged">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                            <Button Content="줄 공백 정리" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontWeight="SemiBold" Tag="기본은 줄 끝 공백·탭만 제거합니다. 앞뒤 모두를 선택하면 들여쓰기도 제거합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
+                                            <Button Content="줄 공백 정리" Style="{StaticResource PanelFunctionTitle}" Tag="기본은 줄 끝 공백·탭만 제거합니다. 앞뒤 모두를 선택하면 들여쓰기도 제거합니다." Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
                                             <WrapPanel Grid.Column="1"><Button Style="{StaticResource TransformActionButton}" Content="미리보기" Tag="Whitespace" ToolTip="기본은 줄 끝 공백·탭만 제거합니다. 앞뒤 모두를 선택하면 들여쓰기도 제거합니다." Click="QuickTransform_Click"/><Button Style="{StaticResource TransformActionButton}" Content="바로 적용" Tag="Whitespace" ToolTip="확인창 없이 적용합니다. Ctrl+Z로 되돌립니다." Click="ApplyQuickTransform_Click"/></WrapPanel>
                                         </Grid>
 
                                         <ComboBox x:Name="QuickWhitespaceMode" HorizontalAlignment="Left" Margin="0,0,0,4" AutomationProperties.Name="줄 공백 정리 범위"><ComboBoxItem Content="줄 끝만" IsSelected="True"/><ComboBoxItem Content="앞뒤 모두"/></ComboBox>
                                         <Separator Margin="0,6" />
-                                        <Button Content="특정 텍스트 포함 줄 삭제" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontWeight="SemiBold" Tag="입력한 텍스트가 있는 줄 전체를 삭제합니다. 대소문자 구분 옵션을 따릅니다.&#10;예: ERROR 포함 줄 삭제" Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
+                                        <Button Content="특정 텍스트 포함 줄 삭제" Style="{StaticResource PanelFunctionTitle}" Tag="입력한 텍스트가 있는 줄 전체를 삭제합니다. 대소문자 구분 옵션을 따릅니다.&#10;예: ERROR 포함 줄 삭제" Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
                                         <TextBlock Text="줄에서 찾을 텍스트" Margin="0,7,0,3" /><TextBox x:Name="DeleteContainingBox" ToolTip="예: 연결 시간 초과" />
                                         <CheckBox x:Name="DeleteContainingMatchCaseCheck" Content="대소문자 구분" ToolTip="켜면 ABC와 abc를 서로 다른 텍스트로 검색합니다." />
                                         <WrapPanel Margin="0,4,0,0">
@@ -416,7 +454,7 @@
                                             <Button Style="{StaticResource TransformActionButton}" Content="바로 삭제" Foreground="{DynamicResource DangerBrush}" Click="ApplyDeleteContainingDirect_Click" ToolTip="확인창 없이 적용하며 Ctrl+Z로 되돌릴 수 있습니다." />
                                         </WrapPanel>
                                         <Separator Margin="0,6" />
-                                        <Button Content="일괄 치환" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" FontWeight="SemiBold" Tag="일치하는 텍스트를 모두 바꿉니다. 대소문자는 구분하지 않습니다. 바꿀 텍스트를 비우면 삭제합니다.&#10;예: apple → 사과" Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
+                                        <Button Content="일괄 치환" Style="{StaticResource PanelFunctionTitle}" Tag="일치하는 텍스트를 모두 바꿉니다. 대소문자는 구분하지 않습니다. 바꿀 텍스트를 비우면 삭제합니다.&#10;예: apple → 사과" Loaded="TransformTitleHelp_Loaded" Focusable="False"/>
                                         <TextBlock Text="찾을 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceFromBox" />
                                         <TextBlock Text="바꿀 텍스트" Margin="0,7,0,3" /><TextBox x:Name="ReplaceToBox" />
                                         <WrapPanel Margin="0,4,0,0">

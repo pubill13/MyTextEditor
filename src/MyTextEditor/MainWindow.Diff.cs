@@ -70,7 +70,7 @@ public partial class MainWindow
         workspace.ResourcesReleased += DiffWorkspace_ResourcesReleased;
         workspace.Closed += DiffWorkspace_Closed;
         _diffWorkspaceWindow = workspace;
-        workspace.IsVisibleChanged += (_, _) => DiffToggleButton.IsChecked = workspace.IsVisible;
+        workspace.IsVisibleChanged += DiffWorkspace_IsVisibleChanged;
         workspace.Show();
         return workspace;
     }
@@ -81,6 +81,20 @@ public partial class MainWindow
         if (workspace.WindowState == WindowState.Minimized)
             workspace.WindowState = WindowState.Normal;
         workspace.Activate();
+    }
+
+    private void DiffWorkspace_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e) =>
+        DiffToggleButton.IsChecked = ((DiffWorkspaceWindow)sender).IsVisible;
+
+    private void DetachDiffWorkspace()
+    {
+        if (_diffWorkspaceWindow is not { } workspace) return;
+        workspace.ResourcesReleased -= DiffWorkspace_ResourcesReleased;
+        workspace.Closed -= DiffWorkspace_Closed;
+        workspace.IsVisibleChanged -= DiffWorkspace_IsVisibleChanged;
+        workspace.DetachFromMainWindow(id => FindDocument(id) is not { } document || document.IsModified,
+            _settingsReady);
+        _diffWorkspaceWindow = null;
     }
 
     private void OpenDiffComparison(DiffEndpoint left, DiffEndpoint right)
@@ -103,6 +117,7 @@ public partial class MainWindow
         {
             workspace.ResourcesReleased -= DiffWorkspace_ResourcesReleased;
             workspace.Closed -= DiffWorkspace_Closed;
+            workspace.IsVisibleChanged -= DiffWorkspace_IsVisibleChanged;
         }
         if (ReferenceEquals(sender, _diffWorkspaceWindow))
             _diffWorkspaceWindow = null;
@@ -174,7 +189,7 @@ public partial class MainWindow
         return document is not null && await SaveDocumentAsync(document, false);
     }
 
-    private Task CreateDiffDocumentAsync(string title, string text)
+    internal Task CreateDiffDocumentAsync(string title, string text)
     {
         NewDocument(text);
         StatusMessage.Text = $"Diff 내용으로 새 문서를 만들었습니다: {title}";
@@ -198,8 +213,4 @@ public partial class MainWindow
 
     private void RefreshDiffSourceStates() => _diffWorkspaceWindow?.RefreshSourceStates();
 
-    private async Task<bool> ConfirmCloseDiffWindowsAsync() =>
-        _diffWorkspaceWindow is null || await _diffWorkspaceWindow.RequestCloseAsync();
-
-    private void ResetDiffCloseApprovals() => _diffWorkspaceWindow?.CancelPreparedClose();
 }

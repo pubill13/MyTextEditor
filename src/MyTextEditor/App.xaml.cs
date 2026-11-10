@@ -17,12 +17,27 @@ public partial class App : System.Windows.Application
 
     private bool TryOpenAdditionalWindow()
     {
-        if (Dispatcher.HasShutdownStarted || !Windows.OfType<MainWindow>().Any(window => window.CanReceiveDocument))
+        if (Dispatcher.HasShutdownStarted ||
+            !Windows.OfType<MainWindow>().Any(window => window.CanReceiveDocument) &&
+            (Windows.OfType<MainWindow>().Any() || !Windows.OfType<Diff.DiffWorkspaceWindow>().Any()))
             return false;
         var window = new MainWindow();
         window.Show();
         window.Activate();
         return true;
+    }
+
+    private bool TryReceiveFiles(string[] files)
+    {
+        if (files.Length == 0) return TryOpenAdditionalWindow();
+        var receiver = Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsActive)
+            ?? Windows.OfType<MainWindow>().FirstOrDefault();
+        if (receiver is null)
+        {
+            if (!TryOpenAdditionalWindow()) return false;
+            receiver = Windows.OfType<MainWindow>().First();
+        }
+        return receiver.TryAcceptExternalFiles(files);
     }
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -86,8 +101,7 @@ public partial class App : System.Windows.Application
         // Queue the launch files before enabling external requests; the normal open gate preserves order.
         var startup = paths.Length > 0 ? window.OpenStartupFilesAsync(paths) : Task.CompletedTask;
         _fileOpenCoordinator.Start(
-            files => files.Length == 0 ? TryOpenAdditionalWindow() : Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsActive)?.TryAcceptExternalFiles(files)
-                ?? Windows.OfType<MainWindow>().FirstOrDefault()?.TryAcceptExternalFiles(files) ?? false,
+            TryReceiveFiles,
             error => Windows.OfType<MainWindow>().FirstOrDefault()?.ReportFileOpenDeliveryError(error));
         await startup;
         if (RecoveryStore is not null && Windows.OfType<MainWindow>().Contains(window))

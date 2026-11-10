@@ -1,0 +1,52 @@
+﻿[
+    {
+        "Name":  "build",
+        "ExitCode":  0,
+        "Milliseconds":  878
+    },
+    {
+        "Name":  "core",
+        "ExitCode":  0,
+        "Milliseconds":  1915
+    },
+    {
+        "Name":  "merge-independent",
+        "ExitCode":  0,
+        "Milliseconds":  4214
+    },
+    {
+        "Name":  "merge-lifetime",
+        "ExitCode":  0,
+        "Milliseconds":  3387
+    },
+    {
+        "Name":  "document-panes",
+        "ExitCode":  0,
+        "Milliseconds":  7614
+    },
+    {
+        "Name":  "panel-ux",
+        "ExitCode":  0,
+        "Milliseconds":  4931
+    },
+    {
+        "Name":  "verify-tools-window",
+        "ExitCode":  0,
+        "Milliseconds":  2146
+    },
+    {
+        "Name":  "transform-audit",
+        "ExitCode":  0,
+        "Milliseconds":  12289
+    },
+    {
+        "Name":  "omni-search",
+        "ExitCode":  0,
+        "Milliseconds":  2198
+    },
+    {
+        "Name":  "help-layout",
+        "ExitCode":  0,
+        "Milliseconds":  2101
+    }
+]

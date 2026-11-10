@@ -26,7 +26,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private readonly TextDiffEngine _diffEngine = new();
     private readonly TextMergeService _mergeService = new();
     private readonly DocumentFileService _fileService = new();
-    private readonly DiffWindowCallbacks _callbacks;
+    private DiffWindowCallbacks _callbacks;
     private DiffAppearance _appearance;
     private readonly DispatcherTimer _recompareTimer;
     private ScintillaEditorHost _leftEditor = null!;
@@ -97,6 +97,35 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     public void RefreshSourceState()
     {
         if (IsLoaded && !_resourcesReleased) CheckStaleSources();
+    }
+
+    public void DetachSourceDocuments(DiffWindowCallbacks callbacks, Func<Guid, bool> sourceHasUnsavedChanges)
+    {
+        Detach(true);
+        Detach(false);
+        _callbacks = callbacks;
+        RefreshEndpointHeaders();
+        CheckStaleSources();
+
+        void Detach(bool left)
+        {
+            var endpoint = left ? _left : _right;
+            if (endpoint.SourceDocumentId is not { } id) return;
+            // A clean comparison can still be the only copy of an unsaved source document.
+            var snapshot = _callbacks.GetSourceSnapshot(id);
+            var dirty = sourceHasUnsavedChanges(id) || snapshot is null || snapshot.Text != endpoint.Text;
+            var detached = new DiffEndpoint
+            {
+                Kind = endpoint.FilePath is null ? DiffEndpointKind.Scratch : DiffEndpointKind.File,
+                DisplayName = endpoint.DisplayName, Text = endpoint.Text, FilePath = endpoint.FilePath,
+                Encoding = endpoint.Encoding, HasByteOrderMark = endpoint.HasByteOrderMark,
+                NewLine = endpoint.NewLine, IsReadOnly = endpoint.IsReadOnly,
+                SourceFileLength = endpoint.SourceFileLength, SourceFileLastWriteUtc = endpoint.SourceFileLastWriteUtc,
+                HasUnsavedSourceSnapshot = dirty
+            };
+            if (left) { _left = detached; _leftDirty |= dirty; }
+            else { _right = detached; _rightDirty |= dirty; }
+        }
     }
 
     public void ApplyAppearance(DiffAppearance appearance)
@@ -174,7 +203,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void LeftEditor_RevisionChanged(object? sender, EventArgs e)
     {
         if (_updatingEditors) return;
-        _leftDirty = _leftEditor.IsModified;
+        _leftDirty = _leftEditor.IsModified || _left.HasUnsavedSourceSnapshot;
         PromoteTypedEndpoint(true);
         EditorChanged();
     }
@@ -182,7 +211,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void RightEditor_RevisionChanged(object? sender, EventArgs e)
     {
         if (_updatingEditors) return;
-        _rightDirty = _rightEditor.IsModified;
+        _rightDirty = _rightEditor.IsModified || _right.HasUnsavedSourceSnapshot;
         PromoteTypedEndpoint(false);
         EditorChanged();
     }
@@ -910,6 +939,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
                     return false;
                 }
                 editor.MarkSaved();
+                endpoint.HasUnsavedSourceSnapshot = false;
                 if (left) _leftDirty = false; else _rightDirty = false;
                 RefreshEndpointHeaders(); StatusText.Text = $"저장됨: {destination}";
                 return true;

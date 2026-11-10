@@ -81,6 +81,7 @@ internal static class Program
         if (args.Contains("--result-font")) return SearchResultFontVerification.Run();
         if (args.Contains("--merge-110")) return Merge110Verification.Run();
         if (args.Contains("--merge-lifetime")) return MergeLifetimeVerification.Run();
+        if (args.Contains("--merge-independent")) return MergeIndependentVerification.Run();
         if (args.Length >= 2 && args[0] == "--large-file")
             return LargeFileBenchmark.Run(args[1], args.Length > 2 ? args[2] : "prefix");
         if (args.Contains("--macros"))
