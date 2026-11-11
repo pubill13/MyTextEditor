@@ -56,6 +56,7 @@ public sealed class DiffUserSettings
     public bool IgnoreCase { get; set; }
     public bool IgnoreEmptyLines { get; set; }
     public bool ScrollSync { get; set; } = true;
+    public bool HorizontalScrollSync { get; set; }
     public double WindowWidth { get; set; } = 1440;
     public double WindowHeight { get; set; } = 860;
     public double? WindowLeft { get; set; }

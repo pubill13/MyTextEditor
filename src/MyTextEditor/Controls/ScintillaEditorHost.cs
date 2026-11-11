@@ -214,6 +214,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         }
     }
     public int FirstVisibleLine => _editor.FirstVisibleLine;
+    public int HorizontalOffset => _editor.XOffset;
     public int LinesOnScreen => _editor.LinesOnScreen;
 
     public event EventHandler? CaretChanged;
@@ -223,6 +224,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     public event EventHandler? DirtyChanged;
     public event EventHandler? ViewportChanged;
     public event EventHandler? VerticalScrolled;
+    public event EventHandler? HorizontalScrolled;
     public event EventHandler<EditorShortcutEventArgs>? ShortcutRequested;
     public event Action<IReadOnlyList<string>>? FilesDropped;
 
@@ -247,6 +249,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         DirtyChanged = null;
         ViewportChanged = null;
         VerticalScrolled = null;
+        HorizontalScrolled = null;
         ShortcutRequested = null;
         FilesDropped = null;
         // WindowsFormsHost also owns an InputManager subscription and native adapter.
@@ -268,6 +271,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         ClearUserHighlights();
         _markedCurrentLine = -1;
         _lastNotifiedFirstVisibleLine = -1;
+        _lastNotifiedHorizontalOffset = -1;
         _currentLineMarkerHandle = null;
         _loading = true;
         try
@@ -433,7 +437,11 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         if (_editor.Lines.Count == 0) return;
         var index = Math.Clamp(oneBasedLineNumber - 1, 0, _editor.Lines.Count - 1);
         var line = _editor.Lines[index];
-        _editor.SetSelection(line.EndPosition, line.Position);
+        // EndPosition includes the line ending; placing the caret there reveals the next line.
+        var end = line.EndPosition;
+        if (end > line.Position && _editor.GetCharAt(end - 1) == '\n') end--;
+        if (end > line.Position && _editor.GetCharAt(end - 1) == '\r') end--;
+        _editor.SetSelection(end, line.Position);
         _editor.ScrollCaret();
         if (focusEditor) _editor.Focus();
     }
@@ -625,6 +633,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         {
             NotifyVerticalScroll();
         }
+        if ((e.Change & UpdateChange.HScroll) != 0) NotifyHorizontalScroll();
     }
 
     private void NotifyVerticalScroll()

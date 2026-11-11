@@ -47,7 +47,8 @@ public sealed record DiffWindowOptions(
     double Width = 1320,
     double Height = 820,
     double? Left = null,
-    double? Top = null);
+    double? Top = null,
+    bool HorizontalScrollSync = false);
 
 public sealed record DiffAppearance(string FontFamily, float FontSize, bool DarkTheme, float DpiScale = 1f)
 {

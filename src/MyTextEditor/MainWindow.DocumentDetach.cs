@@ -81,6 +81,7 @@ public partial class MainWindow
         var sourceSplit = RightDocumentTabs.IsVisible;
         var destinationSplit = destination.RightDocumentTabs.IsVisible;
         _fileSyncStates.TryGetValue(document, out var syncState);
+        var hasExternalOrder = _externalFileOrder.TryGetValue(document, out var externalOrder);
         _documentTransferRunning = destination._documentTransferRunning = true;
         ++_documentFocusGeneration;
         ++destination._documentFocusGeneration;
@@ -110,6 +111,8 @@ public partial class MainWindow
             UpdateStatus();
             StatusMessage.Text = "문서 탭을 다른 OmniEdit 창으로 옮겼습니다.";
             destination.Activate();
+            _externalFileOrder.Remove(document);
+            if (hasExternalOrder) destination._externalFileOrder[document] = externalOrder;
             Services.DiagnosticLog.Measure("move-document-window", watch.Elapsed.TotalMilliseconds);
             return true;
         }
@@ -120,6 +123,8 @@ public partial class MainWindow
             destination.DisconnectEditor(document.Editor);
             destination.Documents.Remove(document);
             destination._fileSyncStates.Remove(document);
+            destination._externalFileOrder.Remove(document);
+            if (hasExternalOrder) _externalFileOrder[document] = externalOrder;
             destination.UpdateLayout();
             if (!Documents.Contains(document))
             {

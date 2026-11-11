@@ -10,6 +10,7 @@ using MyTextEditor.Core.Models;
 using MyTextEditor.Diff;
 using MyTextEditor.Help;
 using MyTextEditor.Models;
+using MyTextEditor.Services;
 
 internal static class MergeIndependentVerification
 {
@@ -118,7 +119,7 @@ internal static class MergeIndependentVerification
                 extracted.Close();
                 PumpUntil(() => !app.Windows.OfType<MainWindow>().Any());
                 var launchFiles = hidden ? new[] { path } : Array.Empty<string>();
-                Check((bool)Call(app, "TryReceiveFiles", (object)launchFiles)!, "Cannot reopen main with only Merge alive");
+                Check((bool)Call(app, "TryReceiveFiles", FileOpenRequest.Create(launchFiles))!, "Cannot reopen main with only Merge alive");
                 var reopened = app.Windows.OfType<MainWindow>().Single();
                 Isolate(reopened);
                 if (hidden) PumpUntil(() => reopened.Documents.Any(item => item.FilePath == path));

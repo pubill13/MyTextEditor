@@ -100,6 +100,7 @@
                 <Separator />
                 <MenuItem Header="저장(_S)" InputGestureText="Ctrl+S" Click="Save_Click" />
                 <MenuItem Header="다른 이름으로 저장(_A)…" InputGestureText="Ctrl+Shift+S" Click="SaveAs_Click" />
+                <MenuItem Header="디스크에서 다시 불러오기" Click="ReloadExternalFile_Click" />
                 <Separator />
                 <MenuItem x:Name="EncodingFileMenu" Header="인코딩" SubmenuOpened="EncodingMenu_Opened">
                     <MenuItem Header="인코딩 선택" IsEnabled="False"/>

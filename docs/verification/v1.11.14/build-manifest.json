@@ -1,0 +1,141 @@
+﻿{
+    "Version":  "1.11.14",
+    "GeneratedUtc":  "2026-11-11T00:13:07.8516987Z",
+    "BaseCommit":  "933928dc8e81a479b06a344b21a543bf76ffd29e",
+    "ProductAssemblySHA256":  "EB677FAF4E9DBA7DEC2CDE7ADEB910875D349FF07A6A756F3BC34BD38EEF8210",
+    "VerificationAssemblySHA256":  "B29DE1132ACA800275F8879C5BCAD956A4D7D1FE85C223368967B85A7ADF7045",
+    "Sources":  [
+                    {
+                        "Path":  "src/MyTextEditor/App.xaml.cs",
+                        "SHA256":  "FFDB6255C0921D90B281DD656880D45C4C2AC8326B9EABCB03D087E16F7371C3"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Controls/ScintillaEditorHost.cs",
+                        "SHA256":  "D85715C393B4345B065BFD48441F6966C43A6B35819A72A4C8BD36DB7373950E"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Controls/ScintillaEditorHost.Extras.cs",
+                        "SHA256":  "EA40026CABC46B052BDACF196A96E8AD5526897BB5388B5A58A2FACC39493DCF"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffContracts.cs",
+                        "SHA256":  "5B01A949FEA19E55CF9750538365B28DBC70560059E5F78ADD235E0713C646B0"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.ExternalChanges.cs",
+                        "SHA256":  "872BF92AD37ADC0ED9C4760E7ED6CA764E79DC2D7293DD72F5BC50218CD4FF7C"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.xaml",
+                        "SHA256":  "6E38331F8A2EC4A707F20C4E58E8FEB177FF42399D092C4EFC14AD597EFC942E"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffTabView.xaml.cs",
+                        "SHA256":  "32AC313AC06CE998C385D81AEE7A370CADC07141CC9B6F63657F1AA1222187E5"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffWorkspaceWindow.Standalone.cs",
+                        "SHA256":  "AB764EC859F7BD414733A3F34BE9970BF5C08A13BE7AD7DDFA537D96EFB05E48"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Diff/DiffWorkspaceWindow.xaml.cs",
+                        "SHA256":  "E933F1C30DA46AAA2AFE9C735B38A02479DB077AECE0D24269583C3417D06D82"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Help/HelpWindow.xaml.cs",
+                        "SHA256":  "4F532539FED1ACF280186153C240C891C3A98F48FF3ABEA7F59AA649D6C04FB1"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.Diff.cs",
+                        "SHA256":  "77E96CF00325E4A0F329430A8530674FE048F5B8902A5EC56BECDBA7E32F76CD"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.DocumentDetach.cs",
+                        "SHA256":  "30FBC3514D3B00720CB2979B675C34B991CBE342538253E69E5180745FD45505"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.DocumentPanes.cs",
+                        "SHA256":  "DF7B3FD745B2B138B0C04E299B89F3ECD5B35947532430CD786F59C171261A87"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.ExternalFiles.cs",
+                        "SHA256":  "336F9D9062CD1AE10A194C7BC67DA3602842C844EE0A938205E520F706A3CB59"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.FileSync.cs",
+                        "SHA256":  "FDF3453F5BC2973A95D0E6D5C78E2048AD7E0530CEEA7CD4114B3597C163358F"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.xaml",
+                        "SHA256":  "072EB989F89D86E4CF7A0B0D93B97EE61C8F4E07744882D53D05D577D8ACCE96"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MainWindow.xaml.cs",
+                        "SHA256":  "ADFD2E17AE65F512E2F2134FB756965D29FA51258F2BE94C4F98B8AA140DDB36"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Models/UserSettings.cs",
+                        "SHA256":  "A37AA7D5027E9C8F49E43160AF03E7F094EA8D6DF50FA474BF0B000D2E762E67"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/MyTextEditor.csproj",
+                        "SHA256":  "547A1EBA42B4433DF5FECB3A0F10E64C395360ED40087717A51232004C788AE5"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Program.cs",
+                        "SHA256":  "AD87D1EF93ED2809B78CC97F0FF83DE04A791DD47EA1A009B64656C89582CDB7"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Services/ExternalChangeConfirmation.cs",
+                        "SHA256":  "6D204DE9263298B3E4E327CB4A472F62B9B9303572B83BEA50B10D493D297BFE"
+                    },
+                    {
+                        "Path":  "src/MyTextEditor/Services/FileOpenCoordinator.cs",
+                        "SHA256":  "947549B827F7C4DEC286CA08731CA07376EFA17AF145A522124E29AD3B60F840"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/FileOpenBurstVerification.cs",
+                        "SHA256":  "D21281FEEA7F9F985F1F72442B35A9A96958823E660F890D2A3CC7C3F84BD0AC"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/FileSyncVerification.cs",
+                        "SHA256":  "7428D9540498B84D43CBF51069C514A752847D626C1758C740534D1D13606E7A"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/Instance199Verification.cs",
+                        "SHA256":  "B58CEE453DD061D7EFB3E265AB29DA9DBC5147EC4EA9870EC64364942734DAD4"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeExplorationVerification.cs",
+                        "SHA256":  "5DB64EF83D8B41B0BDCC7B0D24F7E18423372DCC794BC0CCAF6FAE7A678C6638"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeExternalChangesVerification.cs",
+                        "SHA256":  "2E6720A3792E73E3EB5F0005131E206B5A480FB3E2A823EBAB640643AC86B12F"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeIndependentVerification.cs",
+                        "SHA256":  "B7BE5FFAF46013FF071A15076C801B3F60585E051892DB0E4E17687312878C7E"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeLifetimeVerification.cs",
+                        "SHA256":  "D3CF01467FF1145CAD9E8CCE1CADC618D6F65D7B7D3306B0A535B0767D439875"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeScrollVerification.cs",
+                        "SHA256":  "6120E8307DADDB0FC23D2FD74350BF5DDECECE417F8E34B5FD2BBC235E1936D5"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/MergeSourceExploration.cs",
+                        "SHA256":  "37ED25FACE19E3ED20E7FD41262952E4CD546BA1687945A9EA227A4734F0AB81"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/Program.cs",
+                        "SHA256":  "E18D60341AFE78320E2245AA56BDB22CF8CE89441D53DEBDB0FD622901E03831"
+                    },
+                    {
+                        "Path":  "tests/MyTextEditor.Performance/SearchActionsVerification.cs",
+                        "SHA256":  "BDD64B41EA458C5C0C107330D01B5172161A81A057D5D293700152F254C0AC53"
+                    }
+                ]
+}

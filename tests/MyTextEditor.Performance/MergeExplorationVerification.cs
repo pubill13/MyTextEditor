@@ -305,17 +305,6 @@ internal static class MergeExplorationVerification
                 Check(continuous, $"Second Ctrl+Tab failed: selected={selectedAfter}, A-nativeFocus={currentFocus}, B-nativeFocus={oldFocus}; click current editor then Ctrl+Tab selects={afterClick}");
                 Check(other.GetText() == "tab B", "Other tab text changed");
             }));
-        Case("T02", "swap preserves identity/text/selection; Undo works after manually unlocking", () =>
-            View(Endpoint("left", "original"), Endpoint("right", "right"), (_, view, left, right) =>
-            {
-                left.ReplaceAll("edited"); left.SelectUtf16Range(1, 3); var selection = left.SelectionRange;
-                Click(Field<CheckBox>(view, "RightReadOnlyCheck")); Click(Field<Button>(view, "SwapButton")); Compare(view);
-                Check(ReferenceEquals(Field<ScintillaEditorHost>(view, "_rightEditor"), left) && Field<ScintillaEditorHost>(view, "_leftEditor").IsReadOnly,
-                    "Swap lost identity/lock"); Check(left.SelectionRange == selection && left.GetText() == "edited", "Swap lost selection/text");
-                var canUndo = left.CanUndo; var lockedAfter = left.IsReadOnly;
-                Field<CheckBox>(view, "RightReadOnlyCheck").IsChecked = false;
-                left.Undo(); Check(left.GetText() == "original", $"Swap lost Undo: canUndoAfterSwap={canUndo}, readonlyAfterSwap={lockedAfter}, readonlyAfterUnlock={left.IsReadOnly}, afterUndoText={left.GetText()}"); left.Redo(); Check(left.GetText() == "edited", "Swap lost Redo");
-            }));
         Case("T-tab-type", "typing after Ctrl+Tab edits visible tab and leaves previous tab unchanged", () =>
             View(Endpoint("A-left", "visible A"), Endpoint("A-right", "A"), (window, first, left, _) =>
             {
@@ -326,26 +315,6 @@ internal static class MergeExplorationVerification
                 Check(left.GetText() != "visible A" && other.GetText() == "previous B",
                     $"After switch to A and typing x: A='{left.GetText()}', B='{other.GetText()}', A-focus={left.IsEditorFocused}, B-focus={other.IsEditorFocused}");
             }));
-        Case("T-swap-free", "swap with both sides editable preserves Undo history", () =>
-            View(Endpoint("left", "original"), Endpoint("right", "right"), (_, view, left, right) =>
-            {
-                left.ReplaceAll("edited"); Check(left.CanUndo, "No Undo before swap");
-                var beforeHandle = Field<ScintillaNET.Scintilla>(left, "_editor").Handle;
-                Click(Field<Button>(view, "SwapButton")); Compare(view);
-                var afterHandle = Field<ScintillaNET.Scintilla>(left, "_editor").Handle;
-                var canUndo = left.CanUndo; left.Undo();
-                Check(left.GetText() == "original", $"Both editable: nativeHandle {beforeHandle}->{afterHandle}, canUndoAfterSwap={canUndo}, afterUndo={left.GetText()}, readOnly={left.IsReadOnly}");
-            }));
-        foreach (var locks in new[] { (false, false), (true, false), (false, true), (true, true) })
-            Case($"T-lock-swap-{locks.Item1}-{locks.Item2}", "swapping lock state follows each document", () =>
-                View(Endpoint("left", "L"), Endpoint("right", "R"), (_, view, left, right) =>
-                {
-                    Field<CheckBox>(view, "LeftReadOnlyCheck").IsChecked = locks.Item1;
-                    Field<CheckBox>(view, "RightReadOnlyCheck").IsChecked = locks.Item2;
-                    Click(Field<Button>(view, "SwapButton")); Compare(view);
-                    Check(left.IsReadOnly == locks.Item1 && right.IsReadOnly == locks.Item2,
-                        $"Before L={locks.Item1},R={locks.Item2}; after original-L={left.IsReadOnly},original-R={right.IsReadOnly}");
-                }));
     }
     private static void ImprovementRegressions()
     {

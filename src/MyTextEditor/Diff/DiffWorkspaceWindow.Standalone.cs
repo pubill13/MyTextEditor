@@ -32,6 +32,7 @@ public partial class DiffWorkspaceWindow
                 settings.Diff.IgnoreCase = options.IgnoreCase;
                 settings.Diff.IgnoreEmptyLines = options.IgnoreEmptyLines;
                 settings.Diff.ScrollSync = options.ScrollSync;
+                settings.Diff.HorizontalScrollSync = options.HorizontalScrollSync;
                 settings.Diff.WindowWidth = options.Width;
                 settings.Diff.WindowHeight = options.Height;
                 settings.Diff.WindowLeft = options.Left;

@@ -1,0 +1,72 @@
+﻿[
+    {
+        "Name":  "build",
+        "ExitCode":  0,
+        "Milliseconds":  6944
+    },
+    {
+        "Name":  "core",
+        "ExitCode":  0,
+        "Milliseconds":  2480
+    },
+    {
+        "Name":  "file-open-burst",
+        "ExitCode":  0,
+        "Milliseconds":  14006
+    },
+    {
+        "Name":  "merge-external-changes",
+        "ExitCode":  0,
+        "Milliseconds":  21287
+    },
+    {
+        "Name":  "merge-scroll",
+        "ExitCode":  0,
+        "Milliseconds":  22328
+    },
+    {
+        "Name":  "search-navigation",
+        "ExitCode":  0,
+        "Milliseconds":  2809
+    },
+    {
+        "Name":  "merge-lifetime",
+        "ExitCode":  0,
+        "Milliseconds":  3778
+    },
+    {
+        "Name":  "merge-independent",
+        "ExitCode":  0,
+        "Milliseconds":  5106
+    },
+    {
+        "Name":  "file-sync",
+        "ExitCode":  0,
+        "Milliseconds":  25699
+    },
+    {
+        "Name":  "document-panes",
+        "ExitCode":  0,
+        "Milliseconds":  7708
+    },
+    {
+        "Name":  "help-layout",
+        "ExitCode":  0,
+        "Milliseconds":  2243
+    },
+    {
+        "Name":  "publish",
+        "ExitCode":  0,
+        "Milliseconds":  11939
+    },
+    {
+        "Name":  "file-open-processes",
+        "ExitCode":  0,
+        "Milliseconds":  7760
+    },
+    {
+        "Name":  "instance199",
+        "ExitCode":  1,
+        "Milliseconds":  7278
+    }
+]

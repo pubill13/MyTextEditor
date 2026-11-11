@@ -22,7 +22,7 @@ internal static class SearchActionsVerification
     private static void Check([System.Diagnostics.CodeAnalysis.DoesNotReturnIf(false)] bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
 
-    public static int Run(bool folderShortcutOnly = false)
+    public static int Run(bool folderShortcutOnly = false, bool navigationOnly = false)
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
@@ -54,6 +54,11 @@ internal static class SearchActionsVerification
             if (folderShortcutOnly)
             {
                 Console.WriteLine("PASS current document folder button: saved path, untitled disabled, invalid path preserves selection");
+                return 0;
+            }
+            if (navigationOnly)
+            {
+                VerifyRepeatedSearchNavigation(window);
                 return 0;
             }
             const string original = "123 한글😀\r\n문맥\r\n\r\n456 끝";
@@ -122,6 +127,7 @@ internal static class SearchActionsVerification
             Check(window.Documents.Last().Text == "" && !Field<Button>(window, "UndoButton").IsEnabled, "Shared Undo did not restore document/state");
             window.SearchSessions.Clear(); Call(window, "RefreshSearchSessionState");
             Check(!Field<Button>(window, "CopyAllResultsButton").IsEnabled && !Field<Button>(window, "ExtractAllButton").IsEnabled, "No-result buttons enabled");
+            VerifyRepeatedSearchNavigation(window);
             VerifyMacro();
             Console.WriteLine("PASS search copy/extract snapshots, click source/focus, Undo buttons, macro cheap undo state");
             return 0;
@@ -131,6 +137,119 @@ internal static class SearchActionsVerification
             Field<DispatcherTimer>(window, "_settingsSaveTimer").Stop(); window.Hide();
             foreach (var document in window.Documents.Concat(allDocuments).Distinct()) document.Editor.ReleaseResources();
             Set(window, "_allowClose", true); window.Close(); app.Shutdown();
+        }
+    }
+
+    private static void VerifyRepeatedSearchNavigation(MainWindow window)
+    {
+        var text = string.Join("\r\n", Enumerable.Range(1, 500).Select(line => line is 120 or 360 ? "navigation-hit" : $"line {line}"));
+        Call(window, "NewDocument", text, "navigation.txt"); Pump();
+        var source = window.Documents.Last();
+        Field<System.Windows.Controls.CheckBox>(window, "FolderSearchCheck").IsChecked = false;
+        Field<System.Windows.Controls.CheckBox>(window, "UseConditionSearchCheck").IsChecked = false;
+        Field<System.Windows.Controls.TextBox>(window, "LiteralFindBox").Text = "navigation-hit";
+        void Search()
+        {
+            Call(window, "Search_Click", window, new RoutedEventArgs());
+            window.UpdateLayout(); Pump();
+        }
+        void ClickRow(SearchResultSession session, int line)
+        {
+            var list = Field<ListBox>(window, "_activeResultsList");
+            Check(ReferenceEquals(list.DataContext, session), "Result list did not switch to latest search session");
+            var row = session.Rows.Single(row => !row.IsContext && row.LineNumber == line);
+            list.ScrollIntoView(row); window.UpdateLayout(); Pump();
+            var item = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(row);
+            Check(item is not null, "Latest result row was not realized");
+            item.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseUpEvent });
+            Pump();
+            Check(source.Editor.CurrentLine == line - 1, $"Latest result click did not navigate: expected {line}, actual {source.Editor.CurrentLine + 1}");
+            Check(source.Editor.FirstVisibleLine <= line - 1 && source.Editor.FirstVisibleLine + source.Editor.LinesOnScreen > line - 1,
+                $"Latest result click did not reveal line {line}: viewport starts at {source.Editor.FirstVisibleLine + 1}");
+        }
+        Search();
+        var first = window.SearchSessions.Last();
+        ClickRow(first, 360);
+        source.Editor.ReplaceRange(new MyTextEditor.Controls.EditorTextRange(0, 0), "inserted\r\n");
+        source.Editor.GoToLine(1);
+        Search();
+        var latest = window.SearchSessions.Last();
+        Check(!ReferenceEquals(first, latest) && latest.Snapshot!.Revision == source.ContentRevision, "Re-search did not capture the modified document");
+        ClickRow(latest, 361);
+        source.Editor.GoToLine(1);
+        var latestList = Field<ListBox>(window, "_activeResultsList");
+        latestList.SelectedItem = latest.Rows.Single(row => !row.IsContext && row.LineNumber == 121);
+        var enter = new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(latestList), Environment.TickCount, Key.Enter)
+            { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+        latestList.RaiseEvent(enter); Pump();
+        Check(enter.Handled && source.Editor.CurrentLine == 120, "Enter navigation after re-search failed");
+        source.Editor.GoToLine(1);
+        latestList.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            { RoutedEvent = System.Windows.Controls.Control.MouseDoubleClickEvent }); Pump();
+        Check(source.Editor.CurrentLine == 120, "Double-click navigation after re-search failed");
+        Field<TabControl>(window, "SearchResultTabs").SelectedItem = first; window.UpdateLayout(); Pump();
+        Call(window, "NavigateResult", Field<ListBox>(window, "_activeResultsList"), first.Rows.First());
+        Check(source.Editor.CurrentLine == 120, "Stale result navigation bypassed revision protection");
+        Field<TabControl>(window, "SearchResultTabs").SelectedItem = latest; window.UpdateLayout(); Pump();
+        Call(window, "DetachResults_Click", window, new RoutedEventArgs()); Pump();
+        ClickRow(latest, 361);
+        Field<Window>(window, "_resultsWindow").Close(); Pump();
+        Call(window, "SetDocumentSplit", true);
+        Call(window, "MoveToPane", source, true); Pump();
+        source.Editor.GoToLine(1);
+        ClickRow(latest, 121);
+        foreach (var session in window.SearchSessions.ToArray()) Call(window, "CloseSearchSession", session);
+        foreach (var newline in new[] { "\r\n", "\n", "\r" })
+        {
+            source.Editor.ReplaceAll($"한글😀{newline}{newline}끝😀{newline}");
+            for (var line = 1; line <= 4; line++)
+            {
+                source.Editor.GoToLine(line, focusEditor: false);
+                Check(source.Editor.CurrentLine == line - 1, $"GoToLine selected the wrong line for {newline.Length}-character newline: {line}");
+                var expected = line == 1 ? "한글😀" : line == 3 ? "끝😀" : "";
+                Check(source.Editor.SelectedText == expected, "GoToLine must select line content without its line ending");
+            }
+        }
+        VerifyMergeFindAfterEditing();
+        Console.WriteLine("PASS search/edit/re-search latest click, viewport, keyboard/double-click, stale protection, detached/split results and exact Unicode/empty lines");
+    }
+
+    private static void VerifyMergeFindAfterEditing()
+    {
+        var callbacks = new MyTextEditor.Diff.DiffWindowCallbacks
+        {
+            GetSourceRevision = _ => -1, GetSourceSnapshot = _ => null,
+            ApplyToSourceAsync = (_, _, _, _) => Task.FromResult(false), SaveSourceAsync = _ => Task.FromResult(false),
+            CreateDocumentAsync = (_, _) => Task.CompletedTask, SettingsChanged = _ => { }
+        };
+        var workspace = new MyTextEditor.Diff.DiffWorkspaceWindow(new(), callbacks, new("Consolas", 11, false)) { ShowInTaskbar = false };
+        var view = workspace.OpenEmptyTab();
+        try
+        {
+            workspace.Show(); workspace.UpdateLayout(); Pump();
+            var left = Field<MyTextEditor.Controls.ScintillaEditorHost>(view, "_leftEditor");
+            var right = Field<MyTextEditor.Controls.ScintillaEditorHost>(view, "_rightEditor");
+            left.ReplaceAll("start\r\n한글😀 needle\r\nother\r\nneedle end");
+            right.ReplaceAll("right needle");
+            Field<System.Windows.Controls.TextBox>(view, "FindInput").Text = "needle";
+            Field<System.Windows.Controls.ComboBox>(view, "FindSide").SelectedIndex = 0;
+            left.GoToLine(1, focusEditor: false);
+            Call(view, "FindNext_Click", view, new RoutedEventArgs()); Pump();
+            Check(left.CurrentLine == 1 && left.SelectedText == "needle", "Merge find did not select first Unicode-adjacent match");
+            left.ReplaceRange(new MyTextEditor.Controls.EditorTextRange(0, 0), "inserted\r\n");
+            left.GoToLine(1, focusEditor: false);
+            Call(view, "FindNext_Click", view, new RoutedEventArgs()); Pump();
+            Check(left.CurrentLine == 2 && left.SelectedText == "needle", "Merge find used an old location after editing");
+            Call(view, "FindNext_Click", view, new RoutedEventArgs()); Pump();
+            Check(left.CurrentLine == 4 && left.SelectedText == "needle", "Merge next find failed after editing");
+            Call(view, "FindPrevious_Click", view, new RoutedEventArgs()); Pump();
+            Check(left.CurrentLine == 2 && left.SelectedText == "needle" && right.GetText() == "right needle", "Merge previous find or side isolation failed after editing");
+            Console.WriteLine("PASS Merge find after editing: latest positions, next/previous, Unicode and side isolation");
+        }
+        finally
+        {
+            Set(view, "_leftDirty", false); Set(view, "_rightDirty", false);
+            view.ReleaseResources(); workspace.Close();
         }
     }
 

@@ -131,7 +131,8 @@ public partial class MainWindow
         _settings.Diff.WindowWidth,
         _settings.Diff.WindowHeight,
         _settings.Diff.WindowLeft,
-        _settings.Diff.WindowTop);
+        _settings.Diff.WindowTop,
+        _settings.Diff.HorizontalScrollSync);
 
     private DiffAppearance GetDiffAppearance() => new(
         _settings.EditorFontFamily,
@@ -202,6 +203,7 @@ public partial class MainWindow
         _settings.Diff.IgnoreCase = options.IgnoreCase;
         _settings.Diff.IgnoreEmptyLines = options.IgnoreEmptyLines;
         _settings.Diff.ScrollSync = options.ScrollSync;
+        _settings.Diff.HorizontalScrollSync = options.HorizontalScrollSync;
         _settings.Diff.WindowWidth = options.Width;
         _settings.Diff.WindowHeight = options.Height;
         _settings.Diff.WindowLeft = options.Left;

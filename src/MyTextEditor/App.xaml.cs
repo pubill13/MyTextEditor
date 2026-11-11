@@ -8,6 +8,19 @@ namespace MyTextEditor;
 public partial class App : System.Windows.Application
 {
     private FileOpenCoordinator? _fileOpenCoordinator;
+    private readonly FileOpenRequest? _startupRequest;
+    public App() { }
+    internal App(FileOpenCoordinator coordinator, FileOpenRequest request)
+    {
+        _fileOpenCoordinator = coordinator;
+        _startupRequest = request;
+    }
+
+    internal bool PrepareFileOpenForClose(MainWindow closing) =>
+        Windows.OfType<MainWindow>().Any(window => window != closing && window.CanRetainExternalFiles) ||
+        _fileOpenCoordinator?.TryPauseIfIdle() != false;
+
+    internal void ResumeFileOpenRequests() => _fileOpenCoordinator?.ResumeRequests();
     internal RecoveryStore? RecoveryStore { get; private set; }
     internal SemaphoreSlim RecoveryGate { get; } = new(1, 1);
     internal CancellationTokenSource RecoveryCancellation { get; } = new();
@@ -27,17 +40,18 @@ public partial class App : System.Windows.Application
         return true;
     }
 
-    private bool TryReceiveFiles(string[] files)
+    private bool TryReceiveFiles(FileOpenRequest request)
     {
+        var files = request.Paths;
         if (files.Length == 0) return TryOpenAdditionalWindow();
-        var receiver = Windows.OfType<MainWindow>().FirstOrDefault(candidate => candidate.IsActive)
-            ?? Windows.OfType<MainWindow>().FirstOrDefault();
+        var receivers = Windows.OfType<MainWindow>().Where(candidate => candidate.CanRetainExternalFiles).ToArray();
+        var receiver = receivers.FirstOrDefault(candidate => candidate.IsActive) ?? receivers.FirstOrDefault();
         if (receiver is null)
         {
             if (!TryOpenAdditionalWindow()) return false;
             receiver = Windows.OfType<MainWindow>().First();
         }
-        return receiver.TryAcceptExternalFiles(files);
+        return receiver.TryAcceptExternalRequest(request);
     }
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -49,24 +63,9 @@ public partial class App : System.Windows.Application
         };
         TaskScheduler.UnobservedTaskException += (_, args) => DiagnosticLog.Error("task-unobserved", args.Exception);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        string[] paths;
-        try
-        {
-            paths = e.Args.Select(Path.GetFullPath).ToArray();
-            _fileOpenCoordinator = new FileOpenCoordinator(Dispatcher);
-            if (!_fileOpenCoordinator.TryBecomeReceiver())
-            {
-                await _fileOpenCoordinator.ForwardAsync(paths);
-                Shutdown();
-                return;
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            System.Windows.MessageBox.Show($"파일을 기존 창에서 열 수 없습니다.\n\n{exception.Message}", "OmniEdit 파일 열기", MessageBoxButton.OK, MessageBoxImage.Error);
-            Shutdown(1);
-            return;
-        }
+        var request = _startupRequest ?? FileOpenRequest.Create(e.Args.Select(Path.GetFullPath).ToArray());
+        var paths = request.Paths;
+        _fileOpenCoordinator ??= new FileOpenCoordinator(Dispatcher);
         // A Win32 executable icon is not inherited by WPF's native window handles.
         var icon = System.Windows.Media.Imaging.BitmapFrame.Create(
             new Uri("pack://application:,,,/OmniEdit;component/Assets/AppIcon.ico", UriKind.Absolute));
@@ -83,7 +82,7 @@ public partial class App : System.Windows.Application
             DiagnosticLog.Error("recovery-initialize", exception);
             recoveryInitializationError = exception;
         }
-        var window = new MainWindow();
+        var window = new MainWindow(createDocument: paths.Length == 0);
         MainWindow = window;
         ShutdownMode = ShutdownMode.OnLastWindowClose;
         window.Show();
@@ -99,8 +98,8 @@ public partial class App : System.Windows.Application
                 "OmniEdit 자동 복구", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         // Queue the launch files before enabling external requests; the normal open gate preserves order.
-        var startup = paths.Length > 0 ? window.OpenStartupFilesAsync(paths) : Task.CompletedTask;
-        _fileOpenCoordinator.Start(
+        var startup = paths.Length > 0 ? window.OpenStartupRequestAsync(request) : Task.CompletedTask;
+        _fileOpenCoordinator.StartRequests(
             TryReceiveFiles,
             error => Windows.OfType<MainWindow>().FirstOrDefault()?.ReportFileOpenDeliveryError(error));
         await startup;

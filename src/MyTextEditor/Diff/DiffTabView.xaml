@@ -67,12 +67,12 @@
 <TextBlock x:Name="PositionText" Margin="6,0" VerticalAlignment="Center" Text="0 / 0"/><Separator/>
 <Button Style="{StaticResource CompactCommandButton}" Content="찾기" ToolTip="현재 편집 영역에서 찾기 (Ctrl+F)" Click="OpenFind_Click"/>
 <Button Style="{StaticResource CompactCommandButton}" Content="바꾸기" ToolTip="현재 편집 영역에서 바꾸기 (Ctrl+H)" Click="OpenReplace_Click"/>
-<Button x:Name="SwapButton" Style="{StaticResource CompactCommandButton}" Content="좌우 교환" Click="Swap_Click" ToolBar.OverflowMode="AsNeeded"/>
 <Menu Style="{StaticResource {x:Type Menu}}" ItemContainerStyle="{StaticResource MergeMenuItem}" Background="Transparent" ToolBar.OverflowMode="AsNeeded"><MenuItem x:Name="OptionsMenu" Header="옵션" Padding="8,3">
 <MenuItem x:Name="IgnoreWhitespaceCheck" Header="공백 무시" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="Option_Changed" Unchecked="Option_Changed"/>
 <MenuItem x:Name="IgnoreCaseCheck" Header="대소문자 무시" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="Option_Changed" Unchecked="Option_Changed"/>
 <MenuItem x:Name="IgnoreEmptyLinesCheck" Header="빈 줄 무시" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="Option_Changed" Unchecked="Option_Changed"/>
-<MenuItem x:Name="ScrollSyncCheck" Header="스크롤 동기화" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="ScrollSync_Changed" Unchecked="ScrollSync_Changed"/>
+<MenuItem x:Name="ScrollSyncCheck" Header="세로 스크롤 동기화" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="ScrollSync_Changed" Unchecked="ScrollSync_Changed"/>
+<MenuItem x:Name="HorizontalScrollSyncCheck" Header="가로 스크롤 동기화" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="ScrollSync_Changed" Unchecked="ScrollSync_Changed"/>
 <MenuItem x:Name="MergeNextCheck" Header="병합 후 다음 차이" IsCheckable="True" StaysOpenOnClick="True" IsChecked="False" Checked="DisplayOption_Changed" Unchecked="DisplayOption_Changed"/>
 </MenuItem><MenuItem Header="복사" Padding="8,3">
 <MenuItem x:Name="CopyAllLeftButton" Header="오른쪽 전체 → 왼쪽" Click="CopyAllToLeft_Click"/><MenuItem x:Name="CopyAllRightButton" Header="왼쪽 전체 → 오른쪽" Click="CopyAllToRight_Click"/><Separator/>
@@ -100,7 +100,7 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Style="{StaticResource CompactCommandButton}" Content="원본 다시 불러오기" Click="ReloadStale_Click"/>
-                    <Button Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="현재 Diff 내용으로 교체" Click="ForceApplyStale_Click"/>
+                    <Button x:Name="ForceApplyStaleButton" Style="{StaticResource CompactCommandButton}" Margin="6,0,0,0" Content="현재 Diff 내용으로 교체" Click="ForceApplyStale_Click"/>
                 </StackPanel>
                 <TextBlock x:Name="StaleText" VerticalAlignment="Center" Text="연결된 원본 문서가 변경되었습니다."/>
             </DockPanel>

@@ -12,8 +12,10 @@ internal static class MergeLifetimeVerification
 {
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
+    // Start the UI command before mutating/releasing its editor to exercise an in-flight operation.
     private static Task<bool> Call(DiffTabView view, string name, params object[] args) =>
-        (Task<bool>)typeof(DiffTabView).GetMethod(name, Private)!.Invoke(view, args)!;
+        Dispatcher.CurrentDispatcher.Invoke(
+            () => (Task<bool>)typeof(DiffTabView).GetMethod(name, Private)!.Invoke(view, args)!, DispatcherPriority.Normal);
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
     private static void PumpUntil(Func<bool> done)
     {

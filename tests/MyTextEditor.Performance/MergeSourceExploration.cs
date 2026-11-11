@@ -1,12 +1,10 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MyTextEditor.Controls;
@@ -21,6 +19,9 @@ using CheckBox = System.Windows.Controls.CheckBox;
 internal static class MergeSourceExploration
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
+    private static PropertyInfo ConfirmationOverride => typeof(DiffTabView).Assembly
+        .GetType("MyTextEditor.Services.ExternalChangeConfirmation")!
+        .GetProperty("ConfirmOverride", BindingFlags.Static | BindingFlags.NonPublic)!;
     private sealed record Observation(string Case, string Outcome, string Evidence);
     private static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Hidden)!.GetValue(target)!;
     private static object? Call(object target, string name, params object[] args) => target.GetType().GetMethod(name, Hidden)!.Invoke(target, args);
@@ -35,8 +36,11 @@ internal static class MergeSourceExploration
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative) });
         var folder = Path.Combine(Path.GetTempPath(), "OmniEdit-MergeSourceExploration-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
+        var previousConfirmation = ConfirmationOverride.GetValue(null);
+        ConfirmationOverride.SetValue(null, new Func<Window, string, bool, bool>((_, _, _) => true));
         void Observe(string id, Action test)
         {
+            Console.WriteLine($"Running {id}");
             try { test(); }
             catch (Exception exception) { results.Add(new(id, "ERROR", exception.ToString())); }
         }
@@ -57,6 +61,7 @@ internal static class MergeSourceExploration
         }
         finally
         {
+            ConfirmationOverride.SetValue(null, previousConfirmation);
             foreach (var window in app.Windows.OfType<Window>().ToArray()) window.Close();
             app.Shutdown();
             // Only fixtures created by this invocation are removed.
@@ -68,7 +73,7 @@ internal static class MergeSourceExploration
             {
                 generatedUtc = DateTime.UtcNow,
                 filter,
-                method = "Real WPF views and native Scintilla editors; reload Button.Click routed event; save methods called via reflection; no physical mouse input",
+                method = "Real WPF views and native Scintilla editors; reload Button.Click routed event with injected approval decisions; save methods called via reflection; no physical mouse or native dialog interaction",
                 results
             }, new JsonSerializerOptions { WriteIndented = true }));
             foreach (var result in results) Console.WriteLine($"{result.Outcome} {result.Case}: {result.Evidence}");
@@ -119,6 +124,17 @@ internal static class MergeSourceExploration
         var leftEndpoint = new DiffEndpoint
         { Kind = DiffEndpointKind.OpenDocument, DisplayName = "source", Text = before, SourceDocumentId = sourceId, SourceRevision = revision, NewLine = "\n" };
         var (window, view) = Show(leftEndpoint, Endpoint("right", after), callbacks);
+        var previousConfirmation = ConfirmationOverride.GetValue(null);
+        var prompts = 0;
+        var cleanWarning = false;
+        ConfirmationOverride.SetValue(null, new Func<Window, string, bool, bool>((owner, name, dirty) =>
+        {
+            if (!ReferenceEquals(owner, window) || !name.Contains("source", StringComparison.Ordinal))
+                throw new InvalidOperationException("Reload confirmation targeted an unexpected owner or source");
+            prompts++;
+            cleanWarning |= dirty;
+            return true;
+        }));
         try
         {
             var initialCount = view.DifferenceCount;
@@ -131,9 +147,9 @@ internal static class MergeSourceExploration
             PumpUntil(() => Field<int>(view, "_generation") > generation && Field<TextDiffResult?>(view, "_result") is not null && Field<CancellationTokenSource?>(view, "_comparisonCancellation") is null);
             var editor = Field<ScintillaEditorHost>(view, "_leftEditor");
             var textMatches = editor.GetText() == after;
-            var pass = initialCount > 0 && textMatches && view.DifferenceCount == 0;
+            var pass = initialCount > 0 && textMatches && view.DifferenceCount == 0 && prompts == 1 && !cleanWarning;
             results.Add(new("SOURCE-RELOAD-CACHE", pass ? "PASS" : "FAIL",
-                $"Reload via actual Button.Click routed event: initial differences={initialCount}, displayed text matches new source={textMatches}, differences after reload={view.DifferenceCount}, expected=0; native revision={editor.ContentRevision}"));
+                $"Reload via actual Button.Click routed event with injected confirmation: prompts={prompts}, clean discard warning={cleanWarning}, initial differences={initialCount}, displayed text matches new source={textMatches}, differences after reload={view.DifferenceCount}, expected=0; native revision={editor.ContentRevision}"));
             try
             {
                 var right = Field<ScintillaEditorHost>(view, "_rightEditor");
@@ -167,7 +183,7 @@ internal static class MergeSourceExploration
                 results.Add(new("SOURCE-RELOAD-MERGE-SAFETY", "ERROR", exception.ToString()));
             }
         }
-        finally { view.ReleaseResources(); window.Close(); }
+        finally { ConfirmationOverride.SetValue(null, previousConfirmation); view.ReleaseResources(); window.Close(); }
     }
 
     private static void VerifyClipboardLock(List<Observation> results)
@@ -213,6 +229,16 @@ internal static class MergeSourceExploration
         var rightEndpoint = new DiffEndpoint
         { Kind = DiffEndpointKind.OpenDocument, DisplayName = "right source", Text = "head\nold right\ntail", SourceDocumentId = rightId, SourceRevision = 0, NewLine = "\n" };
         var (window, view) = Show(leftEndpoint, rightEndpoint, callbacks);
+        var previousConfirmation = ConfirmationOverride.GetValue(null);
+        var responses = new List<(string Name, bool Dirty)>();
+        ConfirmationOverride.SetValue(null, new Func<Window, string, bool, bool>((owner, name, dirty) =>
+        {
+            if (!ReferenceEquals(owner, window)) throw new InvalidOperationException("Partial reload confirmation targeted another window");
+            responses.Add((name, dirty));
+            if (name.Contains("left source", StringComparison.Ordinal)) return true;
+            if (name.Contains("right source", StringComparison.Ordinal)) return false;
+            throw new InvalidOperationException("Partial reload confirmation targeted an unexpected source: " + name);
+        }));
         try
         {
             var left = Field<ScintillaEditorHost>(view, "_leftEditor");
@@ -224,19 +250,21 @@ internal static class MergeSourceExploration
             view.RefreshSourceState();
             var generation = Field<int>(view, "_generation");
             var button = Descendants(view).OfType<Button>().Single(item => Equals(item.Content, "원본 다시 불러오기"));
-            Respond(window, 7, () => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => Field<int>(view, "_generation") > generation && Field<TextDiffResult?>(view, "_result") is not null && !Field<bool>(view, "_needsComparison") && Field<CancellationTokenSource?>(view, "_comparisonCancellation") is null);
             var expectedDifferences = new TextDiffEngine().Compare(refreshedLeft, refreshedLeft).Blocks.Count;
             var leftMatches = left.GetText() == refreshedLeft;
             var rightPreserved = right.GetText() == refreshedLeft && Field<bool>(view, "_rightDirty");
             var revisionsMatch = leftEndpoint.SourceRevision == 1 && rightEndpoint.SourceRevision == 0;
+            var confirmationMatches = responses.Count == 2 && responses[0].Name.Contains("left source", StringComparison.Ordinal) &&
+                !responses[0].Dirty && responses[1].Name.Contains("right source", StringComparison.Ordinal) && responses[1].Dirty;
             var pass = oldCount > 0 && leftMatches && rightPreserved && revisionsMatch &&
                 !Field<bool>(view, "_leftDirty") && view.DifferenceCount == expectedDifferences &&
-                Field<Border>(view, "StaleBanner").Visibility == Visibility.Visible;
+                Field<Border>(view, "StaleBanner").Visibility == Visibility.Visible && confirmationMatches;
             results.Add(new("SOURCE-RELOAD-PARTIAL-CANCEL", pass ? "PASS" : "FAIL",
-                $"Both linked originals stale; actual Reload Button.Click routed event reloads clean left, then owned native No declines dirty right replacement. Initial differences={oldCount}, left latest={leftMatches}, right local text/dirty preserved={rightPreserved}, left source revision={leftEndpoint.SourceRevision}, right source revision={rightEndpoint.SourceRevision}, left dirty={Field<bool>(view, "_leftDirty")}, current differences={view.DifferenceCount}, expected fresh differences={expectedDifferences}, right stale banner={Field<Border>(view, "StaleBanner").Visibility}. Native response is restricted to the test process, owner window and UI thread."));
+                $"Both linked originals stale; actual Reload Button.Click routed event reloads clean left after injected Yes, then injected No declines dirty right replacement. Confirmations={responses.Count}, expected clean-left/dirty-right order={confirmationMatches}. Initial differences={oldCount}, left latest={leftMatches}, right local text/dirty preserved={rightPreserved}, left source revision={leftEndpoint.SourceRevision}, right source revision={rightEndpoint.SourceRevision}, left dirty={Field<bool>(view, "_leftDirty")}, current differences={view.DifferenceCount}, expected fresh differences={expectedDifferences}, right stale banner={Field<Border>(view, "StaleBanner").Visibility}. No physical or native dialog interaction claimed."));
         }
-        finally { view.ReleaseResources(); window.Close(); }
+        finally { ConfirmationOverride.SetValue(null, previousConfirmation); view.ReleaseResources(); window.Close(); }
     }
 
     private static void VerifyOverlappingSave(string folder, int round, List<Observation> results)
@@ -250,13 +278,20 @@ internal static class MergeSourceExploration
         try
         {
             view.SetActive(false);
+            // Automatic monitoring may have registered a baseline while showing this fixture.
+            // This case isolates overlapping saves; external conflicts have separate coverage.
+            endpoint.SourceFileLength = null;
+            endpoint.SourceFileLastWriteUtc = null;
             var editor = Field<ScintillaEditorHost>(view, "_leftEditor");
             editor.ReplaceAll(new string('A', 64 * 1024 * 1024));
-            var first = (Task<bool>)Call(view, "SaveEndpointCoreAsync", true, false)!;
+            // Start each save on the WPF dispatcher so its buffer is captured before the next edit.
+            var first = Dispatcher.CurrentDispatcher.Invoke(
+                () => (Task<bool>)Call(view, "SaveEndpointCoreAsync", true, false)!, DispatcherPriority.Normal);
             var firstWasPending = !first.IsCompleted;
             var expected = $"newest edit round {round}";
             editor.ReplaceAll(expected);
-            var second = (Task<bool>)Call(view, "SaveEndpointCoreAsync", true, false)!;
+            var second = Dispatcher.CurrentDispatcher.Invoke(
+                () => (Task<bool>)Call(view, "SaveEndpointCoreAsync", true, false)!, DispatcherPriority.Normal);
             var overlapped = firstWasPending && !first.IsCompleted;
             PumpUntil(() => first.IsCompleted && second.IsCompleted, 30000);
             var firstAccepted = first.GetAwaiter().GetResult();
@@ -292,47 +327,4 @@ internal static class MergeSourceExploration
         }
     }
 
-    private static void Respond(Window owner, int command, Action action)
-    {
-        var ownerHandle = new WindowInteropHelper(owner).Handle;
-        var threadId = GetWindowThreadProcessId(ownerHandle, out var processId);
-        if (processId != Environment.ProcessId) throw new InvalidOperationException("Dialog response must target this test process only");
-        using var cancellation = new CancellationTokenSource();
-        var response = Task.Run(() =>
-        {
-            var watch = Stopwatch.StartNew();
-            while (!cancellation.IsCancellationRequested && watch.Elapsed < TimeSpan.FromSeconds(10))
-            {
-                var responded = false;
-                EnumThreadWindows(threadId, (dialog, _) =>
-                {
-                    if (GetWindow(dialog, 4) != ownerHandle || !IsWindowVisible(dialog)) return true;
-                    var className = new StringBuilder(32); GetClassName(dialog, className, className.Capacity);
-                    if (className.ToString() != "#32770") return true;
-                    var button = GetDlgItem(dialog, command);
-                    if (button == IntPtr.Zero || !IsWindowEnabled(button)) return true;
-                    responded = PostMessage(button, 0x00F5, IntPtr.Zero, IntPtr.Zero);
-                    return !responded;
-                }, IntPtr.Zero);
-                if (responded) return true;
-                Thread.Sleep(20);
-            }
-            return false;
-        });
-        try
-        {
-            action();
-            if (!response.GetAwaiter().GetResult()) throw new InvalidOperationException("Expected owned reload confirmation was not shown");
-        }
-        finally { cancellation.Cancel(); response.GetAwaiter().GetResult(); }
-    }
-    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
-    [DllImport("user32.dll")] private static extern bool EnumThreadWindows(uint threadId, EnumWindowsCallback callback, IntPtr parameter);
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
-    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
-    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int id);
-    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
-    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
-    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

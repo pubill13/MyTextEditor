@@ -47,6 +47,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private bool _rightDirty;
     private bool _isActive;
     private bool _gutterScheduled;
+    private bool _highlightClearScheduled;
     private string _highlightColor;
     private readonly List<WpfStackPanel> _gutterPool = [];
     private readonly List<System.Windows.Shapes.Polygon> _gutterConnections = [];
@@ -65,6 +66,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         IgnoreCaseCheck.IsChecked = options.IgnoreCase;
         IgnoreEmptyLinesCheck.IsChecked = options.IgnoreEmptyLines;
         ScrollSyncCheck.IsChecked = options.ScrollSync;
+        HorizontalScrollSyncCheck.IsChecked = options.HorizontalScrollSync;
         _recompareTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _recompareTimer.Tick += RecompareTimer_Tick;
         UpdateOptionSummary();
@@ -96,7 +98,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     public void RefreshSourceState()
     {
-        if (IsLoaded && !_resourcesReleased) CheckStaleSources();
+        if (IsLoaded && !_resourcesReleased) { CheckStaleSources(); RequestExternalChangeCheck(); }
     }
 
     public void DetachSourceDocuments(DiffWindowCallbacks callbacks, Func<Guid, bool> sourceHasUnsavedChanges)
@@ -140,11 +142,13 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     public void SetActive(bool active)
     {
+        if (_isActive != active) ++_externalCheckGeneration;
         _isActive = active;
         if (!active) { CancelGutterUpdate(); _comparisonCancellation?.Cancel(); _inlineCancellation?.Cancel(); _recompareTimer.Stop(); return; }
         if (_initialized && _result is null && IsReady && _needsComparison) _ = CompareNowAsync();
         ApplyAppearance(_appearance);
         RebuildMergeGutter();
+        RequestExternalChangeCheck();
     }
 
     internal void FocusLastEditor()
@@ -175,6 +179,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _rightEditor.CaretChanged += Editor_CaretChanged;
         _leftEditor.VerticalScrolled += LeftEditor_VerticalScrolled;
         _rightEditor.VerticalScrolled += RightEditor_VerticalScrolled;
+        _leftEditor.HorizontalScrolled += LeftEditor_HorizontalScrolled;
+        _rightEditor.HorizontalScrolled += RightEditor_HorizontalScrolled;
         _leftEditor.ShortcutRequested += Editor_ShortcutRequested;
         _rightEditor.ShortcutRequested += Editor_ShortcutRequested;
         _leftEditor.EditorFocused += SearchEditor_Focused;
@@ -183,6 +189,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _leftEditor.FilesDropped += LeftEditor_FilesDropped;
         _rightEditor.FilesDropped += RightEditor_FilesDropped;
         RefreshReadyState();
+        InitializeExternalChanges();
         if (IsReady) _ = CompareNowAsync();
     }
 
@@ -232,6 +239,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void EditorChanged()
     {
+        _mergeNextLine = null;
         _comparisonCancellation?.Cancel();
         RefreshEndpointHeaders();
         CheckStaleSources();
@@ -259,6 +267,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
             return;
         }
         if (!_initialized || _resourcesReleased || !IsReady) return;
+        _recompareTimer.Stop();
         _needsComparison = true;
         if (!_isActive) return;
         _comparisonCancellation?.Cancel();
@@ -327,8 +336,19 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         RefreshDifferenceMap();
         _leftPainted = _rightPainted = default;
         _currentBlockIndex = -1;
-        if (_leftEditor is not null) _leftEditor.ClearDiffHighlights();
-        if (_rightEditor is not null) _rightEditor.ClearDiffHighlights();
+        if (!_highlightClearScheduled)
+        {
+            _highlightClearScheduled = true;
+            // TextChanged can run before Scintilla has finished updating its position map.
+            // Invalidate merge commands now, then touch native highlights after the notification.
+            Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            {
+                _highlightClearScheduled = false;
+                if (_resourcesReleased || _result is not null) return;
+                _leftEditor?.ClearDiffHighlights();
+                _rightEditor?.ClearDiffHighlights();
+            }));
+        }
         foreach (var panel in _gutterPool) panel.Visibility = Visibility.Collapsed;
         foreach (var connector in _gutterConnections) connector.Visibility = Visibility.Collapsed;
         BlockRangeText.Text = "내용이 변경되었습니다. 비교가 끝나면 반영 범위가 표시됩니다.";
@@ -412,7 +432,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         var block = _result.Blocks[_currentBlockIndex];
         var target = sourceSide == DiffSide.Left ? _rightEditor : _leftEditor;
         if (target.IsReadOnly) { StatusText.Text = "대상이 읽기 전용이어서 병합할 수 없습니다."; return; }
-        if (MergeNextCheck.IsChecked == true) _mergeNextLine = sourceSide == DiffSide.Left ? block.LeftStartLine : block.RightStartLine;
+        _mergeNextLine = MergeNextCheck.IsChecked == true ? sourceSide == DiffSide.Left ? block.LeftStartLine : block.RightStartLine : null;
         _mergeNextSide = sourceSide;
         var merged = _mergeService.ApplyBlock(_leftEditor.GetText(), _rightEditor.GetText(), block, sourceSide, _left.NewLine, _right.NewLine);
         ReplaceMergedSide(merged);
@@ -431,20 +451,37 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         var target = merged.ChangedSide == DiffSide.Left ? _leftEditor : _rightEditor;
         var text = merged.ChangedSide == DiffSide.Left ? merged.LeftText : merged.RightText;
-        if (target.GetText() == text)
+        var previous = target.GetText();
+        if (previous == text)
         {
             RefreshEndpointHeaders();
             StatusText.Text = "변경할 내용이 없습니다.";
             if (_result is null) _ = CompareNowAsync();
             return;
         }
+        var leftTop = _leftEditor.FirstVisibleLine;
+        var rightTop = _rightEditor.FirstVisibleLine;
+        var leftOffset = _leftEditor.HorizontalOffset;
+        var rightOffset = _rightEditor.HorizontalOffset;
+        var selection = target.SelectionRange;
         _updatingEditors = true;
+        _syncingScroll = true;
         try
         {
-            if (merged.ChangedSide == DiffSide.Left) { _leftEditor.ReplaceAll(merged.LeftText); _leftDirty = true; }
-            else { _rightEditor.ReplaceAll(merged.RightText); _rightDirty = true; }
+            // ReplaceTarget does not scroll the caret to the end as ReplaceSelection does.
+            target.ReplaceRange(new EditorTextRange(0, previous.Length), text);
+            var start = Math.Min(selection.Start, text.Length);
+            var end = Math.Min(selection.End, text.Length);
+            if (start > 0 && start < text.Length && char.IsLowSurrogate(text[start]) && char.IsHighSurrogate(text[start - 1])) start--;
+            if (end > 0 && end < text.Length && char.IsLowSurrogate(text[end]) && char.IsHighSurrogate(text[end - 1])) end--;
+            target.SetSelection(new EditorTextRange(start, end - start));
+            if (merged.ChangedSide == DiffSide.Left) _leftDirty = true; else _rightDirty = true;
+            _leftEditor.SetFirstVisibleLine(leftTop);
+            _rightEditor.SetFirstVisibleLine(rightTop);
+            _leftEditor.SetHorizontalOffset(leftOffset);
+            _rightEditor.SetHorizontalOffset(rightOffset);
         }
-        finally { _updatingEditors = false; }
+        finally { _updatingEditors = false; _syncingScroll = false; }
         RefreshEndpointHeaders();
         _ = CompareNowAsync();
     }
@@ -660,6 +697,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void SyncScroll(ScintillaEditorHost source, ScintillaEditorHost target, bool leftToRight)
     {
         if (!_isActive || _resourcesReleased || _syncingScroll) return;
+        _mergeNextLine = null;
         RebuildMergeGutter();
         if (ScrollSyncCheck.IsChecked != true || _result is null) return;
         var targetLine = Math.Clamp(MapScrollLine(source.FirstVisibleLine + 1, leftToRight) - 1, 0,
@@ -667,6 +705,19 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (target.FirstVisibleLine == targetLine) return;
         _syncingScroll = true;
         try { target.ScrollToLine(targetLine); }
+        finally { _syncingScroll = false; }
+    }
+
+    private void LeftEditor_HorizontalScrolled(object? sender, EventArgs e) => SyncHorizontalScroll(_leftEditor, _rightEditor);
+    private void RightEditor_HorizontalScrolled(object? sender, EventArgs e) => SyncHorizontalScroll(_rightEditor, _leftEditor);
+
+    private void SyncHorizontalScroll(ScintillaEditorHost source, ScintillaEditorHost target)
+    {
+        if (!_isActive || _resourcesReleased || _syncingScroll || _updatingEditors) return;
+        _mergeNextLine = null;
+        if (HorizontalScrollSyncCheck.IsChecked != true) return;
+        _syncingScroll = true;
+        try { target.SetHorizontalOffset(source.HorizontalOffset); }
         finally { _syncingScroll = false; }
     }
 
@@ -706,10 +757,10 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void UpdateOptionSummary()
     {
-        if (OptionsMenu is null || MergeNextCheck is null) return;
+        if (OptionsMenu is null || MergeNextCheck is null || HorizontalScrollSyncCheck is null) return;
         var count = (IgnoreWhitespaceCheck.IsChecked ? 1 : 0) + (IgnoreCaseCheck.IsChecked ? 1 : 0) +
             (IgnoreEmptyLinesCheck.IsChecked ? 1 : 0) + (!ScrollSyncCheck.IsChecked ? 1 : 0) +
-            (MergeNextCheck.IsChecked ? 1 : 0);
+            (MergeNextCheck.IsChecked ? 1 : 0) + (HorizontalScrollSyncCheck.IsChecked ? 1 : 0);
         OptionsMenu.Header = count == 0 ? "옵션" : $"옵션 · {count}";
     }
 
@@ -753,32 +804,6 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _ => "선택 영역 스냅샷 · 읽기 전용"
     };
 
-    private void Swap_Click(object sender, RoutedEventArgs e)
-    {
-        ClearSnapshotCache();
-        (_left, _right) = (_right, _left);
-        (_leftDirty, _rightDirty) = (_rightDirty, _leftDirty);
-        _leftEditor.RevisionChanged -= LeftEditor_RevisionChanged;
-        _rightEditor.RevisionChanged -= RightEditor_RevisionChanged;
-        _leftEditor.VerticalScrolled -= LeftEditor_VerticalScrolled;
-        _rightEditor.VerticalScrolled -= RightEditor_VerticalScrolled;
-        _leftEditor.FilesDropped -= LeftEditor_FilesDropped;
-        _rightEditor.FilesDropped -= RightEditor_FilesDropped;
-        LeftEditorContainer.Content = null;
-        RightEditorContainer.Content = null;
-        (_leftEditor, _rightEditor) = (_rightEditor, _leftEditor);
-        LeftEditorContainer.Content = _leftEditor;
-        RightEditorContainer.Content = _rightEditor;
-        _leftEditor.RevisionChanged += LeftEditor_RevisionChanged;
-        _rightEditor.RevisionChanged += RightEditor_RevisionChanged;
-        _leftEditor.VerticalScrolled += LeftEditor_VerticalScrolled;
-        _rightEditor.VerticalScrolled += RightEditor_VerticalScrolled;
-        _leftEditor.FilesDropped += LeftEditor_FilesDropped;
-        _rightEditor.FilesDropped += RightEditor_FilesDropped;
-        RefreshEndpointHeaders();
-        _ = CompareNowAsync();
-    }
-
     private void CopyDifference_Click(object sender, RoutedEventArgs e)
     {
         if (_result is null || _currentBlockIndex < 0) return;
@@ -803,9 +828,12 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void CheckStaleSources()
     {
-        var leftStale = _left.SourceDocumentId is { } leftId && _callbacks.GetSourceRevision(leftId) != _left.SourceRevision;
-        var rightStale = _right.SourceDocumentId is { } rightId && _callbacks.GetSourceRevision(rightId) != _right.SourceRevision;
+        var leftStale = HasPendingExternalChange(true);
+        var rightStale = HasPendingExternalChange(false);
         StaleBanner.Visibility = leftStale || rightStale ? Visibility.Visible : Visibility.Collapsed;
+        ForceApplyStaleButton.Visibility =
+            leftStale && _left.SourceDocumentId is not null || rightStale && _right.SourceDocumentId is not null
+                ? Visibility.Visible : Visibility.Collapsed;
         StaleText.Text = leftStale && rightStale ? "좌우 원본 문서가 변경되었습니다." : leftStale ? "왼쪽 원본 문서가 변경되었습니다." : "오른쪽 원본 문서가 변경되었습니다.";
     }
 
@@ -813,6 +841,16 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private void ApplyRightSource_Click(object sender, RoutedEventArgs e) => _ = ApplyToSourceAsync(false, false);
 
     private async Task<bool> ApplyToSourceAsync(bool left, bool force)
+    {
+        if (SynchronizationContext.Current is not DispatcherSynchronizationContext)
+            return await Dispatcher.InvokeAsync(() => ApplyToSourceAsync(left, force)).Task.Unwrap();
+        ++_externalOperationCount;
+        ++_externalCheckGeneration;
+        try { return await ApplyToSourceCoreAsync(left, force); }
+        finally { --_externalOperationCount; RequestExternalChangeCheck(); }
+    }
+
+    private async Task<bool> ApplyToSourceCoreAsync(bool left, bool force)
     {
         if (_resourcesReleased) return false;
         var endpoint = left ? _left : _right;
@@ -838,46 +876,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private async void ReloadStale_Click(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            if (_left.SourceDocumentId is { } leftId && _callbacks.GetSourceRevision(leftId) != _left.SourceRevision)
-                if (!ReloadSource(true, leftId)) return;
-            if (_right.SourceDocumentId is { } rightId && _callbacks.GetSourceRevision(rightId) != _right.SourceRevision)
-                if (!ReloadSource(false, rightId)) return;
-        }
-        finally { if (_needsComparison) await CompareNowAsync(); }
-    }
-
-    private bool ReloadSource(bool left, Guid documentId)
-    {
-        var dirty = left ? _leftDirty : _rightDirty;
-        if (dirty && WpfMessageBox.Show(Window.GetWindow(this), "이쪽 Diff 버퍼의 변경을 버리고 최신 원본을 불러올까요?", "원본 다시 불러오기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            return false;
-        var snapshot = _callbacks.GetSourceSnapshot(documentId);
-        if (snapshot is null) { StatusText.Text = "원본 문서가 이미 닫혀 다시 불러올 수 없습니다."; return false; }
-        _comparisonCancellation?.Cancel();
-        _inlineCancellation?.Cancel();
-        _recompareTimer.Stop();
-        _generation++;
-        ClearSnapshotCache();
-        InvalidateDisplayedResult();
-        _needsComparison = true;
-        var endpoint = left ? _left : _right;
-        var editor = left ? _leftEditor : _rightEditor;
-        endpoint.DisplayName = snapshot.DisplayName; endpoint.Text = snapshot.Text; endpoint.FilePath = snapshot.FilePath;
-        endpoint.Encoding = snapshot.Encoding; endpoint.HasByteOrderMark = snapshot.HasByteOrderMark;
-        endpoint.NewLine = snapshot.NewLine; endpoint.SourceRevision = snapshot.Revision;
-        _updatingEditors = true;
-        try
-        {
-            var readOnly = editor.IsReadOnly; editor.IsReadOnly = false;
-            editor.LoadUtf8(Encoding.UTF8.GetBytes(snapshot.Text)); editor.SetNewLine(snapshot.NewLine);
-            editor.IsReadOnly = readOnly;
-        }
-        finally { _updatingEditors = false; }
-        if (left) _leftDirty = false; else _rightDirty = false;
-        RefreshEndpointHeaders(); CheckStaleSources();
-        return true;
+        await ReloadExternalChangesAsync();
     }
 
     private async void ForceApplyStale_Click(object sender, RoutedEventArgs e)
@@ -894,6 +893,17 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private Task<bool> SaveEndpointAsync(bool left) => SaveEndpointCoreAsync(left, false);
     private async Task<bool> SaveEndpointCoreAsync(bool left, bool saveAs)
+    {
+        if (SynchronizationContext.Current is not DispatcherSynchronizationContext)
+            return await Dispatcher.InvokeAsync(() => SaveEndpointCoreAsync(left, saveAs)).Task.Unwrap();
+        if (_resourcesReleased) return false;
+        ++_externalOperationCount;
+        ++_externalCheckGeneration;
+        try { return await SaveEndpointUnmonitoredAsync(left, saveAs); }
+        finally { --_externalOperationCount; RequestExternalChangeCheck(); }
+    }
+
+    private async Task<bool> SaveEndpointUnmonitoredAsync(bool left, bool saveAs)
     {
         if (_resourcesReleased) return false;
         var endpoint = left ? _left : _right;
@@ -1019,9 +1029,20 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     public DiffWindowOptions GetOptions() => new(
         IgnoreWhitespaceCheck.IsChecked == true, IgnoreCaseCheck.IsChecked == true,
-        IgnoreEmptyLinesCheck.IsChecked == true, ScrollSyncCheck.IsChecked == true);
+        IgnoreEmptyLinesCheck.IsChecked == true, ScrollSyncCheck.IsChecked == true,
+        HorizontalScrollSync: HorizontalScrollSyncCheck.IsChecked == true);
 
     public async Task<bool> RequestCloseAsync()
+    {
+        if (SynchronizationContext.Current is not DispatcherSynchronizationContext)
+            return await Dispatcher.InvokeAsync(RequestCloseAsync).Task.Unwrap();
+        ++_externalOperationCount;
+        ++_externalCheckGeneration;
+        try { return await RequestCloseCoreAsync(); }
+        finally { --_externalOperationCount; RequestExternalChangeCheck(); }
+    }
+
+    private async Task<bool> RequestCloseCoreAsync()
     {
         if (!HasUnsavedChanges) return true;
         var choice = WpfMessageBox.Show(Window.GetWindow(this),
@@ -1038,6 +1059,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     public void PauseComparisonForClose()
     {
+        PauseExternalChanges();
         _comparisonCancellation?.Cancel();
         _recompareTimer.Stop();
         ++_generation;
@@ -1045,6 +1067,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     public void ResumeComparisonAfterCloseCanceled()
     {
+        ResumeExternalChanges();
         if (!_resourcesReleased && IsReady && _result is null) _recompareTimer.Start();
     }
 
@@ -1052,6 +1075,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (_resourcesReleased) return;
         _resourcesReleased = true;
+        StopExternalChanges();
         ClearSnapshotCache();
         _inlineCancellation?.Cancel();
         _comparisonCancellation?.Cancel();
@@ -1069,6 +1093,16 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     }
 
     public async Task<bool> SetEndpointAsync(bool left, DiffEndpoint endpoint, bool confirmReplacement = true)
+    {
+        if (SynchronizationContext.Current is not DispatcherSynchronizationContext)
+            return await Dispatcher.InvokeAsync(() => SetEndpointAsync(left, endpoint, confirmReplacement)).Task.Unwrap();
+        ++_externalOperationCount;
+        ++_externalCheckGeneration;
+        try { return await SetEndpointCoreAsync(left, endpoint, confirmReplacement); }
+        finally { --_externalOperationCount; RequestExternalChangeCheck(); }
+    }
+
+    private async Task<bool> SetEndpointCoreAsync(bool left, DiffEndpoint endpoint, bool confirmReplacement)
     {
         if (_resourcesReleased) return false;
         var dirty = left ? _leftDirty : _rightDirty;
@@ -1123,7 +1157,6 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (LeftDropZone is null || RightDropZone is null) return;
         LeftDropZone.Visibility = _left.IsReady ? Visibility.Collapsed : Visibility.Visible;
         RightDropZone.Visibility = _right.IsReady ? Visibility.Collapsed : Visibility.Visible;
-        SwapButton.IsEnabled = IsReady;
         PreviousButton.IsEnabled = NextButton.IsEnabled = IsReady && _result is { Blocks.Count: > 0 };
         CopyAllLeftButton.IsEnabled = _initialized && _right.IsReady && !_leftEditor.IsReadOnly;
         CopyAllRightButton.IsEnabled = _initialized && _left.IsReady && !_rightEditor.IsReadOnly;

@@ -29,6 +29,23 @@ internal static class FileSyncVerification
         Set(window, "_settingsReady", false);
         Field<DispatcherTimer>(window, "_settingsSaveTimer").Stop();
         Field<DispatcherTimer>(window, "_fileSyncTimer").Stop();
+        var confirmation = typeof(MainWindow).Assembly.GetType("MyTextEditor.Services.ExternalChangeConfirmation")!
+            .GetProperty("ConfirmOverride", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var previousConfirmation = confirmation.GetValue(null);
+        var approve = true;
+        var prompts = 0;
+        var lastWarning = false;
+        Action? duringConfirmation = null;
+        confirmation.SetValue(null, new Func<Window, string, bool, bool>((owner, _, dirty) =>
+        {
+            Require(ReferenceEquals(owner, window), "Reload confirmation must belong to the document window");
+            prompts++;
+            lastWarning = dirty;
+            var action = duringConfirmation;
+            duringConfirmation = null;
+            action?.Invoke();
+            return approve;
+        }));
         try
         {
             window.Show();
@@ -44,6 +61,21 @@ internal static class FileSyncVerification
             Require(document.Text == "OFF 중 외부 변경 AAA" && !document.IsModified, "ON must reload clean external changes");
             var firstRevision = document.ContentRevision;
             Require(firstRevision > 0, "External reload must advance revision");
+            Require(prompts == 1 && !lastWarning, "Clean external changes must ask before reload without a discard warning");
+
+            approve = false;
+            File.WriteAllText(file, "거절한 외부 변경 AAA", new UTF8Encoding(false));
+            Poll(window);
+            var declinedPrompts = prompts;
+            Require(document.ContentRevision == firstRevision && declinedPrompts == 2 && !lastWarning,
+                "Declining a clean reload must preserve the buffer and revision");
+            Poll(window);
+            Require(prompts == declinedPrompts, "The same declined file version must not prompt again");
+            approve = true;
+            File.WriteAllText(file, "다음 외부 변경 AAA", new UTF8Encoding(false));
+            Poll(window);
+            Require(prompts == declinedPrompts + 1 && document.Text == "다음 외부 변경 AAA",
+                "A new file version must ask again after a declined version");
 
             Field<System.Windows.Controls.CheckBox>(window, "FolderSearchCheck").IsChecked = false;
             Field<System.Windows.Controls.CheckBox>(window, "UseConditionSearchCheck").IsChecked = false;
@@ -59,31 +91,61 @@ internal static class FileSyncVerification
 
             document.Editor.ReplaceAll("저장하지 않은 내 수정");
             File.WriteAllText(file, "외부 충돌 내용", new UTF8Encoding(false));
+            approve = false;
             Poll(window);
             Require(document.Text == "저장하지 않은 내 수정" && document.IsModified,
-                "Dirty document must never be overwritten by auto reload");
+                "Declining a dirty reload must preserve local content and Undo");
+            Require(lastWarning, "Reloading a dirty document must warn about discarding local edits");
             Require(Field<System.Windows.Controls.TextBlock>(window, "StatusMessage").Text.Contains("수정 내용", StringComparison.Ordinal),
                 "Dirty conflict must be reported");
             document.Editor.Undo();
             Require(!document.IsModified, "Undo to save point must be clean");
+            declinedPrompts = prompts;
+            approve = true;
             Poll(window);
-            Require(document.Text == "외부 충돌 내용", "Conflict must reload once local edits are undone");
+            Require(prompts == declinedPrompts && document.Text == "세 번째 상태\nUTF-16 한글 😀",
+                "Undo must not silently approve a previously declined file version");
+            WaitFor((Task)Call(window, "ReloadExternalFileAsync")!);
+            Require(prompts == declinedPrompts + 1 && document.Text == "외부 충돌 내용",
+                "Manual reload must allow retrying a declined file version");
+
+            document.Editor.ReplaceAll("승인 전에 남아 있는 내 수정");
+            File.WriteAllText(file, "승인한 충돌 내용", new UTF8Encoding(false));
+            Poll(window);
+            Require(lastWarning && document.Text == "승인한 충돌 내용" && !document.IsModified && !document.Editor.CanUndo,
+                "Approved dirty reload must replace the buffer cleanly and discard the old Undo history");
 
             File.Delete(file);
             Poll(window);
-            Require(document.Text == "외부 충돌 내용", "Deletion must preserve buffer");
+            Require(document.Text == "승인한 충돌 내용", "Deletion must preserve buffer");
             File.WriteAllText(file, "재생성됨", new UTF8Encoding(false));
             Poll(window);
             Require(document.Text == "재생성됨", "Recreated file must reload");
 
             File.WriteAllText(file, "잠긴 외부 변경 내용", new UTF8Encoding(false));
+            var beforeLockedPrompts = prompts;
             using (var locked = new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
             {
                 Poll(window);
                 Require(document.Text == "재생성됨", "Locked file must preserve buffer");
             }
+            Require(prompts == beforeLockedPrompts + 1, "A stable locked file must ask once before the read failure");
             Poll(window);
-            Require(document.Text == "잠긴 외부 변경 내용", "Unlocked file must retry successfully");
+            Require(document.Text == "재생성됨" && prompts == beforeLockedPrompts + 1,
+                "A failed approved read must retain the buffer without repeatedly prompting");
+            WaitFor((Task)Call(window, "ReloadExternalFileAsync")!);
+            Require(document.Text == "잠긴 외부 변경 내용" && prompts == beforeLockedPrompts + 2,
+                "Manual reload must retry a failed file version successfully");
+
+            Toggle(window, false);
+            File.WriteAllText(file, "자동 감시 OFF 중 수동 변경", new UTF8Encoding(false));
+            approve = false;
+            WaitFor((Task)Call(window, "ReloadExternalFileAsync")!);
+            Require(document.Text == "잠긴 외부 변경 내용", "Declining manual reload must preserve the buffer while monitoring is OFF");
+            approve = true;
+            WaitFor((Task)Call(window, "ReloadExternalFileAsync")!);
+            Require(document.Text == "자동 감시 OFF 중 수동 변경", "Manual reload must work while monitoring is OFF");
+            Toggle(window, true);
 
             document.Editor.ReplaceAll("직접 저장한 내용");
             WaitFor((Task)Call(window, "SaveDocumentAsync", document, false)!);
@@ -135,14 +197,39 @@ internal static class FileSyncVerification
             }
 
             File.WriteAllText(file, "동시 편집 중 외부 변경", new UTF8Encoding(false));
-            WaitFor((Task)Call(window, "PollFileChangesAsync")!);
-            WaitFor(Task.Delay(550));
-            var editingPoll = (Task)Call(window, "PollFileChangesAsync")!;
-            document.Editor.ReplaceAll("진행 중 추가한 편집");
-            WaitFor(editingPoll);
-            Require(document.Text == "진행 중 추가한 편집", "Editing during a pending poll must preserve local content");
-            document.Editor.Undo();
+            duringConfirmation = () => document.Editor.ReplaceAll("승인 중 추가한 편집");
             Poll(window);
+            Require(document.Text == "승인 중 추가한 편집", "Editing during approval must invalidate that approval and preserve local content");
+            var invalidatedPrompts = prompts;
+            Poll(window);
+            Require(document.Text == "승인 중 추가한 편집" && prompts == invalidatedPrompts,
+                "An invalidated approval must not overwrite later edits on the next poll");
+            document.Editor.Undo();
+            WaitFor((Task)Call(window, "ReloadExternalFileAsync")!);
+            Require(document.Text == "동시 편집 중 외부 변경", "Manual retry after an invalidated approval must reload");
+
+            File.WriteAllText(file, "승인 후 읽는 중 외부 변경", new UTF8Encoding(false));
+            duringConfirmation = () => Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Send,
+                new Action(() => document.Editor.ReplaceAll("승인 후 읽는 중 추가 편집")));
+            Poll(window);
+            Require(document.Text == "승인 후 읽는 중 추가 편집" && document.IsModified,
+                "Editing after approval while asynchronous I/O is pending must preserve the new local edit");
+            invalidatedPrompts = prompts;
+            Poll(window);
+            Require(document.Text == "승인 후 읽는 중 추가 편집" && prompts == invalidatedPrompts,
+                "A read invalidated by later edits must not reuse its approval");
+            document.Editor.Undo();
+            WaitFor((Task)Call(window, "ReloadExternalFileAsync")!);
+
+            File.WriteAllText(file, "확인 중 디스크 변경 전", new UTF8Encoding(false));
+            duringConfirmation = () => File.WriteAllText(file, "확인 중 디스크 변경 후 새 버전", new UTF8Encoding(false));
+            var beforeDiskRace = document.Text;
+            Poll(window);
+            Require(document.Text == beforeDiskRace, "A disk version changed during approval must not be applied under the old approval");
+            var beforeNewVersionPrompt = prompts;
+            Poll(window);
+            Require(document.Text == "확인 중 디스크 변경 후 새 버전" && prompts == beforeNewVersionPrompt + 1,
+                "A newer disk version must receive a fresh approval before being applied");
 
             VerifyLargeReloads(window, document, file);
 
@@ -152,7 +239,7 @@ internal static class FileSyncVerification
             Call(window, "StopFileSync");
             WaitFor(closingPoll);
             Require(document.ContentRevision == beforeStop, "Stopping file sync must cancel pending application");
-            Console.WriteLine("PASS file sync OFF/ON, revision, encoding, edit/save/close/reopen guards, deletion/recreation, locked retry, own-save Undo, inactive/stability, pending OFF/stop, 30/100/300MB");
+            Console.WriteLine("PASS file sync confirmation/decline/new version, dirty warning/approved discard, manual OFF/decline/failure retry, approval edit/disk races, revision/encoding, guards, deletion/recreation, own-save Undo, inactive/stability, pending OFF/stop, 30/100/300MB");
             return 0;
         }
         catch (Exception exception)
@@ -162,6 +249,7 @@ internal static class FileSyncVerification
         }
         finally
         {
+            confirmation.SetValue(null, previousConfirmation);
             Call(window, "StopFileSync");
             Field<DispatcherTimer>(window, "_settingsSaveTimer").Stop();
             window.Hide();

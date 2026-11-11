@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Threading;
 using MyTextEditor.Models;
+using MyTextEditor.Services;
 
 namespace MyTextEditor;
 
@@ -27,6 +28,11 @@ public partial class MainWindow
         public string? LastNotice { get; set; }
         public FileSyncStamp? PendingStamp { get; set; }
         public long PendingSince { get; set; }
+        public FileSyncStamp? LastPromptedStamp { get; set; }
+        public FileSyncStamp? ApprovedStamp { get; set; }
+        public long ApprovedRevision { get; set; }
+        public Encoding? ApprovedEncoding { get; set; }
+        public bool ApprovedHasBom { get; set; }
     }
 
     private static Task<FileSyncStamp> ReadFileSyncStampAsync(string path, CancellationToken cancellationToken = default) =>
@@ -71,6 +77,7 @@ public partial class MainWindow
         _fileSyncPollCancellation?.Cancel();
         _fileSyncPollCancellation = null;
         _fileSyncLifetime.Cancel();
+        foreach (var document in _fileSyncStates.Keys) ExternalChangeConfirmation.ForgetDocument(document.Id);
         _fileSyncStates.Clear();
     }
 
@@ -113,7 +120,7 @@ public partial class MainWindow
         MarkSettingsDirty();
         UpdateFileSyncTooltip();
         StatusMessage.Text = _settings.AutoReloadFiles
-            ? "파일 변경 모니터링 ON · 저장하지 않은 수정 내용은 덮어쓰지 않습니다."
+            ? "파일 변경 모니터링 ON · 새로운 외부 변경마다 반영 여부를 한 번 확인합니다."
             : "파일 변경 모니터링 OFF";
     }
 
@@ -125,6 +132,11 @@ public partial class MainWindow
 
     private async Task PollFileChangesAsync()
     {
+        if (SynchronizationContext.Current is not DispatcherSynchronizationContext)
+        {
+            await Dispatcher.InvokeAsync(PollFileChangesAsync).Task.Unwrap();
+            return;
+        }
         if (_fileSyncPolling || _fileSyncStopped || !_settings.AutoReloadFiles || _closingInProgress) return;
         _fileSyncPolling = true;
         var generation = _fileSyncGeneration;
@@ -134,7 +146,10 @@ public partial class MainWindow
         try
         {
             foreach (var removed in _fileSyncStates.Keys.Where(document => !Documents.Contains(document)).ToArray())
+            {
+                ExternalChangeConfirmation.ForgetDocument(removed.Id);
                 _fileSyncStates.Remove(removed);
+            }
             var entries = _fileSyncStates.Where(entry => CanCheckExternalFile(entry.Key) && entry.Key.FilePath == entry.Value.Path).ToArray();
             var observations = await ReadFileSyncBatchAsync(entries, cancellationToken);
             foreach (var (document, state, observed, error) in observations)
@@ -152,12 +167,6 @@ public partial class MainWindow
                         continue;
                     }
                     if (observed == state.Stamp && !state.WasMissing) { state.PendingStamp = null; continue; }
-                    if (document.IsModified)
-                    {
-                        ReportFileSyncNotice(document, state, "외부 파일이 변경되었지만 저장하지 않은 수정 내용이 있어 자동 반영하지 않았습니다.");
-                        continue;
-                    }
-
                     if (state.PendingStamp != observed)
                     {
                         state.PendingStamp = observed;
@@ -166,46 +175,21 @@ public partial class MainWindow
                         continue;
                     }
                     if (Stopwatch.GetElapsedTime(state.PendingSince).TotalMilliseconds < 500) continue;
-                    if (!ReferenceEquals(document, CurrentDocument))
+                    if (!ReferenceEquals(document, CurrentDocument) || !IsVisible)
                     {
-                        ReportFileSyncNotice(document, state, "외부 변경 대기 · 이 문서를 선택하면 반영합니다.");
+                        ReportFileSyncNotice(document, state, "외부 변경 대기 · 이 문서를 선택하면 반영 여부를 확인합니다.");
                         continue;
                     }
 
-                    var revision = document.ContentRevision;
-                    SyncFilesMenuItem.ToolTip = $"파일 변경 모니터링 ON · {document.DisplayName} 읽는 중";
-                    var buffer = await _fileService.LoadBufferAsync(state.Path, cancellationToken);
-                    var afterRead = await ReadFileSyncStampAsync(state.Path, cancellationToken);
-                    // A file may still be being written, or the user may edit/save/close while I/O runs.
-                    if (observed != afterRead || !IsCurrentFileSync(document, state, generation) ||
-                        document.IsModified || document.ContentRevision != revision || !ReferenceEquals(document, CurrentDocument)) continue;
-
-                    var applyWatch = Stopwatch.StartNew();
-                    var line = document.Editor.CurrentLine;
-                    var firstVisibleLine = document.Editor.FirstVisibleLine;
-                    document.Encoding = buffer.OriginalEncoding;
-                    document.HasByteOrderMark = buffer.HasByteOrderMark;
-                    document.AcceptEncodingChanges();
-                    document.NewLine = buffer.NewLine;
-                    document.Editor.SetNewLine(buffer.NewLine);
-                    document.Editor.ReloadUtf8(buffer.Utf8Buffer);
-                    document.Editor.GoToLine(line + 1, focusEditor: false);
-                    document.Editor.SetFirstVisibleLine(firstVisibleLine);
-                    applyWatch.Stop();
-                    document.IsModified = false;
-                    state.Stamp = afterRead;
-                    state.WasMissing = false;
-                    state.LastNotice = null;
-                    state.PendingStamp = null;
-                    UpdateStatus();
-                    StatusMessage.Text = $"{document.DisplayName}: 파일 변경 모니터링 · 읽기 {buffer.ReadElapsed.TotalMilliseconds:F0}ms · 변환 {buffer.DecodeElapsed.TotalMilliseconds:F0}ms · 화면 반영 {applyWatch.Elapsed.TotalMilliseconds:F0}ms";
-                    LastFileSyncMeasurement = new FileSyncMeasurement(buffer.Utf8Buffer.Length, buffer.ReadElapsed.TotalMilliseconds, buffer.DecodeElapsed.TotalMilliseconds, applyWatch.Elapsed.TotalMilliseconds);
+                    if (state.LastPromptedStamp == observed && state.ApprovedStamp != observed) continue;
+                    await ReloadObservedFileAsync(document, state, observed, generation, cancellationToken, manual: false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
                 {
+                    state.ApprovedStamp = null;
                     if (IsCurrentFileSync(document, state, generation))
-                        ReportFileSyncNotice(document, state, $"외부 변경을 읽지 못했습니다. 다음 확인 때 다시 시도합니다. {exception.Message}");
+                        ReportFileSyncNotice(document, state, $"외부 변경을 읽지 못했습니다. 파일 메뉴의 '디스크에서 다시 불러오기'로 재시도하세요. {exception.Message}");
                 }
             }
         }
@@ -218,6 +202,111 @@ public partial class MainWindow
         }
     }
 
+    private async void ReloadExternalFile_Click(object sender, RoutedEventArgs e) => await ReloadExternalFileAsync();
+
+    private async Task ReloadExternalFileAsync()
+    {
+        if (SynchronizationContext.Current is not DispatcherSynchronizationContext)
+        {
+            await Dispatcher.InvokeAsync(ReloadExternalFileAsync).Task.Unwrap();
+            return;
+        }
+        if (CurrentDocument is not { FilePath: { } path } document || _fileSyncStopped) return;
+        if (_fileSyncPolling || _savingDocuments.Contains(document) || _encodingReloads.Contains(document))
+        {
+            StatusMessage.Text = "파일 확인 또는 저장이 끝난 뒤 다시 불러오세요.";
+            return;
+        }
+        _fileSyncPolling = true;
+        var generation = _fileSyncGeneration;
+        try
+        {
+            var observed = await ReadFileSyncStampAsync(path, _fileSyncLifetime.Token);
+            if (!observed.Exists) { StatusMessage.Text = "파일이 이동되거나 삭제되어 다시 불러올 수 없습니다."; return; }
+            if (!_fileSyncStates.TryGetValue(document, out var state) || state.Path != path)
+                _fileSyncStates[document] = state = new FileSyncState(path, observed);
+            await ReloadObservedFileAsync(document, state, observed, generation, _fileSyncLifetime.Token, manual: true);
+        }
+        catch (OperationCanceledException) when (_fileSyncLifetime.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
+        {
+            if (_fileSyncStates.TryGetValue(document, out var state)) state.ApprovedStamp = null;
+            StatusMessage.Text = $"다시 불러오지 못했습니다. 현재 내용은 유지됩니다. {exception.Message}";
+        }
+        finally { _fileSyncPolling = false; UpdateFileSyncTooltip(); }
+    }
+
+    private async Task ReloadObservedFileAsync(DocumentViewModel document, FileSyncState state, FileSyncStamp observed,
+        long generation, CancellationToken cancellationToken, bool manual)
+    {
+        bool IsCurrent() => generation == _fileSyncGeneration && !_fileSyncStopped && !_closingInProgress && !_allowClose &&
+            (manual || _settings.AutoReloadFiles) && Documents.Contains(document) && document.FilePath == state.Path &&
+            _fileSyncStates.TryGetValue(document, out var current) && ReferenceEquals(current, state) &&
+            !_savingDocuments.Contains(document) && !_closingDocuments.Contains(document) && !_encodingReloads.Contains(document) &&
+            ReferenceEquals(document, CurrentDocument) && IsVisible;
+        if (!IsCurrent()) return;
+        var revision = document.ContentRevision;
+        var encoding = document.Encoding;
+        var hasBom = document.HasByteOrderMark;
+        var alreadyApproved = state.ApprovedStamp == observed && state.ApprovedRevision == revision &&
+            state.ApprovedEncoding == encoding && state.ApprovedHasBom == hasBom;
+        if (!alreadyApproved || manual)
+        {
+            if (!manual && state.LastPromptedStamp == observed) { state.ApprovedStamp = null; return; }
+            var approved = ExternalChangeConfirmation.TryConfirm(this, document.DisplayName, document.IsModified);
+            if (approved is null) return;
+            state.LastPromptedStamp = observed;
+            state.ApprovedStamp = null;
+            if (approved != true)
+            {
+                ReportFileSyncNotice(document, state, "현재 수정 내용을 유지합니다. 새로운 외부 변경에만 다시 확인합니다. 수동 반영은 파일 → 디스크에서 다시 불러오기를 사용하세요.");
+                return;
+            }
+            state.ApprovedStamp = observed;
+            state.ApprovedRevision = revision;
+            state.ApprovedEncoding = encoding;
+            state.ApprovedHasBom = hasBom;
+        }
+        if (document.ContentRevision != revision || document.Encoding != encoding || document.HasByteOrderMark != hasBom)
+        { state.ApprovedStamp = null; return; }
+        if (!IsCurrent()) return;
+        SyncFilesMenuItem.ToolTip = $"파일 변경 모니터링 · {document.DisplayName} 읽는 중";
+        var buffer = await _fileService.LoadBufferAsync(state.Path, cancellationToken);
+        var afterRead = await ReadFileSyncStampAsync(state.Path, cancellationToken);
+        // Approval applies only to the observed file and buffer versions.
+        if (observed != afterRead || document.ContentRevision != revision ||
+            document.Encoding != encoding || document.HasByteOrderMark != hasBom)
+        { state.ApprovedStamp = null; return; }
+        if (!IsCurrent()) return;
+
+        var applyWatch = Stopwatch.StartNew();
+        var line = document.Editor.CurrentLine;
+        var firstVisibleLine = document.Editor.FirstVisibleLine;
+        var horizontalOffset = document.Editor.HorizontalOffset;
+        document.Encoding = buffer.OriginalEncoding;
+        document.HasByteOrderMark = buffer.HasByteOrderMark;
+        document.AcceptEncodingChanges();
+        document.NewLine = buffer.NewLine;
+        document.Editor.SetNewLine(buffer.NewLine);
+        document.Editor.ReloadUtf8(buffer.Utf8Buffer);
+        ExternalChangeConfirmation.RememberDocumentReload(document.Id, document.ContentRevision);
+        document.Editor.GoToLine(line + 1, focusEditor: false);
+        document.Editor.SetFirstVisibleLine(firstVisibleLine);
+        document.Editor.SetHorizontalOffset(horizontalOffset);
+        applyWatch.Stop();
+        document.IsModified = false;
+        document.RecoveryModified = false;
+        state.Stamp = afterRead;
+        state.WasMissing = false;
+        state.LastNotice = null;
+        state.PendingStamp = null;
+        state.ApprovedStamp = null;
+        UpdateStatus();
+        if (!await DiscardRecoveryAsync(document)) return;
+        StatusMessage.Text = $"{document.DisplayName}: 외부 변경 반영 · 읽기 {buffer.ReadElapsed.TotalMilliseconds:F0}ms · 변환 {buffer.DecodeElapsed.TotalMilliseconds:F0}ms · 화면 반영 {applyWatch.Elapsed.TotalMilliseconds:F0}ms";
+        LastFileSyncMeasurement = new FileSyncMeasurement(buffer.Utf8Buffer.Length, buffer.ReadElapsed.TotalMilliseconds, buffer.DecodeElapsed.TotalMilliseconds, applyWatch.Elapsed.TotalMilliseconds);
+    }
+
     internal readonly record struct FileSyncMeasurement(long Utf8Bytes, double ReadMilliseconds, double DecodeMilliseconds, double ApplyMilliseconds);
     internal FileSyncMeasurement? LastFileSyncMeasurement { get; private set; }
 
@@ -226,7 +315,7 @@ public partial class MainWindow
         var notice = CurrentDocument is { } document && _fileSyncStates.TryGetValue(document, out var state) ? state.LastNotice : null;
         SyncFilesMenuItem.ToolTip = !_settings.AutoReloadFiles
             ? "파일 변경 모니터링 OFF · 켜면 저장된 파일의 외부 변경을 감시합니다."
-            : notice is null ? "파일 변경 모니터링 ON · 기록이 안정된 활성 문서만 다시 읽습니다. 미저장 수정은 덮어쓰지 않습니다."
+            : notice is null ? "파일 변경 모니터링 ON · 기록이 안정된 활성 문서의 새 변경마다 반영 여부를 한 번 확인합니다."
             : $"파일 변경 모니터링 ON · {notice}";
     }
 

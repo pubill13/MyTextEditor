@@ -164,7 +164,8 @@ public partial class DiffWorkspaceWindow : Window
         _defaults = _defaults with
         {
             IgnoreWhitespace = options.IgnoreWhitespace, IgnoreCase = options.IgnoreCase,
-            IgnoreEmptyLines = options.IgnoreEmptyLines, ScrollSync = options.ScrollSync
+            IgnoreEmptyLines = options.IgnoreEmptyLines, ScrollSync = options.ScrollSync,
+            HorizontalScrollSync = options.HorizontalScrollSync
         };
         SaveWindowOptions();
     }

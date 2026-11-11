@@ -25,6 +25,9 @@ public partial class MainWindow
         Closed += (_, _) =>
         {
             _windowClosed = true;
+            if (System.Windows.Application.Current is App app && app.Windows.OfType<Window>().Any(window =>
+                window != this && (window is MainWindow other && other.CanRetainExternalFiles || window is Diff.DiffWorkspaceWindow)))
+                app.ResumeFileOpenRequests();
             ++_documentFocusGeneration;
             ++_resultFocusGeneration;
             var application = System.Windows.Application.Current;

@@ -170,3 +170,28 @@
 - 새 태그 v1.11.13으로 게시하며 기존 태그·릴리즈는 변경하지 않는다. 사용자 .gitignore 변경은 제외한다. 업그레이드 전 기존 메인·비교/병합 창을 모두 종료해야 한다.
 
 - v1.11.13 배포 완료: 15ff304, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.13 . Windows x64 자체 포함 EXE(1.11.13.0)·ZIP을 공개했다. 서버 크기/SHA-256, 원격 태그 일치와 공개 API의 latest·최종 다운로드 주소를 확인했다(published 2026-11-10T01:43:36Z). 배포 증빙은 docs/verification/v1.11.13/publication.json에 기록했다. 사용자 .gitignore 해시와 변경 상태를 보존했다.
+
+## 외부 변경 확인·스크롤·검색 이동 작업 재개 완료 (2026-11-10, 미배포)
+- 중단된 로컬 변경을 이어서 완성했다. 일반 문서는 외부 변경마다 승인 후 재로드하며, 같은 버전 거절 시 재질문하지 않는다. 미저장 수정 경고와 파일 → 디스크에서 다시 불러오기 수동 재시도를 제공한다.
+- Merge의 외부 변경 감지를 Loaded/활성 탭/해제, 변경 배너와 재로드 버튼에 연결했다. 연결 문서와 직접 연 파일을 확인하며 승인한 재로드는 잠금을 유지한다. 저장·원본 반영·소스 교체·종료 중에는 재로드를 중단하고, 버전/편집 revision이 바뀌면 읽은 결과를 폐기한다. 문서 제거 시 승인 기록도 정리한다.
+- 가로 동기화 기본 OFF·세로와 독립 저장, 병합 후 화면 위치 유지와 명시적 다음 차이 이동, 최신 검색 결과 줄 이동을 검증했다. 기존 작업본에서 제거된 좌우 교환 설명을 도움말에서도 정리했다.
+- 추가 재현한 Merge 재로드 후 편집 멈춤을 수정했다. native TextChanged 중 비교 결과와 명령은 즉시 무효화하고, native 강조 제거만 dispatcher로 지연한다. 반복 재로드 뒤 일반 편집과 승인 중 편집 회귀가 통과했다.
+- 비동기 저장 wrapper의 finally가 UI 밖에서 실행되는 오류를 수정했다. 저장/원본 반영/소스 교체/닫기 진입을 WPF dispatcher로 통일했다. 저장 경합 검증은 실제 작업을 시작한 뒤 편집·해제하도록 유지했다.
+- 최종 Release 빌드 0경고/0오류, Core 43/43, Merge 탐색 75/75, source 탐색 7/7(64MiB 겹친 저장 3회 포함) 통과. --file-sync(30/100/300MB), --merge-scroll, --merge-external-changes, --merge-lifetime, --merge-independent, --merge-110, --search-navigation, --help-layout, --document-menu, --document-panes 모두 통과했다. 독립 Reviewer 검토 완료.
+- 최초 샌드박스 탐색은 49/75였다. 실제 저장 스레드 오류는 수정했고, 물리 입력·화면 캡처 실패는 샌드박스 밖 재실행에서 통과했다. 최종 GUI 검증은 순차 실행했다. 최종 로그는 artifacts/resume-validation-2026-11-10/, 상세 탐색 결과는 artifacts/merge-exploration-fixed/에 있다.
+- README·도움말·인수인계 갱신. 버전은 1.11.13 그대로이며 커밋·새 릴리즈 배포는 하지 않았다. 사용자 .gitignore 변경 보존. 실제 혼합 DPI·물리 한글 IME는 이번 범위에서 미검증이다.
+
+## 연결 프로그램 연속 실행 개선 완료 (2026-11-11, 로컬 EXE)
+- CSV·CFG 등을 연속 더블클릭할 때의 3초 IPC 오류를 개선했다. App/WPF 초기화 전에 receiver를 선출·수신하며, 추가 실행은 경로만 전달하고 종료한다. 수신 ACK는 UI와 분리된 큐 접수 직후 응답한다. 단순히 제한 시간만 늘리거나 오류를 숨기지 않았다.
+- 프로세스 생성 시각과 요청 내 파일 순서로 탭을 배치한다. receiver 선출·접속 순서가 뒤바뀐 경우도 늦게 도착한 앞선 실행을 올바른 위치에 삽입한다. 이미 열린 파일은 기존 탭·순서를 보존한다. 순서 메타데이터는 문서 닫기·창 이전·롤백에서 정리한다.
+- 임시 저장·열기·비활성 UI 상태에서 이미 접수한 요청을 보존·재시도한다. 마지막 창의 종료 확인은 새 접수를 명시적으로 거절하고 취소 시 재개한다. ACK한 요청이 있으면 최종 종료를 막는다. 남은 창이 잠시 바빠도 접수가 영구 정지되지 않으며 전달 전용 프로세스가 자기 요청을 수신한 뒤 버리는 takeover 경로도 차단했다.
+- Release 빌드 0경고/0오류, Core 43/43. --file-open-burst: Start 전 27.6ms ACK, UI 5초 정지 중 30요청 총 5.9ms/max0.8ms ACK, 보존·순서·지연 도착·중복·임시busy창/마지막창 종료 게이트 통과.
+- 최종 단일 EXE로 --file-open-processes: 50ms 간격 CSV/CFG cold20+warm20, 한 창의 정확한 40탭·누락/중복/오류창 없음·정상 종료 통과. cold 전체 5201ms, warm 전체 2415ms(각각 실행 간격 약1초 포함). warm 전달 프로세스 수명 중앙값284.9ms/max306.0ms. 기존 v1.11.13은 동일 cold-burst 탭 순서 검사 실패로 재현했다.
+- --instance199(같은 PID 추가 창·최소화 복원·활성 창 수신·누락 파일 뒤 정상 파일·첫 창 종료 후 수신·마지막 종료 취소/재접수), --document-panes, --document-detach(50회 왕복 및30/300MB), --help-layout, --tab-visibility, --merge-independent 통과. 구형 reflection 인수 형식 및 별도 PID를 가정하던 검증기를 현행 동작에 맞췄다. 실제 EXE 테스트는 설정을 보관·복원하며 삭제된 검증용 최근 파일 항목만 정리한다. 독립 Reviewer 검토 완료.
+- 개선 EXE: artifacts/file-open-improvement/OmniEdit.exe (Windows x64 자체 포함, 80,159,863 bytes, SHA256 240ABC80C7B9C88EDD736C919901381E200ED491ADC6CE2E75784381C3F59B1C). 검증 로그·summary.json은 artifacts/file-open-verification/에 있다. 기존 메인·Merge 창을 모두 종료하고 이 EXE로 연결 프로그램을 지정해야 한다(IPC v2). 버전1.11.13 유지, 커밋·원격 배포 없음. 사용자 .gitignore 및 이전 미커밋 변경 보존.
+
+## v1.11.14 배포 준비 (2026-11-11)
+- 사용자 요청으로 연속 파일 열기 개선과 이전 미배포 외부 변경 확인·가로 동기화·화면 위치/검색 이동 개선을 함께 배포한다. 버전/README를1.11.14로 갱신했다. 기존 태그·릴리즈는 변경하지 않고 사용자 .gitignore는 커밋에서 제외한다.
+- 최종 버전의 EXE·ZIP 생성, 회귀·실제 프로세스 검증, 커밋·태그 일치와 GitHub 첨부 크기/SHA-256 확인 후 공개한다. 릴리즈 노트에 좌우 교환 제거와 업그레이드 전 모든 메인·Merge 종료를 명시했다.
+- v1.11.14 최종 Release 빌드 0경고/0오류, Core43/43, 회귀·publish·실제EXE 총15단계 종료코드0. release EXE1.11.14.0의 cold20+warm20 CSV/CFG 정확한 순서·누락/중복/오류창없음, 여러창·종료취소/재접수까지 통과. cold3763ms/warm2413ms, warm전달프로세스중앙값287.7ms. 최초 테스트 설정복원 검사 실패는 원본복원·HasExited기준수정 후 재검증했고 docs/verification/v1.11.14/validation-note.md와 initial-validation-failure.json에 남겼다.
+- EXE/ZIP 생성 및 ZIP내EXE SHA256 동일 확인. EXE SHA256 723718D84080B0801686277F5DCDCD9A0FD5D04C1592D8E1B71414B794B15F68, ZIP E7926D26E2026E00840381E265597C285F9BDECA2DD0D6F488B6999A37247CB1. 소스·어셈블리·첨부 해시와 최종 검증은 docs/verification/v1.11.14/에 보관했다. 새태그로 업로드·서버해시 확인 후 공개한다.

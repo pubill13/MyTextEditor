@@ -171,6 +171,9 @@ public partial class MainWindow : Window
     private int _pendingFileOpens;
 
     private async Task OpenFilesAsync(IEnumerable<string> paths)
+        => await OpenFilesOrderedAsync(paths, null);
+
+    private async Task OpenFilesOrderedAsync(IEnumerable<string> paths, FileOpenRequest? request)
     {
         if (_windowClosed || _closingInProgress || _closingAllDocuments || _documentTransferRunning) return;
         var files = paths.ToArray();
@@ -178,13 +181,13 @@ public partial class MainWindow : Window
         try
         {
             await _fileOpenGate.WaitAsync();
-            try { if (!_windowClosed && !_closingInProgress && !_closingAllDocuments) await OpenFilesBatchAsync(files); }
+            try { if (!_windowClosed && !_closingInProgress && !_closingAllDocuments) await OpenFilesBatchAsync(files, request); }
             finally { _fileOpenGate.Release(); }
         }
         finally { _pendingFileOpens--; }
     }
 
-    private async Task OpenFilesBatchAsync(IEnumerable<string> paths)
+    private async Task OpenFilesBatchAsync(IEnumerable<string> paths, FileOpenRequest? request)
     {
         var uniquePaths = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -220,7 +223,9 @@ public partial class MainWindow : Window
                 {
                     StatusMessage.Text = $"파일 여는 중: {Path.GetFileName(filePath)}";
                     await Dispatcher.Yield(DispatcherPriority.Background);
+                    var wasOpen = Documents.Any(document => string.Equals(document.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
                     lastOpened = await OpenFileCoreAsync(filePath, selectDocument: false);
+                    if (request is not null && !wasOpen) OrderExternalTab(lastOpened, request, uniquePaths.IndexOf(filePath));
                     openedBytes += new FileInfo(filePath).Length;
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
@@ -423,6 +428,8 @@ public partial class MainWindow : Window
         var wasCurrent = document == CurrentDocument;
         Documents.Remove(document);
         _fileSyncStates.Remove(document);
+        _externalFileOrder.Remove(document);
+        ExternalChangeConfirmation.ForgetDocument(document.Id);
         if (ActiveDocumentTabs.Items.Count == 0)
             _activeDocumentTabs = LeftDocuments.Count > 0 ? DocumentTabs : RightDocuments.Count > 0 ? RightDocumentTabs : DocumentTabs;
         RefreshDiffSourceStates();
@@ -461,6 +468,12 @@ public partial class MainWindow : Window
                 StatusMessage.Text = "진행 중인 파일 열기·저장·닫기가 끝난 뒤 다시 시도하세요.";
                 return;
             }
+            if (Application.Current is App app && !app.PrepareFileOpenForClose(this))
+            {
+                e.Cancel = true;
+                StatusMessage.Text = "접수한 파일을 여는 중입니다. 완료 후 다시 닫아 주세요.";
+                return;
+            }
             if (_macroWindow is not null && !_macroWindow.PrepareClose())
             {
                 e.Cancel = true;
@@ -497,7 +510,11 @@ public partial class MainWindow : Window
             _allowClose = true;
             Close();
         }
-        finally { _checkingShutdown = false; }
+        finally
+        {
+            _checkingShutdown = false;
+            if (!_allowClose && Application.Current is App app) app.ResumeFileOpenRequests();
+        }
     }
 
     private void CompleteShutdown()

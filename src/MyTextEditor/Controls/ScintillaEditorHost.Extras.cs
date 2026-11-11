@@ -12,6 +12,23 @@ public sealed partial class ScintillaEditorHost
     private readonly EditorScrollBar _verticalBar = new(false) { Dock = Forms.DockStyle.Right, Width = 14 };
     private readonly EditorScrollBar _horizontalBar = new(true) { Dock = Forms.DockStyle.Bottom, Height = 14 };
     private readonly Forms.ContextMenuStrip _contextMenu = new();
+    private int _lastNotifiedHorizontalOffset = -1;
+
+    public void SetHorizontalOffset(int offset)
+    {
+        if (_resourcesReleased) return;
+        var maximum = Math.Max(0, _editor.ScrollWidth - _editor.ClientSize.Width + _editor.Margins[0].Width);
+        _editor.XOffset = WordWrap ? 0 : Math.Clamp(offset, 0, maximum);
+        NotifyHorizontalScroll();
+    }
+
+    private void NotifyHorizontalScroll()
+    {
+        if (_loading || _resourcesReleased || _lastNotifiedHorizontalOffset == _editor.XOffset) return;
+        _lastNotifiedHorizontalOffset = _editor.XOffset;
+        UpdateScrollBars();
+        HorizontalScrolled?.Invoke(this, EventArgs.Empty);
+    }
 
     private void InitializeExtras()
     {

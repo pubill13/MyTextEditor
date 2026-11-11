@@ -42,6 +42,7 @@ internal static class Program
         if (args.Contains("--merge-source-exploration")) return MergeSourceExploration.Run(args.FirstOrDefault(arg => arg.StartsWith("--cases="))?[8..]);
         if (args.Contains("--merge-workflow-exploration")) return MergeWorkflowExploration.Run();
         if (args.Contains("--merge-scroll")) return MergeScrollVerification.Run();
+        if (args.Contains("--merge-external-changes")) return MergeExternalChangesVerification.Run();
         if (args.Contains("--transform-audit")) return TransformAuditVerification.Run();
         if (args.Contains("--transform-audit-large")) return TransformAuditVerification.Run(large: true);
         if (args.Contains("--transform-audit-join")) return TransformAuditVerification.Run(large: true, joinOnly: true);
@@ -51,6 +52,8 @@ internal static class Program
         if (args.Contains("--recovery-store")) return RecoveryStoreVerification.Run(args);
         if (args.Contains("--recovery-ui")) return RecoveryIntegrationVerification.Run();
         if (args.Length >= 2 && args[0] == "--instance199") return Instance199Verification.Run(args[1]);
+        if (args.Contains("--file-open-burst")) return FileOpenBurstVerification.Run();
+        if (args.Length >= 2 && args[0] == "--file-open-processes") return FileOpenBurstVerification.RunProcesses(args[1]);
         if (args.Length > 0 && args[0] == "--large-workspace")
             return LargeWorkspaceVerification.Run(args.Length > 1 ? int.Parse(args[1]) : 4, args.Length > 2 ? int.Parse(args[2]) : 8);
         if (args.Length > 0 && args[0] == "--native-buffer-memory")
@@ -66,6 +69,7 @@ internal static class Program
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
         if (args.Contains("--folder-shortcut")) return SearchActionsVerification.Run(folderShortcutOnly: true);
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
+        if (args.Contains("--search-navigation")) return SearchActionsVerification.Run(navigationOnly: true);
         if (args.Contains("--v18")) return V18Verification.Run();
         if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();
         if (args.Contains("--omni-theme")) return OmniThemeVerification.Run();
@@ -304,15 +308,9 @@ internal static class Program
         rightReadOnly.IsChecked = false;
         PumpDispatcherUntil(() => resultField.GetValue(view) is TextDiffResult, TimeSpan.FromSeconds(3));
         merge.Invoke(view, [DiffSide.Left]);
-        var swap = typeof(DiffTabView).GetMethod("Swap_Click", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        swap.Invoke(view, [view, new RoutedEventArgs()]);
-        var swappedLeftEditor = (ScintillaEditorHost)typeof(DiffTabView)
-            .GetField("_leftEditor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
-        if (!swappedLeftEditor.CanUndo)
-            throw new InvalidOperationException("좌우 교환이 편집기의 Undo 기록을 잃었습니다.");
-        swappedLeftEditor.Undo();
-        if (swappedLeftEditor.GetText() != "a\nnew")
-            throw new InvalidOperationException("좌우 교환 뒤 기존 Undo 기록을 적용하지 못했습니다.");
+        rightEditor.Undo();
+        if (rightEditor.GetText() != "a\nnew")
+            throw new InvalidOperationException("잠금 해제 후 병합이 한 번의 Undo로 복원되지 않았습니다.");
 
         view.ReleaseResources();
         window.Content = null;
