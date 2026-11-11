@@ -219,3 +219,7 @@
 ## 하위 폴더 새 탭 열기 (2026-11-11, 로컬 개발본)
 - 하위 폴더 더블클릭/Enter는 기존 탭을 대체하지 않고 새 폴더 비교 탭을 연다. 상위 탭의 경로·목록·선택·스크롤을 유지하고, 상위 탭 버튼은 기존 탭을 선택한다. 상위 탭을 닫아도 하위 탭은 독립적으로 유지된다.
 - --folder-compare에서 자식·손자 새 탭, 상위 복귀, 부모 닫힘 독립성, 한쪽 전용 폴더와 저장·갱신 회귀 통과. 별도 출력 artifacts/folder-tabs/bin/Release/net9.0-windows/OmniEdit.exe. 기존 사용자 창은 종료하지 않았다.
+
+## v1.11.17 배포 완료 (2026-11-11)
+- 9f8c489 / https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.17 공개 완료. 폴더 드래그·경로 Enter, 좌우 경로 입력줄, 하위 폴더 새 탭·상위 탭 복귀와 대량 폴더 비교 개선을 포함한다.
+- Windows x64 자체 포함 EXE 1.11.17.0·ZIP의 서버 크기/SHA-256, ZIP 안 EXE 해시, 공개 latest 및 다운로드 주소, 원격 태그 일치 확인. 증빙 docs/verification/v1.11.17/publication.json. 구현 검증은 재사용했고 테스트 반복·사용자 창 종료는 하지 않았다. 사용자 .gitignore 해시 보존 및 커밋 제외.
