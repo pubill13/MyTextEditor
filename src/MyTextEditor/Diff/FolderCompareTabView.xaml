@@ -1,0 +1,50 @@
+<UserControl x:Class="MyTextEditor.Diff.FolderCompareTabView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Background="{DynamicResource WindowBrush}">
+ <UserControl.Resources>
+  <Style x:Key="FolderCellText" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+   <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=DataGridRow}}"/>
+   <Setter Property="Margin" Value="6,4"/>
+  </Style>
+ </UserControl.Resources>
+ <Grid Margin="10">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+  <TextBlock Text="왼쪽 폴더" VerticalAlignment="Center" Margin="0,0,10,6"/>
+  <TextBox x:Name="LeftPathInput" Grid.Column="1" Margin="0,0,6,6" MinHeight="28" VerticalContentAlignment="Center" KeyDown="Path_KeyDown"/>
+  <Button Grid.Column="2" Content="폴더 선택…" Margin="0,0,0,6" Click="BrowseLeft_Click"/>
+  <TextBlock Grid.Row="1" Text="오른쪽 폴더" VerticalAlignment="Center" Margin="0,0,10,6"/>
+  <TextBox x:Name="RightPathInput" Grid.Row="1" Grid.Column="1" Margin="0,0,6,6" MinHeight="28" VerticalContentAlignment="Center" KeyDown="Path_KeyDown"/>
+  <Button Grid.Row="1" Grid.Column="2" Content="폴더 선택…" Margin="0,0,0,6" Click="BrowseRight_Click"/>
+  <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,2,0,8">
+   <Button Content="비교 / 새로고침" ToolTip="하위 폴더 포함 · 파일 내용 전체 비교 · F5" Click="Compare_Click" Padding="10,4"/>
+   <Button x:Name="CancelButton" Content="취소" IsEnabled="False" Click="Cancel_Click" Margin="6,0,16,0"/>
+   <CheckBox x:Name="DifferencesOnly" Content="차이만 보기" VerticalAlignment="Center" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
+  </StackPanel>
+  <DataGrid x:Name="ResultsList" Grid.Row="3" Grid.ColumnSpan="3" MouseDoubleClick="Results_DoubleClick" PreviewKeyDown="Results_KeyDown"
+   AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False"
+   SelectionMode="Single" SelectionUnit="FullRow" EnableRowVirtualization="True"
+   ScrollViewer.CanContentScroll="True" VirtualizingPanel.VirtualizationMode="Recycling">
+   <DataGrid.RowStyle>
+    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+     <Setter Property="ToolTip" Value="{Binding Detail}"/>
+     <Style.Triggers>
+      <DataTrigger Binding="{Binding Status}" Value="Different"><Setter Property="Foreground" Value="{DynamicResource FolderChangedBrush}"/></DataTrigger>
+      <DataTrigger Binding="{Binding Status}" Value="LeftOnly"><Setter Property="Foreground" Value="{DynamicResource FolderDeletedBrush}"/></DataTrigger>
+      <DataTrigger Binding="{Binding Status}" Value="RightOnly"><Setter Property="Foreground" Value="{DynamicResource FolderAddedBrush}"/></DataTrigger>
+      <DataTrigger Binding="{Binding Status}" Value="Error"><Setter Property="Foreground" Value="{DynamicResource FolderDeletedBrush}"/></DataTrigger>
+     </Style.Triggers>
+    </Style>
+   </DataGrid.RowStyle>
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="상대 경로" Binding="{Binding RelativePath}" Width="*" MinWidth="200" ElementStyle="{StaticResource FolderCellText}"/>
+    <DataGridTextColumn Header="상태" Binding="{Binding StatusText}" Width="145" ElementStyle="{StaticResource FolderCellText}"/>
+    <DataGridTextColumn Header="왼쪽 크기 (바이트)" Binding="{Binding LeftLength}" Width="155" ElementStyle="{StaticResource FolderCellText}"/>
+    <DataGridTextColumn Header="오른쪽 크기 (바이트)" Binding="{Binding RightLength}" Width="155" ElementStyle="{StaticResource FolderCellText}"/>
+   </DataGrid.Columns>
+  </DataGrid>
+  <TextBlock x:Name="SummaryText" Grid.Row="4" Grid.ColumnSpan="3" Margin="0,8,0,0" TextWrapping="Wrap"
+   Text="두 폴더 경로를 입력하세요. 파일을 더블클릭하면 새 탭에서 비교합니다."/>
+ </Grid>
+</UserControl>

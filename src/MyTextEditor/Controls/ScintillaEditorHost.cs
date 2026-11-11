@@ -304,6 +304,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             _loading = false;
         }
         // Reload callers restore display-line scroll positions immediately after loading.
+        _horizontalWidthMeasurement = null;
+        UpdateScrollBars();
         if (WordWrap) _editor.Refresh();
         CaretChanged?.Invoke(this, EventArgs.Empty);
         DirtyChanged?.Invoke(this, EventArgs.Empty);
@@ -555,6 +557,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         var appearance = (fontFamily, fontSize, palette, dpiScale);
         if (_appliedAppearance == appearance) return;
         ApplyFontAppearance(fontFamily, fontSize, palette.IsDark, dpiScale);
+        _horizontalWidthMeasurement = null;
         _editor.Styles[ScintillaNET.Style.Default].ForeColor = palette.EditorForeground;
         _editor.Styles[ScintillaNET.Style.Default].BackColor = palette.EditorBackground;
         _editor.StyleClearAll();

@@ -144,7 +144,12 @@ public partial class DiffTabView
                 var stamp = await Task.Run(() => ReadExternalFileStamp(state.Path!), _externalChangeLifetime.Token);
                 if (!IsCurrent()) return;
                 // A save updates the endpoint stamp; treat it as the new baseline too.
-                if (state.Baseline is null || state.Baseline.Value.Length != endpoint.SourceFileLength ||
+                if (endpoint.IsMissingFolderFile)
+                {
+                    state.Baseline = new(false, 0, default, default);
+                    if (!stamp.Exists) { state.HasChanges = false; return; }
+                }
+                else if (state.Baseline is null || state.Baseline.Value.Length != endpoint.SourceFileLength ||
                     state.Baseline.Value.LastWriteUtc != endpoint.SourceFileLastWriteUtc)
                 {
                     state.Baseline = endpoint.SourceFileLength is { } length && endpoint.SourceFileLastWriteUtc is { } written
@@ -268,6 +273,7 @@ public partial class DiffTabView
         endpoint.DisplayName = snapshot.DisplayName;
         endpoint.Text = snapshot.Text;
         endpoint.FilePath = snapshot.FilePath;
+        endpoint.IsMissingFolderFile = false;
         endpoint.Encoding = snapshot.Encoding;
         endpoint.HasByteOrderMark = snapshot.HasByteOrderMark;
         endpoint.NewLine = snapshot.NewLine;

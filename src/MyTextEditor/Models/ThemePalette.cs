@@ -62,6 +62,8 @@ public sealed class ThemePalette
         Add("Accent", Accent); Add("AccentHover", Hover); Add("Selection", Selection);
         Add("Danger", Color(IsDark ? "FF6B78" : "C52A3A"));
         Add("ScrollTrack", ScrollTrack); Add("ScrollThumb", ScrollThumb); Add("ScrollHover", ScrollHover);
+        // Default WPF scroll viewers use this system brush for the scrollbar corner.
+        resources[System.Windows.SystemColors.ControlBrushKey] = resources["ScrollTrackBrush"];
         return resources;
 
         void Add(string key, DrawingColor value)

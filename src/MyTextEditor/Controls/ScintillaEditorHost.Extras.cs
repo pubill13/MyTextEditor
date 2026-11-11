@@ -13,6 +13,7 @@ public sealed partial class ScintillaEditorHost
     private readonly EditorScrollBar _horizontalBar = new(true) { Dock = Forms.DockStyle.Bottom, Height = 14 };
     private readonly Forms.ContextMenuStrip _contextMenu = new();
     private int _lastNotifiedHorizontalOffset = -1;
+    private (long Revision, int FirstLine, int LastLine, int Width)? _horizontalWidthMeasurement;
 
     public void SetHorizontalOffset(int offset)
     {
@@ -32,8 +33,9 @@ public sealed partial class ScintillaEditorHost
 
     private void InitializeExtras()
     {
-        _editor.HScrollBar = true;
-        _horizontalBar.Visible = false;
+        // Native scrollbars use Windows colors rather than the editor's selected palette.
+        _editor.HScrollBar = false;
+        _horizontalBar.Visible = true;
         _editor.VScrollBar = false;
         _editor.ScrollWidthTracking = true;
         _editor.ScrollWidth = 1;
@@ -41,7 +43,7 @@ public sealed partial class ScintillaEditorHost
         _surface.Controls.Add(_verticalBar);
         _surface.Controls.Add(_horizontalBar);
         _verticalBar.PositionChanged += value => SetFirstVisibleLine(value);
-        _horizontalBar.PositionChanged += value => { if (_editor.XOffset != value) _editor.XOffset = value; };
+        _horizontalBar.PositionChanged += SetHorizontalOffset;
         _editor.SizeChanged += Editor_SizeChanged;
         _editor.BeforeInsert += Highlight_BeforeInsert;
         _editor.BeforeDelete += Highlight_BeforeDelete;
@@ -62,7 +64,7 @@ public sealed partial class ScintillaEditorHost
         if (WordWrap == enabled) return;
         var topDocumentLine = _editor.DocLineFromVisible(FirstVisibleLine);
         _editor.WrapMode = enabled ? WrapMode.Word : WrapMode.None;
-        _editor.HScrollBar = !enabled;
+        _horizontalBar.Visible = !enabled;
         if (enabled) _editor.XOffset = 0;
         // Scintilla computes wrapping during layout/paint, before display indices can be used.
         _editor.Refresh();
@@ -72,10 +74,31 @@ public sealed partial class ScintillaEditorHost
 
     private void UpdateScrollBars()
     {
-        if (_resourcesReleased || !_editor.IsHandleCreated) return;
+        if (_resourcesReleased || _loading || !_editor.IsHandleCreated) return;
+        UpdateHorizontalScrollWidth();
         _verticalBar.SetRange(Math.Max(0, DisplayLineCount - Math.Max(1, LinesOnScreen)), Math.Max(1, LinesOnScreen), FirstVisibleLine);
         _horizontalBar.SetRange(Math.Max(0, _editor.ScrollWidth - _editor.ClientSize.Width + _editor.Margins[0].Width),
             Math.Max(1, _editor.ClientSize.Width), _editor.XOffset);
+    }
+
+    private void UpdateHorizontalScrollWidth()
+    {
+        if (WordWrap) return;
+        var first = Math.Clamp(_editor.DocLineFromVisible(FirstVisibleLine), 0, LineCount - 1);
+        var last = Math.Min(LineCount - 1, first + Math.Max(1, LinesOnScreen));
+        var measurement = (ContentRevision, first, last, _editor.ClientSize.Width);
+        if (_horizontalWidthMeasurement == measurement) return;
+        _horizontalWidthMeasurement = measurement;
+        // Scintilla stops ScrollWidthTracking when its native horizontal bar is hidden.
+        // Measure rendered visible lines without copying text into managed strings.
+        var width = _editor.ScrollWidth;
+        for (var line = first; line <= last; line++)
+        {
+            var end = _editor.DirectMessage((int)SciApi.SCI_GETLINEENDPOSITION, (IntPtr)line, IntPtr.Zero);
+            var x = (int)_editor.DirectMessage((int)SciApi.SCI_POINTXFROMPOSITION, IntPtr.Zero, end);
+            width = Math.Max(width, x + _editor.XOffset - _editor.Margins[0].Width + 16);
+        }
+        if (width != _editor.ScrollWidth) _editor.ScrollWidth = width;
     }
 
     public float GetLineY(int zeroBasedLine)

@@ -36,10 +36,12 @@ internal static class MergeScrollVerification
                 var native = Field<Scintilla>(host, "_editor");
                 var bar = Field<Forms.Control>(host, "_horizontalBar");
                 host.ReplaceAll(new string('x', 3000) + " END"); native.Refresh(); Pump();
-                Check(native.HScrollBar && native.ScrollWidth > native.ClientSize.Width, "Native horizontal scrollbar has no long-line range");
-                native.XOffset = native.ScrollWidth; Pump();
+                Check(!native.HScrollBar && bar.Visible && native.ScrollWidth > native.ClientSize.Width, $"Themed horizontal scrollbar has no long-line range: native={native.HScrollBar}, visible={bar.Visible}, range={native.ScrollWidth}, width={native.ClientSize.Width}");
+                var maximum = (int)bar.GetType().GetField("_maximum", Hidden)!.GetValue(bar)!;
+                Check(maximum > 0, "Themed scrollbar did not track long-line width");
+                bar.GetType().GetMethod("MoveTo", Hidden)!.Invoke(bar, [maximum]); Pump();
                 Check(native.XOffset > 0, "Horizontal viewport did not move");
-                native.XOffset = 0; Pump();
+                bar.GetType().GetMethod("MoveTo", Hidden)!.Invoke(bar, [0]); Pump();
                 Check(native.XOffset == 0, "Horizontal viewport did not return");                host.Undo(); Check(host.GetText() == "", "Scrollbar movement changed Undo");
                 host.Redo(); Check(host.GetText().EndsWith(" END"), "Scrollbar movement changed Redo");
             }
@@ -58,7 +60,7 @@ internal static class MergeScrollVerification
             VerifyMappedBoundaries(view, left, right, Pump);
             VerifyMergePosition(view, left, right, Pump);
             Console.WriteLine("PASS Merge search whole-word replacement, side isolation, Undo/Redo");
-            Console.WriteLine("PASS Merge left/right horizontal viewport, native scrolling range and Undo/Redo");
+            Console.WriteLine("PASS Merge left/right themed horizontal scrollbar interaction, range and Undo/Redo");
             return 0;
         }
         finally

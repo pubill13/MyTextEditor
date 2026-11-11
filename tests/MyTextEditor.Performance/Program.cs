@@ -74,6 +74,7 @@ internal static class Program
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
         if (args.Contains("--search-navigation")) return SearchActionsVerification.Run(navigationOnly: true);
         if (args.Contains("--v18")) return V18Verification.Run();
+        if (args.Contains("--folder-compare")) return FolderCompareVerification.Run();
         if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();
         if (args.Contains("--omni-theme")) return OmniThemeVerification.Run();
         if (args.Contains("--omni-search")) return OmniSearchVerification.Run();

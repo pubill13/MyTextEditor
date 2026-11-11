@@ -28,6 +28,7 @@ public sealed class DiffEndpoint
     public long? SourceFileLength { get; set; }
     public DateTime? SourceFileLastWriteUtc { get; set; }
     internal bool HasUnsavedSourceSnapshot { get; set; }
+    internal bool IsMissingFolderFile { get; set; }
 
     public bool IsReady => Kind != DiffEndpointKind.Empty;
 

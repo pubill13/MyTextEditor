@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using MyTextEditor.Core;
 
 namespace MyTextEditor.Diff;
 
@@ -46,7 +47,9 @@ public partial class DiffWorkspaceWindow : Window
     public event EventHandler? ResourcesReleased;
     public bool HasUnsavedChanges => Views.Any(view => view.HasUnsavedChanges);
     public int ComparisonCount => ComparisonTabs.Items.Count;
-    private IEnumerable<DiffTabView> Views => ComparisonTabs.Items.OfType<TabItem>().Select(item => (DiffTabView)item.Content);
+    private IEnumerable<DiffTabView> Views => ComparisonTabs.Items.OfType<TabItem>().Select(item => item.Content).OfType<DiffTabView>();
+    private IEnumerable<FolderCompareTabView> FolderViews => ComparisonTabs.Items.OfType<TabItem>().Select(item => item.Content).OfType<FolderCompareTabView>();
+    private FolderCompareTabView? CurrentFolder => (ComparisonTabs.SelectedItem as TabItem)?.Content as FolderCompareTabView;
     private DiffTabView? CurrentView => (ComparisonTabs.SelectedItem as TabItem)?.Content as DiffTabView;
 
     public DiffTabView OpenEmptyTab(bool reuseExisting = true)
@@ -61,6 +64,42 @@ public partial class DiffWorkspaceWindow : Window
 
     public DiffTabView OpenComparison(DiffEndpoint left, DiffEndpoint right) => AddTab(left, right);
 
+    public FolderCompareTabView OpenFolderComparison()
+    {
+        var view = new FolderCompareTabView(OpenFolderFileAsync);
+        view.ApplyAppearance(_appearance);
+        var item = CreateTabItem(view, view.TabTitle);
+        view.StateChanged += (_, _) => ((TextBlock)item.Tag).Text = view.TabTitle;
+        ComparisonTabs.Items.Add(item);
+        ComparisonTabs.SelectedItem = item;
+        return view;
+    }
+
+    private async Task OpenFolderFileAsync(FolderCompareTabView folder, FolderCompareEntry entry)
+    {
+        var left = entry.Status != FolderCompareStatus.RightOnly ? await LoadFolderTextAsync(entry.LeftPath) : null;
+        var right = entry.Status != FolderCompareStatus.LeftOnly ? await LoadFolderTextAsync(entry.RightPath) : null;
+        if (_resourcesReleased || folder.IsReleased) return;
+        left ??= MissingFolderEndpoint(entry.LeftPath, right!);
+        right ??= MissingFolderEndpoint(entry.RightPath, left);
+        OpenComparison(left, right);
+    }
+
+    private static async Task<DiffEndpoint> LoadFolderTextAsync(string path)
+    {
+        var endpoint = await DiffTabView.LoadFileEndpointAsync(path);
+        if (endpoint.Text.Any(c => char.IsControl(c) && c is not ('\t' or '\r' or '\n' or '\f')))
+            throw new IOException("바이너리 또는 제어 문자가 포함된 파일은 텍스트 비교로 열 수 없습니다.");
+        return endpoint;
+    }
+
+    private static DiffEndpoint MissingFolderEndpoint(string path, DiffEndpoint source) => new()
+    {
+        Kind = DiffEndpointKind.File, DisplayName = Path.GetFileName(path), FilePath = path, Text = "",
+        Encoding = source.Encoding, HasByteOrderMark = source.HasByteOrderMark, NewLine = source.NewLine,
+        IsMissingFolderFile = true
+    };
+
     public Task OpenDroppedFilesAsync(IReadOnlyList<string> paths) => LoadDroppedFilesAsync(paths);
 
     public void ApplyAppearance(DiffAppearance appearance)
@@ -69,6 +108,7 @@ public partial class DiffWorkspaceWindow : Window
         _appearance = appearance with { DpiScale = dpiScale };
         UpdateLegendColors(_appearance);
         foreach (var view in Views) view.ApplyAppearance(_appearance);
+        foreach (var view in FolderViews) view.ApplyAppearance(_appearance);
         RefreshFontSize();
     }
 
@@ -123,7 +163,24 @@ public partial class DiffWorkspaceWindow : Window
     {
         var view = new DiffTabView(left, right, _defaults, _callbacks, _appearance);
         view.SetHighlightColor(_highlightColor);
-        var headerText = new TextBlock { Text = view.TabTitle, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 260, TextTrimming = TextTrimming.CharacterEllipsis };
+        var item = CreateTabItem(view, view.TabTitle);
+        var headerText = (TextBlock)item.Tag;
+        view.StateChanged += (_, _) => headerText.Text = view.TabTitle;
+        view.OptionsChanged += (_, _) => UpdateDefaults(view.GetOptions());
+        view.FilesDropped += async (_, e) => await LoadDroppedFilesAsync(e.Paths);
+        view.CloseRequested += async (_, _) => await CloseTabAsync(item);
+        view.CloseWorkspaceRequested += (_, _) => Close();
+        view.CycleTabRequested += (_, e) => CycleTab(e.Direction);
+        view.FontSizeRequested += ChangeFontSize;
+        ComparisonTabs.Items.Add(item);
+        ComparisonTabs.SelectedItem = item;
+        StatusText.Text = view.IsReady ? "비교 탭을 열었습니다." : "좌우에 파일을 놓거나 소스를 선택하세요.";
+        return view;
+    }
+
+    private TabItem CreateTabItem(System.Windows.Controls.UserControl view, string title)
+    {
+        var headerText = new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 260, TextTrimming = TextTrimming.CharacterEllipsis };
         var close = new System.Windows.Controls.Button { Content = "×", Width = 24, Height = 24, Padding = new Thickness(0), Margin = new Thickness(7, 0, 0, 0), ToolTip = "비교 탭 닫기" };
         var header = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
         header.Children.Add(headerText); header.Children.Add(close);
@@ -141,17 +198,7 @@ public partial class DiffWorkspaceWindow : Window
         tabMenu.Items.Add(closeAllMenu);
         header.ContextMenu = tabMenu;
         close.Click += async (_, e) => { e.Handled = true; await CloseTabAsync(item); };
-        view.StateChanged += (_, _) => headerText.Text = view.TabTitle;
-        view.OptionsChanged += (_, _) => UpdateDefaults(view.GetOptions());
-        view.FilesDropped += async (_, e) => await LoadDroppedFilesAsync(e.Paths);
-        view.CloseRequested += async (_, _) => await CloseTabAsync(item);
-        view.CloseWorkspaceRequested += (_, _) => Close();
-        view.CycleTabRequested += (_, e) => CycleTab(e.Direction);
-        view.FontSizeRequested += ChangeFontSize;
-        ComparisonTabs.Items.Add(item);
-        ComparisonTabs.SelectedItem = item;
-        StatusText.Text = view.IsReady ? "비교 탭을 열었습니다." : "좌우에 파일을 놓거나 소스를 선택하세요.";
-        return view;
+        return item;
     }
 
     private void Select(DiffTabView view)
@@ -172,9 +219,12 @@ public partial class DiffWorkspaceWindow : Window
 
     private async Task<bool> CloseTabAsync(TabItem item)
     {
-        var view = (DiffTabView)item.Content;
-        if (!await view.RequestCloseAsync()) return false;
-        view.ReleaseResources();
+        if (item.Content is DiffTabView view)
+        {
+            if (!await view.RequestCloseAsync()) return false;
+            view.ReleaseResources();
+        }
+        if (item.Content is FolderCompareTabView folder) folder.ReleaseResources();
         ComparisonTabs.Items.Remove(item);
         if (ComparisonTabs.Items.Count == 0) Close();
         return true;
@@ -182,12 +232,13 @@ public partial class DiffWorkspaceWindow : Window
 
     private async Task CloseTabsAsync(IReadOnlyList<TabItem> items)
     {
-        var views = items.Select(item => (DiffTabView)item.Content).ToArray();
+        var views = items.Select(item => item.Content).OfType<DiffTabView>().ToArray();
         foreach (var view in views)
             if (!await view.RequestCloseAsync()) return;
         foreach (var item in items)
         {
-            ((DiffTabView)item.Content).ReleaseResources();
+            if (item.Content is DiffTabView view) view.ReleaseResources();
+            if (item.Content is FolderCompareTabView folder) folder.ReleaseResources();
             ComparisonTabs.Items.Remove(item);
         }
         if (ComparisonTabs.Items.Count == 0) Close();
@@ -238,6 +289,7 @@ public partial class DiffWorkspaceWindow : Window
     }
 
     private void AddTab_Click(object sender, RoutedEventArgs e) => OpenEmptyTab(false);
+    private void AddFolderTab_Click(object sender, RoutedEventArgs e) => OpenFolderComparison();
     private async void CloseOthers_Click(object sender, RoutedEventArgs e)
     {
         var current = ComparisonTabs.SelectedItem;
@@ -251,6 +303,14 @@ public partial class DiffWorkspaceWindow : Window
         ++_tabFocusGeneration;
         foreach (var item in Views) item.SetActive(ReferenceEquals(item, CurrentView));
         _tabFocusPending = CurrentView is not null;
+        ColorLegend.Visibility = CurrentFolder is null ? Visibility.Visible : Visibility.Collapsed;
+        if (CurrentFolder is { } folder)
+        {
+            StatusText.Text = folder.TabTitle;
+            folder.Focus();
+            _ = folder.RefreshOpenedFilesAsync();
+            return;
+        }
         if (CurrentView is not { } view) return;
         StatusText.Text = view.IsReady ? view.TabTitle : "좌우에 파일을 놓거나 소스를 선택하세요.";
         RestoreSelectedTabFocus();
@@ -341,6 +401,7 @@ public partial class DiffWorkspaceWindow : Window
         if (e.Handled) return;
         if (modifiers == ModifierKeys.None && e.Key == Key.F5)
         {
+            if (CurrentFolder is { } folder) await folder.CompareAsync();
             CurrentView?.RequestComparison();
             e.Handled = true;
             return;
@@ -390,6 +451,7 @@ public partial class DiffWorkspaceWindow : Window
         if (_resourcesReleased) return;
         _resourcesReleased = true;
         foreach (var view in Views.ToArray()) view.ReleaseResources();
+        foreach (var view in FolderViews.ToArray()) view.ReleaseResources();
         ResourcesReleased?.Invoke(this, EventArgs.Empty);
         ResourcesReleased = null;
     }

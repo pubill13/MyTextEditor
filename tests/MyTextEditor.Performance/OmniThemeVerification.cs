@@ -39,16 +39,67 @@ internal static class OmniThemeVerification
                 InspectMenu(menu, menu.Renderer, palette);
                 VerifyNativeText(menu, palette);
                 VerifyWpfMenu(palette);
+                VerifyScrollbars(host, palette);
             }
             var process = typeof(ScintillaEditorHost).GetMethod("ProcessShortcut", Private)!;
             Require(!(bool)process.Invoke(host, [Forms.Keys.Escape])!, "Ordinary editor must leave Escape unhandled");
             host.ShortcutRequested += (_, e) => { if (e.Shortcut == EditorShortcut.CloseWindow) e.Handled = true; };
             Require((bool)process.Invoke(host, [Forms.Keys.Escape])!, "Diff opt-in Escape routing");
             VerifyMacroEscape();
-            Console.WriteLine("PASS Omni theme menus, Unicode native find/wrap, native Escape and Macro Escape");
+            Console.WriteLine("PASS Omni theme menus, editor/WPF horizontal scrollbars across all palettes, Unicode native find/wrap, native Escape and Macro Escape");
             return 0;
         }
         finally { host.ReleaseResources(); window.Close(); app.Shutdown(); }
+    }
+
+    private static void VerifyScrollbars(ScintillaEditorHost host, ThemePalette palette)
+    {
+        host.LoadUtf8(System.Text.Encoding.UTF8.GetBytes(new string('한', 2000)));
+        var native = (ScintillaNET.Scintilla)typeof(ScintillaEditorHost).GetField("_editor", Private)!.GetValue(host)!;
+        native.Refresh();
+        host.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        var bar = (Forms.Control)typeof(ScintillaEditorHost).GetField("_horizontalBar", Private)!.GetValue(host)!;
+        Require(bar.Visible && !native.HScrollBar, "Native horizontal scrollbar bypasses application theme");
+        Require(native.ScrollWidth > native.ClientSize.Width, $"Loaded Unicode long line lost horizontal range: range={native.ScrollWidth}, width={native.ClientSize.Width}, wrap={host.WordWrap}, end={native.Lines[0].EndPosition}, x={native.PointXFromPosition(native.Lines[0].EndPosition)}");
+        using var bitmap = new Drawing.Bitmap(bar.Width, bar.Height);
+        bar.DrawToBitmap(bitmap, bar.ClientRectangle);
+        Require(bitmap.GetPixel(0, 0).ToArgb() == palette.ScrollTrack.ToArgb(), $"{palette.Id}: native host horizontal track color");
+        var thumb = (Drawing.Color)bar.GetType().GetField("_thumb", Private)!.GetValue(bar)!;
+        Require(thumb == palette.ScrollThumb, $"{palette.Id}: horizontal thumb color");
+        bar.GetType().GetMethod("OnKeyDown", Private)!.Invoke(bar, [new Forms.KeyEventArgs(Forms.Keys.End)]);
+        Require(host.HorizontalOffset > 0, "Horizontal End key did not move editor");
+        bar.GetType().GetMethod("OnKeyDown", Private)!.Invoke(bar, [new Forms.KeyEventArgs(Forms.Keys.Home)]);
+        Require(host.HorizontalOffset == 0, "Horizontal Home key did not return editor");
+        host.SetWordWrap(true);
+        Require(!bar.Visible, "Wrapped editor has horizontal scrollbar");
+        host.SetWordWrap(false);
+        Require(bar.Visible, "Disabling wrap did not restore themed horizontal scrollbar");
+
+        var viewer = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = new Border { Width = 1400, Height = 800, Background = (SolidColorBrush)host.FindResource("SurfaceBrush") }
+        };
+        var window = new Window { Content = viewer, Width = 360, Height = 180, ShowInTaskbar = false };
+        window.Show(); window.UpdateLayout();
+        try
+        {
+            var horizontal = (System.Windows.Controls.Primitives.ScrollBar)viewer.Template.FindName("PART_HorizontalScrollBar", viewer);
+            Require(horizontal.IsVisible && horizontal.ActualWidth > 200 && horizontal.ActualHeight >= 10, "WPF horizontal scrollbar layout");
+            var color = ((SolidColorBrush)horizontal.Background).Color;
+            Require(color.R == palette.ScrollTrack.R && color.G == palette.ScrollTrack.G && color.B == palette.ScrollTrack.B,
+                $"{palette.Id}: WPF horizontal track color");
+            viewer.ScrollToRightEnd();
+            Require(viewer.HorizontalOffset >= 0, "WPF horizontal scrolling failed");
+            window.UpdateLayout();
+            var render = new System.Windows.Media.Imaging.RenderTargetBitmap((int)viewer.ActualWidth, (int)viewer.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            render.Render(viewer);
+            var pixel = new byte[4];
+            render.CopyPixels(new Int32Rect(render.PixelWidth - 4, render.PixelHeight - 4, 1, 1), pixel, 4, 0);
+            Require(pixel[0] == palette.ScrollTrack.B && pixel[1] == palette.ScrollTrack.G && pixel[2] == palette.ScrollTrack.R,
+                $"{palette.Id}: scrollbar corner uses system color: {pixel[2]},{pixel[1]},{pixel[0]}");
+        }
+        finally { window.Close(); }
     }
 
     private static void InspectMenu(Forms.ToolStrip menu, Forms.ToolStripRenderer renderer, ThemePalette palette)

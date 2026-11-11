@@ -939,6 +939,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         var revision = editor.ContentRevision;
         try
         {
+            if (endpoint.IsMissingFolderFile && !File.Exists(destination))
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
             await _fileService.SaveAsync(state, destination);
             return Dispatcher.Invoke(() =>
             {
@@ -946,6 +948,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
                 if (saveAs && endpoint.SourceDocumentId is not null) { StatusText.Text = $"사본 저장됨: {destination} (원본 연결 유지)"; return true; }
                 var info = new FileInfo(destination);
                 endpoint.FilePath = info.FullName; endpoint.DisplayName = info.Name;
+                endpoint.IsMissingFolderFile = false;
                 endpoint.SourceFileLength = info.Length; endpoint.SourceFileLastWriteUtc = info.LastWriteTimeUtc;
                 endpoint.Text = state.Text;
                 if (editor.ContentRevision != revision)
@@ -969,6 +972,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private static bool HasExternalChange(DiffEndpoint endpoint)
     {
+        if (endpoint.IsMissingFolderFile && endpoint.FilePath is { } missingPath) return File.Exists(missingPath) || Directory.Exists(missingPath);
         if (endpoint.FilePath is null || endpoint.SourceFileLength is null || endpoint.SourceFileLastWriteUtc is null) return false;
         var info = new FileInfo(endpoint.FilePath);
         return !info.Exists || info.Length != endpoint.SourceFileLength || info.LastWriteTimeUtc != endpoint.SourceFileLastWriteUtc;
