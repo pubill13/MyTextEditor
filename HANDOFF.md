@@ -207,3 +207,5 @@
 ## v1.11.15 배포 준비 (2026-11-11)
 - 후속 사용자 요청으로 비교/병합 독립 창·스크롤 즉시 동기화 개선을 새 v1.11.15로 배포한다. 버전·README·릴리즈 노트 갱신, 기존 릴리즈/태그는 보존하며 사용자 .gitignore는 커밋 제외.
 - 개선 검증 기록은 docs/verification/merge-responsiveness-2026-11-11.md. 최종 버전 회귀·자체 포함 단일EXE 실제 실행·ZIP 무결성 확인 후 새 커밋/태그와 GitHub 첨부 SHA-256을 대조해 공개한다.
+- v1.11.15 공개 완료: dc567d7, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.15 . EXE1.11.15.0·ZIP 업로드 후 서버 크기/SHA-256 일치, 공개 latest·다운로드 주소 확인. publication.json에 증빙 저장. EXE SHA256 71E48982071733A143D395BA397D4CD415585BADD9D49254711410903D906379, ZIP 5B4C666A5200D83B1FE11ED813E7C8890BE2E9E8B578DA818D9306F33F4754ED.
+- 사용자는 이미 마친 검증 반복을 금지했다. 이후 배포 시 기존 검증을 재사용하고 패키징·업로드·공개 확인만 진행할 것. 이번에도 추가 실행 테스트는 중단했고 최종 단일EXE 별도실행은 하지 않았다. 버전변경후10단계 PASS와 배포스크립트 JSON 배열 수집 오류 수정은 validation-note.md에 기록. 사용자 .gitignore 변경 보존.
