@@ -26,8 +26,8 @@ public sealed partial class ScintillaEditorHost
     {
         if (_loading || _resourcesReleased || _lastNotifiedHorizontalOffset == _editor.XOffset) return;
         _lastNotifiedHorizontalOffset = _editor.XOffset;
-        UpdateScrollBars();
         HorizontalScrolled?.Invoke(this, EventArgs.Empty);
+        UpdateScrollBars();
     }
 
     private void InitializeExtras()

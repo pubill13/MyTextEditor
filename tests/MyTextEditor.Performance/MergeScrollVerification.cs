@@ -55,6 +55,7 @@ internal static class MergeScrollVerification
             left.Undo(); Check(left.GetText() == "cat cats CAT 한글 cat", "Replace all must use one Undo");
             left.Redo(); Check(left.GetText() == "dog cats dog 한글 dog", "Replace all Redo failed");
             VerifySynchronization(view, left, right, Pump);
+            VerifyMappedBoundaries(view, left, right, Pump);
             VerifyMergePosition(view, left, right, Pump);
             Console.WriteLine("PASS Merge search whole-word replacement, side isolation, Undo/Redo");
             Console.WriteLine("PASS Merge left/right horizontal viewport, native scrolling range and Undo/Redo");
@@ -116,6 +117,34 @@ internal static class MergeScrollVerification
         Check(right.HorizontalOffset == 0 && left.HorizontalOffset == 800, "Short-side clamp fed back into source");
         Check(view.GetOptions().HorizontalScrollSync && view.GetOptions().ScrollSync, "Option state was lost");
         Console.WriteLine("PASS independent horizontal/vertical sync, bidirectionality, unequal widths and settings compatibility");
+    }
+
+    private static void VerifyMappedBoundaries(DiffTabView view, ScintillaEditorHost left, ScintillaEditorHost right, Action pump)
+    {
+        var rows = Enumerable.Range(0, 600).Select(i => $"mapped row {i:D4}").ToList();
+        var changed = rows.ToList();
+        changed.RemoveRange(220, 60);
+        changed.InsertRange(80, Enumerable.Range(0, 40).Select(i => $"inserted row {i:D4}"));
+        left.ReplaceAll(string.Join('\n', rows));
+        right.ReplaceAll(string.Join('\n', changed));
+        Field<System.Windows.Controls.MenuItem>(view, "ScrollSyncCheck").IsChecked = true;
+        CompleteComparison(view, pump);
+        var map = typeof(DiffTabView).GetMethod("MapScrollLine", Hidden)!;
+        foreach (var leftToRight in new[] { true, false })
+        {
+            var source = leftToRight ? left : right;
+            var target = leftToRight ? right : left;
+            foreach (var line in new[] { 0, 80, 100, 220, 260, 500, int.MaxValue, 0 })
+            {
+                source.ScrollToLine(line);
+                var expected = Math.Clamp((int)map.Invoke(view, [source.FirstVisibleLine + 1, leftToRight])! - 1,
+                    0, Math.Max(0, target.LineCount - target.LinesOnScreen));
+                Check(target.FirstVisibleLine == expected,
+                    $"Mapped boundary did not synchronize immediately: direction={leftToRight}, source={source.FirstVisibleLine}, target={target.FirstVisibleLine}, expected={expected}");
+                pump();
+            }
+        }
+        Console.WriteLine("PASS immediate corresponding-line sync at inserted/deleted ranges and document start/end in both directions");
     }
 
     private static void VerifyMergePosition(DiffTabView view, ScintillaEditorHost left, ScintillaEditorHost right, Action pump)

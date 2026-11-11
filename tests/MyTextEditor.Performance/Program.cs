@@ -42,6 +42,9 @@ internal static class Program
         if (args.Contains("--merge-source-exploration")) return MergeSourceExploration.Run(args.FirstOrDefault(arg => arg.StartsWith("--cases="))?[8..]);
         if (args.Contains("--merge-workflow-exploration")) return MergeWorkflowExploration.Run();
         if (args.Contains("--merge-scroll")) return MergeScrollVerification.Run();
+        if (args.Contains("--diff-highlight-cache")) return DiffHighlightVerification.Run();
+        if (args.Contains("--merge-responsiveness")) return MergeResponsivenessVerification.Run(args.Contains("--baseline"), args.Contains("--large"));
+        if (args.Contains("--merge-window-order")) return MergeResponsivenessVerification.WindowRun(args.Contains("--baseline"));
         if (args.Contains("--merge-external-changes")) return MergeExternalChangesVerification.Run();
         if (args.Contains("--transform-audit")) return TransformAuditVerification.Run();
         if (args.Contains("--transform-audit-large")) return TransformAuditVerification.Run(large: true);

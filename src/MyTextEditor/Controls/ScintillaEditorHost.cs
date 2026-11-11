@@ -82,6 +82,9 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     private int _markedCurrentLine = -1;
     private int _lastNotifiedFirstVisibleLine = -1;
     private MarkerHandle? _currentLineMarkerHandle;
+    private readonly List<MarkerHandle> _diffMarkerHandles = [];
+    private EditorTextRange? _diffIndicatorRange;
+    private long _diffHighlightsRevision = -1;
 
     private readonly ShortcutScintilla _editor;
     private bool _loading;
@@ -105,6 +108,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         _editor.DirectMessage((int)SciApi.SCI_SETDOCPOINTER, IntPtr.Zero, plainDocument);
         _editor.DirectMessage((int)SciApi.SCI_RELEASEDOCUMENT, IntPtr.Zero, plainDocument);
         _editor.SetShortcutProcessor(ProcessShortcut);
+        _editor.SetViewportProcessor(NotifyNativeScroll);
         _editor.Margins[0].Type = MarginType.Number;
         _editor.Margins[0].Width = 44;
         _editor.Margins[1].Type = MarginType.Symbol;
@@ -233,6 +237,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         if (_resourcesReleased) return;
         _resourcesReleased = true;
         _editor.SetShortcutProcessor(null);
+        _editor.SetViewportProcessor(null);
         _editor.TextChanged -= Editor_TextChanged;
         _editor.UpdateUI -= Editor_UpdateUI;
         _editor.SavePointLeft -= Editor_SavePointChanged;
@@ -273,6 +278,9 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         _lastNotifiedFirstVisibleLine = -1;
         _lastNotifiedHorizontalOffset = -1;
         _currentLineMarkerHandle = null;
+        _diffHighlightsRevision = -1;
+        _diffMarkerHandles.Clear();
+        _diffIndicatorRange = null;
         _loading = true;
         try
         {
@@ -334,6 +342,17 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
         // ScintillaNET converts its public character positions to native UTF-8 byte offsets.
         return new EditorTextRange(line.Position + utf16Start, utf16Length);
+    }
+
+    // The comparison owns this immutable line text; avoid fetching the same native line per span.
+    internal EditorTextRange GetComparedLineRange(int zeroBasedLine, string lineText, int utf16Start, int utf16Length)
+    {
+        if (zeroBasedLine < 0 || zeroBasedLine >= LineCount || utf16Start < 0 || utf16Length < 0 ||
+            (long)utf16Start + utf16Length > lineText.Length)
+            throw new ArgumentOutOfRangeException(nameof(utf16Start));
+        if (!IsUtf16Boundary(lineText, utf16Start) || !IsUtf16Boundary(lineText, utf16Start + utf16Length))
+            throw new ArgumentException("범위가 UTF-16 surrogate pair의 중간을 가리킵니다.");
+        return new(_editor.Lines[zeroBasedLine].Position + utf16Start, utf16Length);
     }
 
     public void ReplaceAll(string text)
@@ -398,7 +417,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         IEnumerable<DiffInlineHighlight>? inlineHighlights = null)
     {
         ArgumentNullException.ThrowIfNull(lineHighlights);
-        ClearDiffHighlights();
+        if (_diffHighlightsRevision == ContentRevision) ClearPaintedDiffHighlights();
+        else ClearDiffHighlights();
 
         foreach (var highlight in lineHighlights)
         {
@@ -407,7 +427,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             var end = Math.Clamp((long)highlight.StartLine + highlight.LineCount, 0, _editor.Lines.Count);
             var marker = GetMarker(highlight.Kind);
             for (var line = start; line < end; line++)
-                _editor.Lines[line].MarkerAdd(marker);
+                _diffMarkerHandles.Add(_editor.Lines[line].MarkerAdd(marker));
         }
 
         if (inlineHighlights is null) return;
@@ -417,19 +437,41 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             ValidateRange(new EditorTextRange(highlight.Start, highlight.Length));
             _editor.IndicatorCurrent = GetIndicator(highlight.Kind);
             _editor.IndicatorFillRange(highlight.Start, highlight.Length);
+            var start = Math.Min(_diffIndicatorRange?.Start ?? highlight.Start, highlight.Start);
+            var end = Math.Max(_diffIndicatorRange?.End ?? highlight.Start + highlight.Length, highlight.Start + highlight.Length);
+            _diffIndicatorRange = new(start, end - start);
         }
+    }
+
+    private void ClearPaintedDiffHighlights()
+    {
+        foreach (var handle in _diffMarkerHandles) _editor.MarkerDeleteHandle(handle);
+        _diffMarkerHandles.Clear();
+        if (_diffIndicatorRange is { } range)
+        {
+            foreach (var indicator in new[] { AddedIndicator, DeletedIndicator, ModifiedIndicator })
+            {
+                _editor.IndicatorCurrent = indicator;
+                _editor.IndicatorClearRange(range.Start, range.Length);
+            }
+        }
+        _diffIndicatorRange = null;
     }
 
     public void ClearDiffHighlights()
     {
+        if (_resourcesReleased) return;
         _editor.Markers[AddedMarker].DeleteAll();
         _editor.Markers[DeletedMarker].DeleteAll();
         _editor.Markers[ModifiedMarker].DeleteAll();
         foreach (var indicator in new[] { AddedIndicator, DeletedIndicator, ModifiedIndicator })
         {
             _editor.IndicatorCurrent = indicator;
-            _editor.IndicatorClearRange(0, _editor.TextLength);
+            _editor.DirectMessage(SciIndicatorClearRange, IntPtr.Zero, _editor.DirectMessage(SciGetLength));
         }
+        _diffMarkerHandles.Clear();
+        _diffIndicatorRange = null;
+        _diffHighlightsRevision = ContentRevision;
     }
 
     public void GoToLine(int oneBasedLineNumber, bool focusEditor = true)
@@ -621,6 +663,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
     private void Editor_UpdateUI(object? sender, UpdateUIEventArgs e)
     {
+        if ((e.Change & UpdateChange.VScroll) != 0) NotifyVerticalScroll();
+        if ((e.Change & UpdateChange.HScroll) != 0) NotifyHorizontalScroll();
         CaretChanged?.Invoke(this, EventArgs.Empty);
         if (_markedCurrentLine != CurrentLine)
         {
@@ -629,11 +673,12 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
             _markedCurrentLine = CurrentLine;
         }
         UpdateScrollBars();
-        if ((e.Change & UpdateChange.VScroll) != 0)
-        {
-            NotifyVerticalScroll();
-        }
-        if ((e.Change & UpdateChange.HScroll) != 0) NotifyHorizontalScroll();
+    }
+
+    private void NotifyNativeScroll()
+    {
+        NotifyVerticalScroll();
+        NotifyHorizontalScroll();
     }
 
     private void NotifyVerticalScroll()
@@ -643,9 +688,9 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         if (_lastNotifiedFirstVisibleLine == actual) return;
         // Cache before notifying: the opposite Diff pane can synchronously scroll in its handler.
         _lastNotifiedFirstVisibleLine = actual;
-        UpdateScrollBars();
-        ViewportChanged?.Invoke(this, EventArgs.Empty);
         VerticalScrolled?.Invoke(this, EventArgs.Empty);
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
+        UpdateScrollBars();
     }
 
     private void Editor_SavePointChanged(object? sender, EventArgs e) => DirtyChanged?.Invoke(this, EventArgs.Empty);
@@ -755,9 +800,11 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     private sealed class ShortcutScintilla : Scintilla
     {
         private Func<Forms.Keys, bool>? _shortcutProcessor;
+        private Action? _viewportProcessor;
         public bool IsComposing { get; private set; }
 
         public void SetShortcutProcessor(Func<Forms.Keys, bool>? shortcutProcessor) => _shortcutProcessor = shortcutProcessor;
+        public void SetViewportProcessor(Action? viewportProcessor) => _viewportProcessor = viewportProcessor;
 
         protected override bool ProcessCmdKey(ref Forms.Message msg, Forms.Keys keyData)
         {
@@ -778,6 +825,10 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
                 return;
             }
             base.WndProc(ref message);
+            // SCN_UPDATEUI can wait for painting. Align the peer before this input cycle returns.
+            if (message.Msg is 0x020A or 0x020E or 0x0115 or 0x0114 or 0x0100 or 0x0104 or 0x0113 ||
+                message.Msg == 0x0200 && ((long)message.WParam & 1) != 0)
+                _viewportProcessor?.Invoke();
         }
     }
 }

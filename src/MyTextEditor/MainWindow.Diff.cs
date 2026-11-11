@@ -65,7 +65,17 @@ public partial class MainWindow
         if (_diffWorkspaceWindow is { IsLoaded: true } existing)
             return existing;
 
-        var workspace = new DiffWorkspaceWindow(GetDiffOptions(), CreateDiffCallbacks(), GetDiffAppearance()) { Owner = this };
+        var workspace = new DiffWorkspaceWindow(GetDiffOptions(), CreateDiffCallbacks(), GetDiffAppearance());
+        if (workspace.WindowStartupLocation == WindowStartupLocation.CenterOwner)
+        {
+            workspace.WindowStartupLocation = WindowStartupLocation.Manual;
+            var area = System.Windows.Forms.Screen.FromHandle(new System.Windows.Interop.WindowInteropHelper(this).Handle).WorkingArea;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            workspace.Left = Math.Clamp(Left + (ActualWidth - workspace.Width) / 2,
+                area.Left / dpi.DpiScaleX, Math.Max(area.Left / dpi.DpiScaleX, area.Right / dpi.DpiScaleX - workspace.Width));
+            workspace.Top = Math.Clamp(Top + (ActualHeight - workspace.Height) / 2,
+                area.Top / dpi.DpiScaleY, Math.Max(area.Top / dpi.DpiScaleY, area.Bottom / dpi.DpiScaleY - workspace.Height));
+        }
         workspace.Resources.MergedDictionaries.Add(Resources);
         workspace.ResourcesReleased += DiffWorkspace_ResourcesReleased;
         workspace.Closed += DiffWorkspace_Closed;

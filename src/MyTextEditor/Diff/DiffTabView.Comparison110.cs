@@ -17,6 +17,13 @@ public partial class DiffTabView
     private bool _inlineRunning;
     private (TextDiffResult? Result, int First, int Count, int InlineVersion) _leftPainted, _rightPainted;
     private int _inlineVersion;
+    private int _viewportGeneration;
+
+    private void InvalidateInlineViewport()
+    {
+        ++_viewportGeneration;
+        _inlineCancellation?.Cancel();
+    }
 
     private void ClearSnapshotCache()
     {
@@ -69,8 +76,11 @@ public partial class DiffTabView
         var first = editor.FirstVisibleLine + 1;
         var last = first + editor.LinesOnScreen + 2;
         var state = (_result, first, editor.LinesOnScreen, _inlineVersion);
-        if (state == (left ? _leftPainted : _rightPainted)) return;
-        if (left) _leftPainted = state; else _rightPainted = state;
+        var repaint = state != (left ? _leftPainted : _rightPainted);
+        if (repaint)
+        {
+            if (left) _leftPainted = state; else _rightPainted = state;
+        }
         var blocks = _result!.Blocks;
         var low = 0; var high = blocks.Count;
         while (low < high)
@@ -79,8 +89,8 @@ public partial class DiffTabView
             if ((left ? block.LeftStartLine + block.LeftLineCount : block.RightStartLine + block.RightLineCount) <= first) low = mid + 1;
             else high = mid;
         }
-        var lines = new List<DiffLineHighlight>();
-        var spans = new List<DiffInlineHighlight>();
+        var lines = repaint ? new List<DiffLineHighlight>() : null;
+        var spans = repaint ? new List<DiffInlineHighlight>() : null;
         for (var b = low; b < blocks.Count; b++)
         {
             var block = blocks[b];
@@ -89,7 +99,7 @@ public partial class DiffTabView
             var count = left ? block.LeftLineCount : block.RightLineCount;
             if (count == 0) continue;
             var kind = block.Kind == DiffBlockKind.Added ? DiffHighlightKind.Added : block.Kind == DiffBlockKind.Deleted ? DiffHighlightKind.Deleted : DiffHighlightKind.Modified;
-            lines.Add(new(Math.Max(first, start) - 1, Math.Max(0, Math.Min(last + 1, start + count) - Math.Max(first, start)), kind));
+            lines?.Add(new(Math.Max(first, start) - 1, Math.Max(0, Math.Min(last + 1, start + count) - Math.Max(first, start)), kind));
             var side = left ? DiffSide.Left : DiffSide.Right;
             int pairLow = 0, pairHigh = block.Lines.Count;
             while (pairLow < pairHigh)
@@ -110,16 +120,18 @@ public partial class DiffTabView
                         TextDiffEngine.GetLineLength(block, i, DiffSide.Right) <= 16384) pending.Add(key);
                     continue;
                 }
+                if (!repaint) continue;
                 var number = left ? pair.LeftLineNumber : pair.RightLineNumber;
                 if (number is null || number < first || number > last) continue;
                 foreach (var span in left ? pair.LeftChanges : pair.RightChanges)
                 {
-                    var range = editor.GetLineTextRange(number.Value - 1, span.Start, span.Length);
-                    spans.Add(new(range.Start, range.Length, kind));
+                    var range = editor.GetComparedLineRange(number.Value - 1,
+                        (left ? pair.LeftText : pair.RightText)!, span.Start, span.Length);
+                    spans!.Add(new(range.Start, range.Length, kind));
                 }
             }
         }
-        editor.SetDiffHighlights(lines, spans);
+        if (repaint) editor.SetDiffHighlights(lines!, spans);
     }
 
     private async Task CalculateVisibleInlineAsync((int Block, int Pair)[] keys)
@@ -130,6 +142,7 @@ public partial class DiffTabView
         var result = _result!;
         var generation = _generation;
         var options = CurrentDiffOptions();
+        var viewportGeneration = _viewportGeneration;
         var acquired = false;
         try
         {
@@ -144,7 +157,9 @@ public partial class DiffTabView
                     pair = _diffEngine.ComputeInlineChanges(pair, options, cancel.Token);
                 return (key, pair);
             }).ToArray(), cancel.Token);
-            if (generation != _generation || _resourcesReleased || !_isActive) return;
+            cancel.Token.ThrowIfCancellationRequested();
+            if (generation != _generation || viewportGeneration != _viewportGeneration ||
+                !ReferenceEquals(result, _result) || _resourcesReleased || !_isActive) return;
             if (_inlineCache.Count > 2048) _inlineCache.Clear();
             foreach (var row in rows) _inlineCache[row.key] = row.pair;
             _inlineVersion++;
@@ -159,7 +174,8 @@ public partial class DiffTabView
             if (ReferenceEquals(_inlineCancellation, cancel)) _inlineCancellation = null;
             if (!_resourcesReleased && _isActive && _result is not null)
             {
-                _leftPainted = _rightPainted = default;
+                // A canceled batch needs fresh visible keys, not another native repaint.
+                // Successful batches already advance _inlineVersion and invalidate their painted state.
                 RebuildMergeGutter();
             }
         }

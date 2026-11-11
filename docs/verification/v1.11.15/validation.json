@@ -1,0 +1,52 @@
+﻿[
+    {
+        "Name":  "build",
+        "ExitCode":  0,
+        "Milliseconds":  6736
+    },
+    {
+        "Name":  "core",
+        "ExitCode":  0,
+        "Milliseconds":  2545
+    },
+    {
+        "Name":  "merge-window-order",
+        "ExitCode":  0,
+        "Milliseconds":  3653
+    },
+    {
+        "Name":  "diff-highlight-cache",
+        "ExitCode":  0,
+        "Milliseconds":  1078
+    },
+    {
+        "Name":  "merge-scroll",
+        "ExitCode":  0,
+        "Milliseconds":  28662
+    },
+    {
+        "Name":  "merge-independent",
+        "ExitCode":  0,
+        "Milliseconds":  3769
+    },
+    {
+        "Name":  "merge-lifetime",
+        "ExitCode":  0,
+        "Milliseconds":  3661
+    },
+    {
+        "Name":  "merge-110",
+        "ExitCode":  0,
+        "Milliseconds":  4581
+    },
+    {
+        "Name":  "editor-shortcuts",
+        "ExitCode":  0,
+        "Milliseconds":  1431
+    },
+    {
+        "Name":  "word-wrap",
+        "ExitCode":  0,
+        "Milliseconds":  1251
+    }
+]

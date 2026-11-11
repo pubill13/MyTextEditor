@@ -698,14 +698,19 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     {
         if (!_isActive || _resourcesReleased || _syncingScroll) return;
         _mergeNextLine = null;
+        if (ScrollSyncCheck.IsChecked == true && _result is not null)
+        {
+            var targetLine = Math.Clamp(MapScrollLine(source.FirstVisibleLine + 1, leftToRight) - 1, 0,
+                Math.Max(0, target.LineCount - target.LinesOnScreen));
+            if (target.FirstVisibleLine != targetLine)
+            {
+                _syncingScroll = true;
+                try { target.ScrollToLine(targetLine); }
+                finally { _syncingScroll = false; }
+            }
+        }
+        InvalidateInlineViewport();
         RebuildMergeGutter();
-        if (ScrollSyncCheck.IsChecked != true || _result is null) return;
-        var targetLine = Math.Clamp(MapScrollLine(source.FirstVisibleLine + 1, leftToRight) - 1, 0,
-            Math.Max(0, target.LineCount - target.LinesOnScreen));
-        if (target.FirstVisibleLine == targetLine) return;
-        _syncingScroll = true;
-        try { target.ScrollToLine(targetLine); }
-        finally { _syncingScroll = false; }
     }
 
     private void LeftEditor_HorizontalScrolled(object? sender, EventArgs e) => SyncHorizontalScroll(_leftEditor, _rightEditor);

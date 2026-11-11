@@ -196,3 +196,14 @@
 - v1.11.14 최종 Release 빌드 0경고/0오류, Core43/43, 회귀·publish·실제EXE 총15단계 종료코드0. release EXE1.11.14.0의 cold20+warm20 CSV/CFG 정확한 순서·누락/중복/오류창없음, 여러창·종료취소/재접수까지 통과. cold3763ms/warm2413ms, warm전달프로세스중앙값287.7ms. 최초 테스트 설정복원 검사 실패는 원본복원·HasExited기준수정 후 재검증했고 docs/verification/v1.11.14/validation-note.md와 initial-validation-failure.json에 남겼다.
 - EXE/ZIP 생성 및 ZIP내EXE SHA256 동일 확인. EXE SHA256 723718D84080B0801686277F5DCDCD9A0FD5D04C1592D8E1B71414B794B15F68, ZIP E7926D26E2026E00840381E265597C285F9BDECA2DD0D6F488B6999A37247CB1. 소스·어셈블리·첨부 해시와 최종 검증은 docs/verification/v1.11.14/에 보관했다. 새태그로 업로드·서버해시 확인 후 공개한다.
 - v1.11.14 배포 완료: 483eed4, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.14 . Windows x64 자체 포함 EXE1.11.14.0·ZIP을 공개했다(published 2026-11-11T00:18:30Z). 서버 크기/SHA-256, 공개 API latest·다운로드 주소와 원격 태그/릴리즈 커밋 일치를 확인했다. 배포 증빙은 docs/verification/v1.11.14/publication.json에 기록했다. 사용자 .gitignore 해시와 변경 상태는 그대로 보존했다.
+
+## 비교/병합 독립 창·스크롤 개선 (2026-11-11, 미배포)
+- 사용자 승인 계획 구현 완료. MainWindow의 Merge Owner 제거, 저장 위치·최초 위치 유지. 네이티브 입력 반환 전 대응 줄 동기화, 표시보다 위치 통지 우선, 같은 revision의 화면 범위 강조만 갱신, 화면 밖 inline 취소와 최신 화면 재계산 적용. 설정·IPC·파일 형식과 버전1.11.14 유지.
+- 동일 runner로 기존 b75d4a7 제품과 비교: 4,210개 차이 블록/30/100/300MB × 좌우 × 휠·PageUp/Down·스크롤바 ×120회 =2,880회. 입력 반환 시 지연1,920→0건, 수정 후 입력 p95 최대1.099ms/위치통지1.060ms, 16ms 기준 충족. 전체 화면 그리기16ms는 보장하지 않으며 dense 전체p95 최대40.790→46.120ms도 기록했다.
+- 수정 후 실제 클릭·Alt+Tab·독립 최소화·저장위치·테마·메인 종료 전후 도움말·내용유지12/12 통과. 수정 전 Owner/메인 최소화 종속 재현, 가려진 물리 입력3항목은SKIP. 사용자 창은 건드리지 않았다.
+- Release 전체 빌드0경고/0오류, Core43/43, --diff-highlight-cache, --merge-scroll(추가·삭제/시작·끝 즉시매핑 신규), --merge-110, --merge-independent, --merge-lifetime, --merge-external-changes, --editor-shortcuts, --word-wrap 통과. 별도 Reviewer 제품검토 완료.
+- 상세 결과/명령/해시: docs/verification/merge-responsiveness-2026-11-11.md. 원시JSON은 artifacts/merge-responsiveness/. 로컬 실행파일 src/MyTextEditor/bin/Release/net9.0-windows/OmniEdit.exe. 커밋·배포하지 않음(사용자 최신 계획 범위). 사용자 .gitignore 해시 보존.
+
+## v1.11.15 배포 준비 (2026-11-11)
+- 후속 사용자 요청으로 비교/병합 독립 창·스크롤 즉시 동기화 개선을 새 v1.11.15로 배포한다. 버전·README·릴리즈 노트 갱신, 기존 릴리즈/태그는 보존하며 사용자 .gitignore는 커밋 제외.
+- 개선 검증 기록은 docs/verification/merge-responsiveness-2026-11-11.md. 최종 버전 회귀·자체 포함 단일EXE 실제 실행·ZIP 무결성 확인 후 새 커밋/태그와 GitHub 첨부 SHA-256을 대조해 공개한다.
