@@ -11,9 +11,9 @@
     <AssemblyName>OmniEdit</AssemblyName>
     <RootNamespace>MyTextEditor</RootNamespace>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>1.11.16</Version>
-    <AssemblyVersion>1.11.16.0</AssemblyVersion>
-    <FileVersion>1.11.16.0</FileVersion>
+    <Version>1.11.17</Version>
+    <AssemblyVersion>1.11.17.0</AssemblyVersion>
+    <FileVersion>1.11.17.0</FileVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <PublishSingleFile>true</PublishSingleFile>

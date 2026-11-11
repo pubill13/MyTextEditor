@@ -66,7 +66,7 @@ public partial class DiffWorkspaceWindow : Window
 
     public FolderCompareTabView OpenFolderComparison()
     {
-        var view = new FolderCompareTabView(OpenFolderFileAsync);
+        var view = new FolderCompareTabView(OpenFolderEntryAsync);
         view.ApplyAppearance(_appearance);
         var item = CreateTabItem(view, view.TabTitle);
         view.StateChanged += (_, _) => ((TextBlock)item.Tag).Text = view.TabTitle;
@@ -75,8 +75,22 @@ public partial class DiffWorkspaceWindow : Window
         return view;
     }
 
-    private async Task OpenFolderFileAsync(FolderCompareTabView folder, FolderCompareEntry entry)
+    private async Task OpenFolderEntryAsync(FolderCompareTabView folder, FolderCompareEntry entry)
     {
+        if (_resourcesReleased || folder.IsReleased) return;
+        if (entry.IsDirectory)
+        {
+            var parentItem = ComparisonTabs.Items.OfType<TabItem>().First(item => ReferenceEquals(item.Content, folder));
+            var parentReference = new WeakReference<TabItem>(parentItem);
+            var child = OpenFolderComparison();
+            await child.OpenChildAsync(entry.LeftPath, entry.RightPath, () =>
+            {
+                if (!parentReference.TryGetTarget(out var parent) || !ComparisonTabs.Items.Contains(parent)) return false;
+                ComparisonTabs.SelectedItem = parent;
+                return true;
+            });
+            return;
+        }
         var left = entry.Status != FolderCompareStatus.RightOnly ? await LoadFolderTextAsync(entry.LeftPath) : null;
         var right = entry.Status != FolderCompareStatus.LeftOnly ? await LoadFolderTextAsync(entry.RightPath) : null;
         if (_resourcesReleased || folder.IsReleased) return;
@@ -168,6 +182,17 @@ public partial class DiffWorkspaceWindow : Window
         view.StateChanged += (_, _) => headerText.Text = view.TabTitle;
         view.OptionsChanged += (_, _) => UpdateDefaults(view.GetOptions());
         view.FilesDropped += async (_, e) => await LoadDroppedFilesAsync(e.Paths);
+        view.FolderPathsRequested = async (leftPath, rightPath) =>
+        {
+            var folder = OpenFolderComparison();
+            // Keep any loaded file buffers and their Undo history in the original tab.
+            if (view.IsCompletelyEmpty)
+            {
+                view.ReleaseResources();
+                ComparisonTabs.Items.Remove(item);
+            }
+            await folder.SetPathsAsync(leftPath, rightPath);
+        };
         view.CloseRequested += async (_, _) => await CloseTabAsync(item);
         view.CloseWorkspaceRequested += (_, _) => Close();
         view.CycleTabRequested += (_, e) => CycleTab(e.Direction);
@@ -246,6 +271,18 @@ public partial class DiffWorkspaceWindow : Window
 
     private async Task LoadDroppedFilesAsync(IReadOnlyList<string> paths)
     {
+        if (paths.Any(Directory.Exists))
+        {
+            if (paths.Count is < 1 or > 2 || paths.Any(path => !Directory.Exists(path)))
+            {
+                StatusText.Text = "비교할 폴더를 한 개 또는 두 개 놓으세요. 파일과 폴더를 함께 비교할 수 없습니다.";
+                return;
+            }
+            var folder = CurrentFolder ?? OpenFolderComparison();
+            await folder.LoadDroppedPathsAsync(null, paths);
+            StatusText.Text = "폴더 비교 탭을 열었습니다.";
+            return;
+        }
         var files = paths.Where(path => !Directory.Exists(path)).Take(2).ToArray();
         var excluded = paths.Count - files.Length;
         if (files.Length == 0) { StatusText.Text = "폴더는 열지 않습니다. 비교할 파일을 놓으세요."; return; }

@@ -1,0 +1,18 @@
+﻿{
+    "Version":  "1.11.17.0",
+    "ZipExecutableSHA256":  "F60819432081A9C11BD23AF21B85D1361EABA263EABFF0CA70A3089837C83598",
+    "Assets":  [
+                   {
+                       "Name":  "OmniEdit.exe",
+                       "Size":  80185355,
+                       "SHA256":  "F60819432081A9C11BD23AF21B85D1361EABA263EABFF0CA70A3089837C83598"
+                   },
+                   {
+                       "Name":  "OmniEdit-v1.11.17-win-x64.zip",
+                       "Size":  74459256,
+                       "SHA256":  "29A894D8D440DAE52690B85ABC3190968E2D5CA87375558A453DD5812ED719AC"
+                   }
+               ],
+    "GitIgnoreSHA256":  "7305131CE0F3F8709EAB3E15035EA6F554D68AF7DA411D2A35CD86EB1B640D0A",
+    "Verification":  "Reused completed implementation checks; packaging only"
+}

@@ -74,7 +74,11 @@ internal static class Program
         if (args.Contains("--search-actions")) return SearchActionsVerification.Run();
         if (args.Contains("--search-navigation")) return SearchActionsVerification.Run(navigationOnly: true);
         if (args.Contains("--v18")) return V18Verification.Run();
+        if (args.Contains("--folder-stress")) return FolderCompareVerification.RunStress(args.Contains("--baseline"),
+            int.TryParse(args.FirstOrDefault(arg => arg.StartsWith("--files="))?[8..], out var folderFiles) ? folderFiles : 10000);
+        if (args.Contains("--folder-demo")) return FolderCompareVerification.RunDemo(args.Last());
         if (args.Contains("--folder-compare")) return FolderCompareVerification.Run();
+        if (args.Contains("--folder-input")) return FolderCompareVerification.Run(inputOnly: true);
         if (args.Contains("--omni-merge")) return OmniMergeVerification.Run();
         if (args.Contains("--omni-theme")) return OmniThemeVerification.Run();
         if (args.Contains("--omni-search")) return OmniSearchVerification.Run();

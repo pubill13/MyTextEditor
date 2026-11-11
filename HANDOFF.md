@@ -209,3 +209,13 @@
 - 개선 검증 기록은 docs/verification/merge-responsiveness-2026-11-11.md. 최종 버전 회귀·자체 포함 단일EXE 실제 실행·ZIP 무결성 확인 후 새 커밋/태그와 GitHub 첨부 SHA-256을 대조해 공개한다.
 - v1.11.15 공개 완료: dc567d7, https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.15 . EXE1.11.15.0·ZIP 업로드 후 서버 크기/SHA-256 일치, 공개 latest·다운로드 주소 확인. publication.json에 증빙 저장. EXE SHA256 71E48982071733A143D395BA397D4CD415585BADD9D49254711410903D906379, ZIP 5B4C666A5200D83B1FE11ED813E7C8890BE2E9E8B578DA818D9306F33F4754ED.
 - 사용자는 이미 마친 검증 반복을 금지했다. 이후 배포 시 기존 검증을 재사용하고 패키징·업로드·공개 확인만 진행할 것. 이번에도 추가 실행 테스트는 중단했고 최종 단일EXE 별도실행은 하지 않았다. 버전변경후10단계 PASS와 배포스크립트 JSON 배열 수집 오류 수정은 validation-note.md에 기록. 사용자 .gitignore 변경 보존.
+
+
+## v1.11.16 배포 완료 (2026-11-11)
+- 폴더 비교 탭·새 파일 비교 탭 연결과 가로 스크롤바 테마 수정을 15b74e6 / v1.11.16으로 배포했다. https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.16
+- 사용자 요청에 따라 완료한 테스트는 반복하지 않았다. 자체 포함 EXE1.11.16.0·ZIP 패키징 후 공개 latest, 첨부 크기·서버 SHA-256과 다운로드 주소 일치를 확인했다. docs/verification/v1.11.16/publication.json에 기록했다.
+- 기존 사용자 .gitignore 변경은 보존하고 커밋에서 제외했다.
+
+## 하위 폴더 새 탭 열기 (2026-11-11, 로컬 개발본)
+- 하위 폴더 더블클릭/Enter는 기존 탭을 대체하지 않고 새 폴더 비교 탭을 연다. 상위 탭의 경로·목록·선택·스크롤을 유지하고, 상위 탭 버튼은 기존 탭을 선택한다. 상위 탭을 닫아도 하위 탭은 독립적으로 유지된다.
+- --folder-compare에서 자식·손자 새 탭, 상위 복귀, 부모 닫힘 독립성, 한쪽 전용 폴더와 저장·갱신 회귀 통과. 별도 출력 artifacts/folder-tabs/bin/Release/net9.0-windows/OmniEdit.exe. 기존 사용자 창은 종료하지 않았다.

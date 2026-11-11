@@ -62,6 +62,9 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         _callbacks = callbacks;
         _highlightColor = callbacks.HighlightColor;
         _appearance = appearance;
+        PathBar.SubmitRequested += async left => await LoadPathAsync(left);
+        PathBar.BrowseRequested += async left => await ChooseFileAsync(left);
+        PathBar.PathsDropped += async (left, paths) => await LoadDroppedSideAsync(left, paths);
         IgnoreWhitespaceCheck.IsChecked = options.IgnoreWhitespace;
         IgnoreCaseCheck.IsChecked = options.IgnoreCase;
         IgnoreEmptyLinesCheck.IsChecked = options.IgnoreEmptyLines;
@@ -76,6 +79,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     public event EventHandler? StateChanged;
     public event EventHandler? OptionsChanged;
     public event EventHandler<DiffFilesDroppedEventArgs>? FilesDropped;
+    public Func<string, string, Task>? FolderPathsRequested { get; set; }
     public event EventHandler? CloseRequested;
     public event EventHandler? CloseWorkspaceRequested;
     public event EventHandler<DiffTabCycleRequestedEventArgs>? CycleTabRequested;
@@ -782,6 +786,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
 
     private void RefreshEndpointHeaders()
     {
+        PathBar.RefreshPaths(_left.FilePath, _right.FilePath);
         LeftTitleText.Text = _left.DisplayName + (_leftDirty ? " •" : string.Empty);
         RightTitleText.Text = _right.DisplayName + (_rightDirty ? " •" : string.Empty);
         LeftMetaText.Text = DescribeEndpoint(_left);
@@ -1192,7 +1197,7 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
     private async Task LoadDroppedSideAsync(bool left, IReadOnlyList<string> paths)
     {
         if (paths.Count != 1) { FilesDropped?.Invoke(this, new(paths)); return; }
-        if (Directory.Exists(paths[0])) { StatusText.Text = "폴더는 비교 소스로 열 수 없습니다."; return; }
+        if (Directory.Exists(paths[0])) { await OpenFolderPathAsync(left, paths[0]); return; }
         BusyProgress.Visibility = Visibility.Visible;
         StatusText.Text = $"{(left ? "왼쪽" : "오른쪽")} 파일을 불러오는 중…";
         try { await SetEndpointAsync(left, await LoadFileEndpointAsync(paths[0])); }
@@ -1209,6 +1214,24 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         try { await SetEndpointAsync(left, await LoadFileEndpointAsync(dialog.FileName)); }
         catch (Exception exception) { StatusText.Text = $"파일을 열지 못했습니다: {exception.Message}"; }
         finally { BusyProgress.Visibility = Visibility.Collapsed; }
+    }
+
+    private async Task LoadPathAsync(bool left)
+    {
+        var path = ComparisonPathBar.NormalizePath((left ? PathBar.LeftInput : PathBar.RightInput).Text);
+        if (string.IsNullOrWhiteSpace(path)) { StatusText.Text = "불러올 파일 경로를 입력하세요."; return; }
+        if (Directory.Exists(path)) { await OpenFolderPathAsync(left, path); return; }
+        BusyProgress.Visibility = Visibility.Visible;
+        try { await SetEndpointAsync(left, await LoadFileEndpointAsync(path)); }
+        catch (Exception exception) { StatusText.Text = $"파일을 열지 못했습니다: {exception.Message}"; }
+        finally { BusyProgress.Visibility = Visibility.Collapsed; }
+    }
+
+    private Task OpenFolderPathAsync(bool left, string path)
+    {
+        var other = ComparisonPathBar.NormalizePath((left ? PathBar.RightInput : PathBar.LeftInput).Text);
+        if (!Directory.Exists(other)) other = "";
+        return FolderPathsRequested?.Invoke(left ? path : other, left ? other : path) ?? Task.CompletedTask;
     }
 
     private void LeftEditor_FilesDropped(IReadOnlyList<string> paths) => _ = LoadDroppedSideAsync(true, paths);
