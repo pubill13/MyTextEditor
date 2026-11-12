@@ -1,9 +1,9 @@
 # OmniEdit 인수인계
 
-## v1.11.19 배포 준비 (2026-11-12)
+## v1.11.19 배포 완료 (2026-11-12)
 - 현재 검증된 경로 Enter 처리·최근 경로 메뉴·경로 입력 글꼴·정렬 안내 개선을 사용자 요청으로 배포한다. Core44/44, --folder-input, --folder-compare와 Release 빌드 완료 결과를 재사용하고 실행 테스트는 반복하지 않는다.
 - 경로/본문의 전자 입력 현상은 사용자가 Alt + =에 의한 문자 폭 모드 전환임을 확인했고 같은 키로 정상 복귀했다. 앱 버그 수정으로 보고하지 않는다. 개발자의 실제 IME/다중 배율 수동 검증은 미실시다.
-- 버전1.11.19, Windows x64 자체 포함 단일 EXE·ZIP, 고정 경로 EXE와 첨부 SHA-256 확인 후 새 태그/릴리즈로 공개한다. 기존 릴리즈 및 사용자 .gitignore는 보존한다.
+- 4ee386c / https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.19 공개 완료. Windows x64 자체 포함 단일 EXE1.11.19.0·ZIP, ZIP 내부 및 artifacts/latest/OmniEdit.exe의 SHA-256 일치, 서버 첨부 크기·SHA-256과 공개 latest를 확인했다. docs/verification/v1.11.19/publication.json에 증빙 저장. 기존 릴리즈 및 사용자 .gitignore는 보존했다.
 
 2026-10-27. AGENTS.md와 이 문서부터 읽고 현재 요청 관련 코드만 확인한다. 과거 기록은 docs/HANDOFF-HISTORY-2026-10-26.md에 있으며 기본적으로 읽지 않는다.
 
