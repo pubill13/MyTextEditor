@@ -14,6 +14,7 @@ using MyTextEditor.Core;
 using MyTextEditor.Diff;
 using MyTextEditor.Models;
 using TabControl = System.Windows.Controls.TabControl;
+using ProgressBar = System.Windows.Controls.ProgressBar;
 
 internal static class FolderCompareVerification
 {
@@ -78,7 +79,11 @@ internal static class FolderCompareVerification
                 return 0;
             }
             var folder = workspace.OpenFolderComparison();
-            Await(folder.CompareAsync(left, right));
+            var initial = folder.CompareAsync(left, right);
+            Check(((ProgressBar)folder.FindName("CompareProgress")).Visibility == Visibility.Visible, "Progress bar must appear immediately");
+            Capture(folder, "loading");
+            Await(initial);
+            Check(((ProgressBar)folder.FindName("CompareProgress")).Visibility == Visibility.Collapsed, "Completed progress bar not hidden");
             Check(folder.Entries.Count == 4 && folder.Entries.All(entry => !entry.RelativePath.Contains(Path.DirectorySeparatorChar)), "Initial folder comparison must not scan descendants");
             Check(folder.Entries.Single(e => e.RelativePath == "changed.txt").Status == FolderCompareStatus.Different, "Changed row");
             var folderItem = (TabItem)tabs.SelectedItem;
@@ -86,6 +91,16 @@ internal static class FolderCompareVerification
             var rightList = (DataGrid)folder.FindName("RightResultsList");
             var statusList = (DataGrid)folder.FindName("StatusList");
             var folderPaths = (ComparisonPathBar)folder.FindName("PathBar");
+            VerifySorting(folder, list, rightList, statusList);
+            Check(list.Items.Cast<FolderCompareTabView.Row>().First().Entry.IsDirectory, "Folders must sort first");
+            Check(list.Columns.Count == 4, "Metadata columns missing");
+            Call(folder, "Results_Sorting", list, new DataGridSortingEventArgs(list.Columns[3]));
+            Check(list.Items.Cast<FolderCompareTabView.Row>().First().Entry.IsDirectory, "Size sort must keep folders first");
+            Check(ReferenceEquals(list.ItemsSource, rightList.ItemsSource) && ReferenceEquals(list.ItemsSource, statusList.ItemsSource), "Sorting split paired views");
+            Call(folder, "Results_Sorting", list, new DataGridSortingEventArgs(list.Columns[3]));
+            Check(list.Items.Cast<FolderCompareTabView.Row>().First().Entry.IsDirectory, "Descending sort must keep folders first");
+            Call(folder, "Results_Sorting", list, new DataGridSortingEventArgs(list.Columns[0]));
+            Check(list.Columns[0].Header.ToString()!.Contains('↑') && rightList.Columns[0].Header.ToString()!.Contains('↑'), "Name sort indicators must agree");
             folder.UpdateLayout();
             Check(folderPaths.LeftInput.TranslatePoint(new System.Windows.Point(), folder).X < folder.ActualWidth / 2 &&
                 folderPaths.RightInput.TranslatePoint(new System.Windows.Point(), folder).X > folder.ActualWidth / 2, "Folder paths must be above their own left/right panes");
@@ -94,15 +109,21 @@ internal static class FolderCompareVerification
             var missingLeft = list.Items.Cast<FolderCompareTabView.Row>().Single(row => row.RelativePath == "only-right.txt");
             Check(missingLeft.LeftName == "" && missingLeft.RightName.Length > 0, "Missing left file must be an aligned blank");
             Capture(folder, "light");
+            Call(folder, "Results_Sorting", rightList, new DataGridSortingEventArgs(rightList.Columns[3]));
             var originalRows = folder.Entries;
             var canceled = folder.CompareAsync();
             Call(folder, "Cancel_Click", folder, new RoutedEventArgs());
             Await(canceled);
             Check(folder.Entries.SequenceEqual(originalRows), "Canceled comparison replaced previous results");
+            Check(((ProgressBar)folder.FindName("CompareProgress")).Visibility == Visibility.Collapsed, "Canceled progress bar not hidden");
+            Await(folder.CompareAsync(Path.Combine(root, "missing"), right));
+            Check(folder.Entries.SequenceEqual(originalRows) && ((TextBlock)folder.FindName("SummaryText")).Text.Contains("비교하지 못했습니다"), "Root failure replaced previous results or hid error");
             var superseded = folder.CompareAsync(right, left);
             var latest = folder.CompareAsync(left, right);
             Await(Task.WhenAll(superseded, latest));
             Check(folder.Entries.Single(e => e.RelativePath == "sub").Status == FolderCompareStatus.LeftOnly, "Superseded result overwrote latest comparison");
+            Check(rightList.Columns[3].Header.ToString()!.Contains('↑') && Field<string>(folder, "_sortMember") == "RightLength", "Refresh lost tab sort state");
+            Call(folder, "Results_Sorting", list, new DataGridSortingEventArgs(list.Columns[0]));
             var selected = list.Items.Cast<FolderCompareTabView.Row>().Single(r => r.RelativePath == "changed.txt");
             list.SelectedItem = selected;
             Check(ReferenceEquals(rightList.SelectedItem, selected) && ReferenceEquals(statusList.SelectedItem, selected), "Paired selection not synchronized");
@@ -207,6 +228,10 @@ internal static class FolderCompareVerification
             tabs.SelectedItem = folderItem;
             PumpUntil(() => Field<CancellationTokenSource?>(folder, "_operation") is null);
             Capture(folder, "dark");
+            var oldWidth = workspace.Width;
+            workspace.Width = workspace.MinWidth;
+            Capture(folder, "minimum-width");
+            workspace.Width = oldWidth;
             for (var i = 0; i < 80; i++)
             {
                 File.WriteAllText(Path.Combine(left, $"scroll-{i:D3}.txt"), $"row {i}");
@@ -328,7 +353,72 @@ internal static class FolderCompareVerification
     private static object CallStaticScrollViewer(DataGrid list) => typeof(FolderCompareTabView)
         .GetMethod("FindScrollViewer", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [list])!;
 
-    public static int RunStress(bool baseline, int count = 10000)
+    private static void VerifySorting(FolderCompareTabView folder, DataGrid left, DataGrid right, DataGrid status)
+    {
+        var original = Field<System.Collections.ObjectModel.ObservableCollection<FolderCompareTabView.Row>>(folder, "_rows");
+        var now = DateTime.UtcNow;
+        FolderCompareTabView.Row Make(string name, FolderCompareStatus state, long? a, long? b, int days, bool directory = false) =>
+            new(new(name, name, name, state, a, b, IsDirectory: directory,
+                LeftWrittenUtc: state == FolderCompareStatus.RightOnly ? null : now.AddDays(days),
+                RightWrittenUtc: state == FolderCompareStatus.LeftOnly ? null : now.AddDays(-days)));
+        var rows = new System.Collections.ObjectModel.ObservableCollection<FolderCompareTabView.Row>
+        {
+            Make("file10.txt", FolderCompareStatus.RightOnly, null, 1, 3),
+            Make("file2.bin", FolderCompareStatus.Different, 20, 2, 1),
+            Make("file1.txt", FolderCompareStatus.Equal, 10, 30, 2),
+            Make("folder10", FolderCompareStatus.NotCompared, null, null, 0, true),
+            Make("folder2", FolderCompareStatus.NotCompared, null, null, 0, true)
+        };
+        try
+        {
+            Call(folder, "SetRows", rows);
+            string Names() => string.Join(",", left.Items.Cast<FolderCompareTabView.Row>().Select(r => r.RelativePath));
+            void Sort(DataGrid grid, int column) => Call(folder, "Results_Sorting", grid, new DataGridSortingEventArgs(grid.Columns[column]));
+            void Files(string expected)
+            {
+                Check(left.Items.Cast<FolderCompareTabView.Row>().Take(2).All(r => r.Entry.IsDirectory), "Sort put files above folders");
+                Check(string.Join(",", left.Items.Cast<FolderCompareTabView.Row>().Skip(2).Select(r => r.RelativePath)) == expected, "Unexpected sorted files: " + Names());
+                Check(left.Items.Cast<object>().SequenceEqual(right.Items.Cast<object>()) && left.Items.Cast<object>().SequenceEqual(status.Items.Cast<object>()), "Paired sort order diverged");
+            }
+            Check(Names() == "folder2,folder10,file1.txt,file2.bin,file10.txt", "Natural default ordering failed");
+            Sort(left, 0); Files("file10.txt,file2.bin,file1.txt");
+            Sort(left, 3); Files("file1.txt,file2.bin,file10.txt");
+            Sort(left, 3); Files("file2.bin,file1.txt,file10.txt");
+            Sort(right, 3); Files("file10.txt,file2.bin,file1.txt");
+            Sort(right, 3); Files("file1.txt,file2.bin,file10.txt");
+            Sort(left, 1); Files("file2.bin,file1.txt,file10.txt");
+            Sort(left, 1); Files("file1.txt,file2.bin,file10.txt");
+            Sort(right, 1); Files("file10.txt,file1.txt,file2.bin");
+            Sort(right, 1); Files("file2.bin,file1.txt,file10.txt");
+            Sort(left, 2); Files("file2.bin,file1.txt,file10.txt");
+            Sort(left, 2); Files("file1.txt,file2.bin,file10.txt");
+            Sort(right, 2); Files("file2.bin,file1.txt,file10.txt");
+            Sort(right, 2); Files("file1.txt,file10.txt,file2.bin");
+            Sort(status, 0); Files("file1.txt,file2.bin,file10.txt");
+            Sort(status, 0); Files("file10.txt,file2.bin,file1.txt");
+            var filter = (System.Windows.Controls.CheckBox)folder.FindName("DifferencesOnly");
+            filter.IsChecked = true;
+            Check(left.Items.Cast<FolderCompareTabView.Row>().All(r => r.Status != FolderCompareStatus.Equal), "Sorted filter retained equal rows");
+            filter.IsChecked = false;
+            Sort(left, 0);
+            Check(Names() == "folder2,folder10,file1.txt,file2.bin,file10.txt", "Name sort reset failed");
+            var selected = rows[1];
+            left.SelectedItem = selected;
+            Sort(left, 3);
+            Check(ReferenceEquals(left.SelectedItem, selected) && ReferenceEquals(right.SelectedItem, selected), "Sorting lost selection");
+            Check(rows[1].LeftSize == "20.0 B" || rows[1].LeftSize == "20,0 B", "Readable size missing");
+            Check(rows[1].Detail.Contains("20") && rows[1].Detail.Contains("바이트"), "Exact byte tooltip missing");
+        }
+        finally
+        {
+            Call(folder, "SetRows", original);
+            // Use a different column first so returning to name always selects ascending order.
+            Call(folder, "Results_Sorting", status, new DataGridSortingEventArgs(status.Columns[0]));
+            Call(folder, "Results_Sorting", left, new DataGridSortingEventArgs(left.Columns[0]));
+        }
+    }
+
+    public static int RunStress(bool baseline, int count = 10000, string fixture = "empty")
     {
         using var watchdog = new System.Threading.Timer(_ =>
         {
@@ -360,10 +450,21 @@ internal static class FolderCompareVerification
         {
             for (var i = 0; i < count; i++)
             {
-                File.WriteAllText(Path.Combine(left, $"item-{i:D5}.txt"), "");
-                File.WriteAllText(Path.Combine(right, $"item-{i:D5}.txt"), "");
+                if (fixture == "large")
+                {
+                    using var a = File.Create(Path.Combine(left, $"item-{i:D5}.txt"));
+                    using var b = File.Create(Path.Combine(right, $"item-{i:D5}.txt"));
+                    a.SetLength(64L * 1024 * 1024); b.SetLength(64L * 1024 * 1024);
+                }
+                else
+                {
+                    var text = fixture == "small" ? new string('x', 1024) : "";
+                    File.WriteAllText(Path.Combine(left, $"item-{i:D5}.txt"), text);
+                    File.WriteAllText(Path.Combine(right, $"item-{i:D5}.txt"), text);
+                }
             }
-            Console.WriteLine($"Fixture ready: {count:N0} paired empty files (zero total content bytes)");
+            var contentBytes = count * (fixture == "large" ? 64L * 1024 * 1024 : fixture == "small" ? 1024L : 0L);
+            Console.WriteLine($"Fixture ready: {count:N0} paired {fixture} files ({contentBytes:N0} bytes per side)");
             window.Show(); window.UpdateLayout();
             var allocatedBefore = GC.GetTotalAllocatedBytes(true);
             elapsed.Restart(); heartbeat.Start();
@@ -377,9 +478,9 @@ internal static class FolderCompareVerification
             heartbeat.Stop();
             maxUiGap = Math.Max(maxUiGap, elapsed.Elapsed.TotalMilliseconds - lastTick);
             var allocated = GC.GetTotalAllocatedBytes(true) - allocatedBefore;
-            var result = new { Files = count, ContentBytes = 0, Milliseconds = elapsed.Elapsed.TotalMilliseconds, MaximumUiGapMs = maxUiGap, Heartbeats = ticks, AllocatedBytes = allocated, PeakWorkingSetBytes = Process.GetCurrentProcess().PeakWorkingSet64, Rows = folder.Entries.Count };
+            var result = new { Files = count, ContentBytes = contentBytes, Milliseconds = elapsed.Elapsed.TotalMilliseconds, MaximumUiGapMs = maxUiGap, Heartbeats = ticks, AllocatedBytes = allocated, PeakWorkingSetBytes = Process.GetCurrentProcess().PeakWorkingSet64, Rows = folder.Entries.Count };
             Directory.CreateDirectory("artifacts/folder-compare");
-            File.WriteAllText($"artifacts/folder-compare/stress-{(baseline ? "before" : "after")}.json", System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText($"artifacts/folder-compare/stress-{fixture}-{(baseline ? "before" : "after")}-{DateTime.UtcNow:yyyyMMddHHmmssfff}.json", System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result));
             Check(folder.Entries.Count == count && folder.Entries.All(entry => entry.Status == FolderCompareStatus.Equal), "Large folder result mismatch");
             Check(maxUiGap < 1500, $"UI blocked for {maxUiGap:N0}ms while comparing empty files");

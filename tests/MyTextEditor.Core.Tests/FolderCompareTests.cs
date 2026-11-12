@@ -2,6 +2,8 @@ using MyTextEditor.Core;
 
 internal static class FolderCompareTests
 {
+    private sealed class Reporter(Action<FolderCompareProgress> report) : IProgress<FolderCompareProgress>
+    { public void Report(FolderCompareProgress value) => report(value); }
     public static async Task Run()
     {
         var root = Path.Combine(Path.GetTempPath(), "OmniEdit-FolderCompare-" + Guid.NewGuid().ToString("N"));
@@ -36,7 +38,15 @@ internal static class FolderCompareTests
             Write(left, ".hidden", "hidden");
             File.SetAttributes(Path.Combine(left, ".hidden"), FileAttributes.Hidden);
             var service = new FolderCompareService();
-            var results = await service.CompareAsync(left, right);
+            var reports = new List<FolderCompareProgress>();
+            var results = await service.CompareAsync(left, right, new Reporter(reports.Add));
+            Check(reports.First().Phase == FolderComparePhase.ScanningLeft && reports.Any(p => p.Phase == FolderComparePhase.ScanningRight), "Scanning stages not reported");
+            Check(reports.Last().ComparedFiles == results.Count && reports.Last().TotalEntries == results.Count, "Final progress must be complete");
+            Check(reports.Zip(reports.Skip(1)).All(pair => pair.First.ComparedFiles <= pair.Second.ComparedFiles), "Progress moved backwards");
+            Check(results.Single(e => e.RelativePath == "equal.txt").LeftWrittenUtc is not null, "File modification time missing");
+            Check(results.Single(e => e.RelativePath == "sub").LeftWrittenUtc is not null, "Folder modification time missing");
+            string[] names = ["file10", "file2", "file1", "file0002", "file9999999999999999999999999"];
+            Check(names.OrderBy(n => n, NaturalNameComparer.Instance).SequenceEqual(new[] { "file1", "file0002", "file2", "file10", "file9999999999999999999999999" }), "Natural sorting or large numbers failed");
             FolderCompareEntry Find(string name) => results.Single(e => e.RelativePath.Equals(name.Replace('/', Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
             Check(Find("equal.txt").Status == FolderCompareStatus.Equal, "Timestamps must not affect equality");
             Check(Find("changed.txt").Status == FolderCompareStatus.Different, "Same size different bytes");
@@ -55,6 +65,16 @@ internal static class FolderCompareTests
             Check(Find("large").Status == FolderCompareStatus.Different, "Compare beyond first stream buffer");
             Check(Find(".hidden").Status == FolderCompareStatus.LeftOnly, "Hidden files included");
             Check(Find("conflict").Status == FolderCompareStatus.Error, "File/directory conflict must be an error");
+            var originalTime = File.GetLastWriteTimeUtc(Path.Combine(left, "changed.txt"));
+            File.SetLastWriteTimeUtc(Path.Combine(right, "changed.txt"), originalTime);
+            Check((await service.CompareAsync(left, right)).Single(e => e.RelativePath == "changed.txt").Status == FolderCompareStatus.Different, "Same size and timestamp must still compare bytes");
+            var changedDuringScan = await service.CompareAsync(left, right, new Reporter(p =>
+            {
+                if (p.Phase == FolderComparePhase.Comparing && p.ComparedFiles == 0)
+                    File.AppendAllText(Path.Combine(left, "equal.txt"), "mutation");
+            }));
+            Check(changedDuringScan.Single(e => e.RelativePath == "equal.txt").Status == FolderCompareStatus.Error, "Changes after inventory must be detected");
+            Write(left, "equal.txt", "same");
             Check(results.Select(e => e.RelativePath).SequenceEqual(results.Select(e => e.RelativePath).OrderBy(p => p, StringComparer.OrdinalIgnoreCase)), "Stable relative path ordering");
             using (var locked = new FileStream(Path.Combine(left, "equal.txt"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
             {

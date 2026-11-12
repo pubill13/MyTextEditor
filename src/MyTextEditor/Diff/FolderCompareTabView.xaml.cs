@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -24,13 +26,57 @@ public partial class FolderCompareTabView : System.Windows.Controls.UserControl
         public FolderCompareStatus Status => Entry.Status;
         public long? LeftLength => Entry.LeftLength;
         public long? RightLength => Entry.RightLength;
+        public string LeftSize => FormatSize(LeftLength);
+        public string RightSize => FormatSize(RightLength);
+        public string LeftDate => Entry.LeftWrittenUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "";
+        public string RightDate => Entry.RightWrittenUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "";
+        public string Kind => Entry.IsDirectory ? "폴더" : Path.GetExtension(RelativePath) is { Length: > 0 } ext ? ext[1..].ToUpperInvariant() + " 파일" : "파일";
+        public string LeftKind => Status == FolderCompareStatus.RightOnly ? "" : Kind;
+        public string RightKind => Status == FolderCompareStatus.LeftOnly ? "" : Kind;
+        public static string FormatSize(long? bytes)
+        {
+            if (bytes is null) return "";
+            double size = bytes.Value;
+            string[] units = ["B", "KB", "MB", "GB", "TB"];
+            var unit = 0;
+            while (size >= 1024 && unit < units.Length - 1) { size /= 1024; unit++; }
+            return $"{size:N1} {units[unit]}";
+        }
         public string StatusText => Status switch
         {
             FolderCompareStatus.Equal => "동일", FolderCompareStatus.Different => "내용 다름",
             FolderCompareStatus.LeftOnly => "왼쪽에만 있음", FolderCompareStatus.RightOnly => "오른쪽에만 있음",
             FolderCompareStatus.NotCompared => "폴더 · 열어서 비교", _ => "오류"
         };
-        public string Detail => $"{StatusText}\n{Entry.Error ?? $"{Entry.LeftPath}\n{Entry.RightPath}"}\n더블클릭: {(Entry.IsDirectory ? "새 폴더 비교 탭" : "새 파일 비교 탭")}";
+        public string Detail => $"{StatusText}\n{Entry.Error ?? $"{Entry.LeftPath}\n{Entry.RightPath}"}\n왼쪽: {LeftLength?.ToString("N0")} 바이트 · {LeftDate}\n오른쪽: {RightLength?.ToString("N0")} 바이트 · {RightDate}\n더블클릭: {(Entry.IsDirectory ? "새 폴더 비교 탭" : "새 파일 비교 탭")}";
+    }
+
+    private string _sortMember = "RelativePath";
+    private ListSortDirection _sortDirection = ListSortDirection.Ascending;
+    private sealed class RowComparer(string member, ListSortDirection direction) : IComparer
+    {
+        public int Compare(object? x, object? y)
+        {
+            var a = (Row)x!;
+            var b = (Row)y!;
+            var folders = b.Entry.IsDirectory.CompareTo(a.Entry.IsDirectory);
+            if (folders != 0) return folders;
+            object? Value(Row row) => member switch
+            {
+                "LeftLength" => row.LeftLength, "RightLength" => row.RightLength,
+                "LeftWrittenUtc" => row.Entry.LeftWrittenUtc, "RightWrittenUtc" => row.Entry.RightWrittenUtc,
+                "LeftKind" => string.IsNullOrEmpty(row.LeftKind) ? null : row.Kind,
+                "RightKind" => string.IsNullOrEmpty(row.RightKind) ? null : row.Kind,
+                "Status" => row.Status, _ => row.RelativePath
+            };
+            var av = Value(a);
+            var bv = Value(b);
+            if ((av is null) != (bv is null)) return av is null ? 1 : -1;
+            var result = av is string sa && bv is string sb ? NaturalNameComparer.Instance.Compare(sa, sb)
+                : av is IComparable comparable ? comparable.CompareTo(bv) : 0;
+            if (result != 0) return direction == ListSortDirection.Ascending ? result : -result;
+            return NaturalNameComparer.Instance.Compare(a.RelativePath, b.RelativePath);
+        }
     }
 
     private readonly FolderCompareService _service = new();
@@ -146,20 +192,25 @@ public partial class FolderCompareTabView : System.Windows.Controls.UserControl
         {
             var leftRoot = Path.GetFullPath(LeftPathInput.Text.Trim());
             var rightRoot = Path.GetFullPath(RightPathInput.Text.Trim());
-            var lastProgress = Environment.TickCount64;
             var progress = new Progress<FolderCompareProgress>(value =>
             {
-                if (IsCurrent(operation) && Environment.TickCount64 - lastProgress >= 100)
-                {
-                    lastProgress = Environment.TickCount64;
-                    SummaryText.Text = $"{value.ComparedFiles:N0}개 비교 · {value.RelativePath}";
-                }
+                if (!IsCurrent(operation)) return;
+                CompareProgress.IsIndeterminate = value.Phase != FolderComparePhase.Comparing;
+                CompareProgress.Maximum = Math.Max(1, value.TotalEntries ?? 1);
+                CompareProgress.Value = value.ComparedFiles;
+                SummaryText.Text = value.Phase != FolderComparePhase.Comparing
+                    ? $"{(value.Phase == FolderComparePhase.ScanningLeft ? "왼쪽" : "오른쪽")} 목록 수집 중 · 발견 {value.DiscoveredEntries:N0}개"
+                    : $"처리 {value.ComparedFiles:N0} / 전체 {value.TotalEntries:N0} · {(value.TotalEntries > 0 ? 100.0 * value.ComparedFiles / value.TotalEntries : 100):N0}% · {value.RelativePath}" +
+                        (value.FileBytes > 0 ? $" · {Row.FormatSize(value.BytesRead)} / {Row.FormatSize(value.FileBytes)}" : "");
             });
             var entries = await _service.CompareAsync(leftRoot, rightRoot, progress, operation.Token, allowMissing);
+            if (entries.FirstOrDefault(entry => entry.RelativePath == "." && entry.Status == FolderCompareStatus.Error) is { } rootFailure)
+                throw new IOException(rootFailure.Error);
+            var rows = await Task.Run(() => new ObservableCollection<Row>(entries.Select(entry => new Row(entry))), operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             if (!IsCurrent(operation)) return false;
             // Bind once; per-item collection notifications stall all three grids on large folders.
-            SetRows(new ObservableCollection<Row>(entries.Select(entry => new Row(entry))));
+            SetRows(rows);
             _openedPaths.Clear();
             if (resetHistory) _selectParentTab = null;
             _location = new(leftRoot, rightRoot, allowMissing);
@@ -196,6 +247,7 @@ public partial class FolderCompareTabView : System.Windows.Controls.UserControl
                 _rows[index] = new(updated);
                 if (selected) ResultsList.SelectedItem = _rows[index];
             }
+            ApplySort();
             UpdateSummary();
         }
         catch (OperationCanceledException) { }
@@ -228,13 +280,17 @@ public partial class FolderCompareTabView : System.Windows.Controls.UserControl
         _operation?.Cancel();
         _operation = new();
         CancelButton.IsEnabled = true;
+        CompareProgress.Visibility = Visibility.Visible;
+        CompareProgress.IsIndeterminate = true;
+        CompareProgress.Value = 0;
         return _operation;
     }
 
     private bool IsCurrent(CancellationTokenSource operation) => !_released && ReferenceEquals(_operation, operation);
     private void EndOperation(CancellationTokenSource operation)
     {
-        if (ReferenceEquals(_operation, operation)) { _operation = null; CancelButton.IsEnabled = false; }
+        if (ReferenceEquals(_operation, operation))
+        { _operation = null; CancelButton.IsEnabled = false; CompareProgress.Visibility = Visibility.Collapsed; }
         operation.Dispose();
     }
 
@@ -248,8 +304,32 @@ public partial class FolderCompareTabView : System.Windows.Controls.UserControl
             var view = CollectionViewSource.GetDefaultView(rows);
             view.Filter = DifferencesOnly.IsChecked == true ? item => ((Row)item).Status != FolderCompareStatus.Equal : null;
             foreach (var list in Lists) list.ItemsSource = view;
+            ApplySort();
         }
         finally { _syncingSelection = false; _syncingScroll = false; }
+    }
+
+    private void Results_Sorting(object sender, DataGridSortingEventArgs e)
+    {
+        e.Handled = true;
+        var member = e.Column.SortMemberPath;
+        _sortDirection = member == _sortMember && _sortDirection == ListSortDirection.Ascending
+            ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        _sortMember = member;
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        if (CollectionViewSource.GetDefaultView(_rows) is not ListCollectionView view) return;
+        view.CustomSort = new RowComparer(_sortMember, _sortDirection);
+        foreach (var list in Lists)
+            foreach (var column in list.Columns)
+            {
+                column.SortDirection = column.SortMemberPath == _sortMember ? _sortDirection : null;
+                var label = column.Header.ToString()!.TrimEnd(' ', '↑', '↓');
+                column.Header = label + (column.SortDirection is null ? "" : column.SortDirection == ListSortDirection.Ascending ? " ↑" : " ↓");
+            }
     }
 
     private void ParentFolder_Click(object sender, RoutedEventArgs e)

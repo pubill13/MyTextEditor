@@ -20,7 +20,7 @@
   <Style x:Key="FolderGrid" TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
    <Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="IsReadOnly" Value="True"/>
    <Setter Property="CanUserAddRows" Value="False"/><Setter Property="CanUserDeleteRows" Value="False"/>
-   <Setter Property="CanUserSortColumns" Value="False"/><Setter Property="CanUserReorderColumns" Value="False"/>
+   <Setter Property="CanUserSortColumns" Value="True"/><Setter Property="CanUserReorderColumns" Value="False"/>
    <Setter Property="SelectionMode" Value="Single"/><Setter Property="SelectionUnit" Value="FullRow"/>
    <Setter Property="RowHeight" Value="32"/><Setter Property="ColumnHeaderHeight" Value="32"/>
    <Setter Property="RowStyle" Value="{StaticResource FolderRow}"/><Setter Property="EnableRowVirtualization" Value="True"/>
@@ -42,27 +42,31 @@
    </StackPanel>
   </Border>
   <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceAltBrush}" Padding="8,4" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
-   <TextBlock x:Name="SummaryText" TextWrapping="Wrap" Text="두 폴더 경로를 입력하세요. 같은 행의 파일을 서로 비교합니다."/>
+   <StackPanel><ProgressBar x:Name="CompareProgress" Height="5" Margin="0,2,0,6" Visibility="Collapsed" IsIndeterminate="True"/><TextBlock x:Name="SummaryText" TextWrapping="Wrap" Text="두 폴더 경로를 입력하세요. 같은 행의 파일을 서로 비교합니다."/></StackPanel>
   </Border>
   <Grid>
-   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="48"/><ColumnDefinition/><ColumnDefinition Width="18"/></Grid.ColumnDefinitions>
-   <DataGrid x:Name="ResultsList" Style="{StaticResource FolderGrid}" MouseDoubleClick="Results_DoubleClick" PreviewKeyDown="Results_KeyDown" SelectionChanged="Results_SelectionChanged" ScrollViewer.ScrollChanged="Results_ScrollChanged">
+   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="18"/></Grid.ColumnDefinitions>
+   <DataGrid x:Name="ResultsList" Style="{StaticResource FolderGrid}" Sorting="Results_Sorting" MouseDoubleClick="Results_DoubleClick" PreviewKeyDown="Results_KeyDown" SelectionChanged="Results_SelectionChanged" ScrollViewer.ScrollChanged="Results_ScrollChanged">
     <DataGrid.Columns>
-     <DataGridTextColumn Header="파일 / 상대 경로" Binding="{Binding LeftName}" Width="*" MinWidth="100" ElementStyle="{StaticResource FolderCellText}"/>
-     <DataGridTextColumn Header="크기 (바이트)" Binding="{Binding LeftLength}" Width="110" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="이름" SortMemberPath="RelativePath" Binding="{Binding LeftName}" Width="*" MinWidth="100" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="수정한 날짜" SortMemberPath="LeftWrittenUtc" Binding="{Binding LeftDate}" Width="142" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="형식" SortMemberPath="LeftKind" Binding="{Binding LeftKind}" Width="80" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="크기" SortMemberPath="LeftLength" Binding="{Binding LeftSize}" Width="90" ElementStyle="{StaticResource FolderCellText}"/>
     </DataGrid.Columns>
    </DataGrid>
-   <DataGrid x:Name="StatusList" Grid.Column="1" Style="{StaticResource FolderGrid}" CanUserResizeColumns="False" ScrollViewer.HorizontalScrollBarVisibility="Hidden" Margin="0,0,0,12"
+   <DataGrid x:Name="StatusList" Grid.Column="1" Style="{StaticResource FolderGrid}" Sorting="Results_Sorting" CanUserResizeColumns="False" ScrollViewer.HorizontalScrollBarVisibility="Hidden" Margin="0,0,0,12"
     MouseDoubleClick="Results_DoubleClick" PreviewKeyDown="Results_KeyDown" SelectionChanged="Results_SelectionChanged" ScrollViewer.ScrollChanged="Results_ScrollChanged">
-    <DataGrid.Columns><DataGridTextColumn Header="상태" Binding="{Binding Symbol}" Width="*">
+    <DataGrid.Columns><DataGridTextColumn Header="상태" SortMemberPath="Status" Binding="{Binding Symbol}" Width="*">
      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock" BasedOn="{StaticResource FolderCellText}"><Setter Property="TextAlignment" Value="Center"/><Setter Property="Margin" Value="0"/><Setter Property="FontSize" Value="16"/><Setter Property="FontWeight" Value="SemiBold"/></Style></DataGridTextColumn.ElementStyle>
     </DataGridTextColumn></DataGrid.Columns>
    </DataGrid>
-   <DataGrid x:Name="RightResultsList" Grid.Column="2" Style="{StaticResource FolderGrid}" ScrollViewer.VerticalScrollBarVisibility="Auto"
+   <DataGrid x:Name="RightResultsList" Grid.Column="2" Style="{StaticResource FolderGrid}" Sorting="Results_Sorting" ScrollViewer.VerticalScrollBarVisibility="Auto"
     MouseDoubleClick="Results_DoubleClick" PreviewKeyDown="Results_KeyDown" SelectionChanged="Results_SelectionChanged" ScrollViewer.ScrollChanged="Results_ScrollChanged">
     <DataGrid.Columns>
-     <DataGridTextColumn Header="파일 / 상대 경로" Binding="{Binding RightName}" Width="*" MinWidth="100" ElementStyle="{StaticResource FolderCellText}"/>
-     <DataGridTextColumn Header="크기 (바이트)" Binding="{Binding RightLength}" Width="110" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="이름" SortMemberPath="RelativePath" Binding="{Binding RightName}" Width="*" MinWidth="100" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="수정한 날짜" SortMemberPath="RightWrittenUtc" Binding="{Binding RightDate}" Width="142" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="형식" SortMemberPath="RightKind" Binding="{Binding RightKind}" Width="80" ElementStyle="{StaticResource FolderCellText}"/>
+     <DataGridTextColumn Header="크기" SortMemberPath="RightLength" Binding="{Binding RightSize}" Width="90" ElementStyle="{StaticResource FolderCellText}"/>
     </DataGrid.Columns>
    </DataGrid>
    <Border Grid.Column="3" Background="{DynamicResource SurfaceAltBrush}"/>
