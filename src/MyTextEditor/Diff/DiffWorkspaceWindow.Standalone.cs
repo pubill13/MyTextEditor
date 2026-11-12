@@ -39,6 +39,17 @@ public partial class DiffWorkspaceWindow
                 settings.Diff.WindowTop = options.Top;
             }, persistSettings),
             FontSizeChanged = size => SaveStandaloneSettings(settings => settings.Diff.FontSize = size, persistSettings),
+            GetRecentComparisonPaths = folders =>
+            {
+                var loaded = SettingsService.LoadWithResult();
+                if (loaded.Error is not null) StatusText.Text = $"최근 경로를 읽지 못했습니다: {loaded.Error.Message}";
+                return folders ? loaded.Settings.RecentComparisonFolders : loaded.Settings.RecentComparisonFiles;
+            },
+            RememberComparisonPaths = (folders, paths) => SaveStandaloneSettings(settings =>
+            {
+                if (folders) settings.RecentComparisonFolders = ComparisonPathHistory.Remember(settings.RecentComparisonFolders, paths);
+                else settings.RecentComparisonFiles = ComparisonPathHistory.Remember(settings.RecentComparisonFiles, paths);
+            }, persistSettings),
             HighlightColor = _highlightColor,
             HighlightColorChanged = color =>
             {

@@ -159,6 +159,13 @@ public partial class MainWindow
         SaveSourceAsync = SaveDiffSourceAsync,
         CreateDocumentAsync = CreateDiffDocumentAsync,
         SettingsChanged = SaveDiffOptions,
+        GetRecentComparisonPaths = folders => folders ? _settings.RecentComparisonFolders : _settings.RecentComparisonFiles,
+        RememberComparisonPaths = (folders, paths) =>
+        {
+            if (folders) _settings.RecentComparisonFolders = ComparisonPathHistory.Remember(_settings.RecentComparisonFolders, paths);
+            else _settings.RecentComparisonFiles = ComparisonPathHistory.Remember(_settings.RecentComparisonFiles, paths);
+            if (!SaveSettings(false)) _diffWorkspaceWindow?.ReportStatus(StatusMessage.Text);
+        },
         ShowHelp = () => ShowHelpTopic("diff"),
         FontSizeChanged = size => { _settings.Diff.FontSize = size; MarkSettingsDirty(); },
         HighlightColor = _settings.HighlightColor,

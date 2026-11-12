@@ -1,13 +1,21 @@
 <UserControl x:Class="MyTextEditor.Diff.ComparisonPathBar"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <UserControl.Resources>
+  <Style x:Key="PathInput" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+   <Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="13"/>
+   <Setter Property="FontStretch" Value="Normal"/><Setter Property="TextAlignment" Value="Left"/>
+   <Setter Property="FlowDirection" Value="LeftToRight"/>
+  </Style>
+ </UserControl.Resources>
  <Grid Background="{DynamicResource SurfaceAltBrush}">
   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="48"/><ColumnDefinition/><ColumnDefinition Width="18"/></Grid.ColumnDefinitions>
   <Border Padding="10,6" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,1">
    <DockPanel LastChildFill="True">
     <TextBlock x:Name="LeftLabel" DockPanel.Dock="Top" Text="왼쪽 파일" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,0,0,4"/>
     <Button DockPanel.Dock="Right" Content="…" Width="30" Padding="0" Margin="6,0,0,0" ToolTip="왼쪽 경로 선택" AutomationProperties.Name="왼쪽 경로 선택" Click="BrowseLeft_Click"/>
-    <TextBox x:Name="LeftPathInput" MinHeight="28" Padding="6,3" VerticalContentAlignment="Center" KeyDown="Left_KeyDown" AllowDrop="True" PreviewDragOver="Path_DragOver" PreviewDrop="Path_Drop" AutomationProperties.Name="왼쪽 경로" ToolTip="파일·폴더 경로를 입력하고 Enter 또는 드래그"/>
+    <Button x:Name="LeftHistoryButton" DockPanel.Dock="Right" Content="▾" Width="26" Padding="0" Margin="0" ToolTip="최근 비교 경로" AutomationProperties.Name="왼쪽 최근 비교 경로" Click="History_Click"/>
+    <TextBox x:Name="LeftPathInput" Style="{StaticResource PathInput}" MinHeight="28" Padding="6,3" VerticalContentAlignment="Center" PreviewKeyDown="Left_KeyDown" KeyDown="Left_KeyDown" AllowDrop="True" PreviewDragOver="Path_DragOver" PreviewDrop="Path_Drop" AutomationProperties.Name="왼쪽 경로" ToolTip="파일·폴더 경로를 입력하고 Enter 또는 드래그"/>
    </DockPanel>
   </Border>
   <Border Grid.Column="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,1">
@@ -17,7 +25,8 @@
    <DockPanel LastChildFill="True">
     <TextBlock x:Name="RightLabel" DockPanel.Dock="Top" Text="오른쪽 파일" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,0,0,4"/>
     <Button DockPanel.Dock="Right" Content="…" Width="30" Padding="0" Margin="6,0,0,0" ToolTip="오른쪽 경로 선택" AutomationProperties.Name="오른쪽 경로 선택" Click="BrowseRight_Click"/>
-    <TextBox x:Name="RightPathInput" MinHeight="28" Padding="6,3" VerticalContentAlignment="Center" KeyDown="Right_KeyDown" AllowDrop="True" PreviewDragOver="Path_DragOver" PreviewDrop="Path_Drop" AutomationProperties.Name="오른쪽 경로" ToolTip="파일·폴더 경로를 입력하고 Enter 또는 드래그"/>
+    <Button x:Name="RightHistoryButton" DockPanel.Dock="Right" Content="▾" Width="26" Padding="0" Margin="0" ToolTip="최근 비교 경로" AutomationProperties.Name="오른쪽 최근 비교 경로" Click="History_Click"/>
+    <TextBox x:Name="RightPathInput" Style="{StaticResource PathInput}" MinHeight="28" Padding="6,3" VerticalContentAlignment="Center" PreviewKeyDown="Right_KeyDown" KeyDown="Right_KeyDown" AllowDrop="True" PreviewDragOver="Path_DragOver" PreviewDrop="Path_Drop" AutomationProperties.Name="오른쪽 경로" ToolTip="파일·폴더 경로를 입력하고 Enter 또는 드래그"/>
    </DockPanel>
   </Border>
  </Grid>

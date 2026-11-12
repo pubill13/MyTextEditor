@@ -109,6 +109,8 @@ public static class SettingsService
         if (settings.WindowTop is not null && !double.IsFinite(settings.WindowTop.Value)) settings.WindowTop = null;
         settings.WindowState = settings.WindowState == "Maximized" ? "Maximized" : "Normal";
         settings.RecentFiles ??= [];
+        settings.RecentComparisonFiles = ComparisonPathHistory.Normalize(settings.RecentComparisonFiles);
+        settings.RecentComparisonFolders = ComparisonPathHistory.Normalize(settings.RecentComparisonFolders);
         settings.FavoriteToolIds ??= [TextToolIds.RemoveLinesContaining, TextToolIds.Replace];
         settings.RecentSearches ??= [];
         settings.SearchState ??= new SearchInputState();

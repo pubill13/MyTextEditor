@@ -1151,6 +1151,8 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         InvalidateDisplayedResult();
         RefreshEndpointHeaders();
         if (IsReady) await CompareNowAsync();
+        if (endpoint.Kind == DiffEndpointKind.File && !endpoint.IsMissingFolderFile)
+            PathBar.RememberPaths(endpoint.FilePath);
         return true;
     }
 
@@ -1222,7 +1224,11 @@ public partial class DiffTabView : System.Windows.Controls.UserControl
         if (string.IsNullOrWhiteSpace(path)) { StatusText.Text = "불러올 파일 경로를 입력하세요."; return; }
         if (Directory.Exists(path)) { await OpenFolderPathAsync(left, path); return; }
         BusyProgress.Visibility = Visibility.Visible;
-        try { await SetEndpointAsync(left, await LoadFileEndpointAsync(path)); }
+        try
+        {
+            if (!await SetEndpointAsync(left, await LoadFileEndpointAsync(path)))
+                (left ? PathBar.LeftInput : PathBar.RightInput).Text = (left ? _left : _right).FilePath ?? "";
+        }
         catch (Exception exception) { StatusText.Text = $"파일을 열지 못했습니다: {exception.Message}"; }
         finally { BusyProgress.Visibility = Visibility.Collapsed; }
     }

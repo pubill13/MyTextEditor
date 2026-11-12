@@ -70,6 +70,8 @@ public sealed class DiffWindowCallbacks
     public Func<IReadOnlyList<DiffSourceSnapshot>>? GetOpenDocuments { get; init; }
     public Action? ShowHelp { get; init; }
     public Action<double>? FontSizeChanged { get; init; }
+    public Func<bool, IReadOnlyList<string>>? GetRecentComparisonPaths { get; init; }
+    public Action<bool, IReadOnlyList<string>>? RememberComparisonPaths { get; init; }
     public Action<string>? HighlightColorChanged { get; init; }
     public string HighlightColor { get; init; } = "#FFD166";
 }

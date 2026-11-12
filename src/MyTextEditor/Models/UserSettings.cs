@@ -22,6 +22,8 @@ public sealed class UserSettings
     public double? WindowTop { get; set; }
     public string WindowState { get; set; } = "Normal";
     public List<string> RecentFiles { get; set; } = [];
+    public List<string> RecentComparisonFiles { get; set; } = [];
+    public List<string> RecentComparisonFolders { get; set; } = [];
     public List<string> FavoriteToolIds { get; set; } =
     [
         TextToolIds.RemoveLinesContaining,

@@ -47,6 +47,7 @@ public partial class DiffWorkspaceWindow : Window
     public event EventHandler? ResourcesReleased;
     public bool HasUnsavedChanges => Views.Any(view => view.HasUnsavedChanges);
     public int ComparisonCount => ComparisonTabs.Items.Count;
+    internal void ReportStatus(string message) => StatusText.Text = message;
     private IEnumerable<DiffTabView> Views => ComparisonTabs.Items.OfType<TabItem>().Select(item => item.Content).OfType<DiffTabView>();
     private IEnumerable<FolderCompareTabView> FolderViews => ComparisonTabs.Items.OfType<TabItem>().Select(item => item.Content).OfType<FolderCompareTabView>();
     private FolderCompareTabView? CurrentFolder => (ComparisonTabs.SelectedItem as TabItem)?.Content as FolderCompareTabView;
@@ -67,6 +68,7 @@ public partial class DiffWorkspaceWindow : Window
     public FolderCompareTabView OpenFolderComparison()
     {
         var view = new FolderCompareTabView(OpenFolderEntryAsync);
+        ConfigurePathHistory(view.PathBar);
         view.ApplyAppearance(_appearance);
         var item = CreateTabItem(view, view.TabTitle);
         view.StateChanged += (_, _) => ((TextBlock)item.Tag).Text = view.TabTitle;
@@ -176,6 +178,9 @@ public partial class DiffWorkspaceWindow : Window
     private DiffTabView AddTab(DiffEndpoint left, DiffEndpoint right)
     {
         var view = new DiffTabView(left, right, _defaults, _callbacks, _appearance);
+        ConfigurePathHistory(view.PathBar);
+        view.PathBar.RememberPaths(left.IsMissingFolderFile ? null : left.FilePath,
+            right.IsMissingFolderFile ? null : right.FilePath);
         view.SetHighlightColor(_highlightColor);
         var item = CreateTabItem(view, view.TabTitle);
         var headerText = (TextBlock)item.Tag;
@@ -324,6 +329,10 @@ public partial class DiffWorkspaceWindow : Window
         }
         finally { BusyProgress.Visibility = Visibility.Collapsed; }
     }
+
+    private void ConfigurePathHistory(ComparisonPathBar bar) => bar.ConfigureHistory(
+        folders => _callbacks.GetRecentComparisonPaths?.Invoke(folders) ?? [],
+        (folders, paths) => _callbacks.RememberComparisonPaths?.Invoke(folders, paths));
 
     private void AddTab_Click(object sender, RoutedEventArgs e) => OpenEmptyTab(false);
     private void AddFolderTab_Click(object sender, RoutedEventArgs e) => OpenFolderComparison();

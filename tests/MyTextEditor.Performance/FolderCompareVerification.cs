@@ -31,6 +31,17 @@ internal static class FolderCompareVerification
         Check(done(), "Timed out waiting for folder comparison");
     }
     private static void Await(Task task) { PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
+    private static T? FindVisual<T>(DependencyObject parent, Func<T, bool> predicate) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match && predicate(match)) return match;
+            if (FindVisual(child, predicate) is { } found) return found;
+        }
+        return null;
+    }
+
     private static void Capture(FrameworkElement view, string name)
     {
         view.UpdateLayout();
@@ -75,6 +86,7 @@ internal static class FolderCompareVerification
             if (inputOnly)
             {
                 VerifyPathInput(workspace, tabs, left, right);
+                VerifyPathHistory(workspace, tabs, left, right);
                 Console.WriteLine("PASS folder path Enter, quoted paths, left/right drops, paired drops, mixed rejection, file buffer preservation and file input regression");
                 return 0;
             }
@@ -296,6 +308,22 @@ internal static class FolderCompareVerification
             PresentationSource.FromVisual(workspace)!, 0, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });
         PumpUntil(() => folder.Entries.Count == 4);
 
+        var folderTab = tabs.SelectedItem;
+        var countBefore = tabs.Items.Count;
+        folderBar.RightInput.Text = left;
+        folderBar.RightInput.RaiseEvent(new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice,
+            PresentationSource.FromVisual(workspace)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+        PumpUntil(() => Field<CancellationTokenSource?>(folder, "_operation") is null);
+        Check(tabs.Items.Count == countBefore && ReferenceEquals(tabs.SelectedItem, folderTab), "Folder path Enter opened another tab");
+        Check(folder.Entries.Where(entry => !entry.IsDirectory).All(entry => entry.Status == FolderCompareStatus.Equal), "Folder path Enter did not recompare");
+        folderBar.LeftInput.Text = right;
+        folderBar.LeftInput.RaiseEvent(new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice,
+            PresentationSource.FromVisual(workspace)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+        PumpUntil(() => Field<CancellationTokenSource?>(folder, "_operation") is null);
+        Check(tabs.Items.Count == countBefore && ReferenceEquals(tabs.SelectedItem, folderTab) && folderBar.RightInput.Text == left,
+            "Left folder path Enter changed tabs or the opposite path");
+        Await(folder.SetPathsAsync(left, right));
+
         // Route an actual WPF drop event through the path textbox, which normally consumes drops.
         var data = new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, new[] { right, left });
         var drop = (System.Windows.DragEventArgs)Activator.CreateInstance(typeof(System.Windows.DragEventArgs),
@@ -340,6 +368,21 @@ internal static class FolderCompareVerification
         bar.LeftInput.Text = Path.Combine(left, "changed.txt");
         Await((Task)Call(file, "LoadPathAsync", true)!);
         Check(file.LeftIsReady && Field<ScintillaEditorHost>(file, "_leftEditor").GetText() == "left\ntext", "File path regression");
+        Await(file.SetEndpointAsync(false, LoadEndpoint(Path.Combine(right, "changed.txt"))));
+        var fileTab = tabs.SelectedItem;
+        countBefore = tabs.Items.Count;
+        bar.LeftInput.Text = Path.Combine(right, "changed.txt");
+        bar.LeftInput.RaiseEvent(new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice,
+            PresentationSource.FromVisual(workspace)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+        PumpUntil(() => Field<ScintillaEditorHost>(file, "_leftEditor").GetText() == "right\ntext");
+        Check(tabs.Items.Count == countBefore && ReferenceEquals(tabs.SelectedItem, fileTab), "File path Enter opened another tab");
+        Check(Field<ScintillaEditorHost>(file, "_rightEditor").GetText() == "right\ntext", "File path Enter changed the opposite side");
+        bar.RightInput.Text = Path.Combine(left, "changed.txt");
+        bar.RightInput.RaiseEvent(new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice,
+            PresentationSource.FromVisual(workspace)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+        PumpUntil(() => Field<ScintillaEditorHost>(file, "_rightEditor").GetText() == "left\ntext");
+        Check(tabs.Items.Count == countBefore && ReferenceEquals(tabs.SelectedItem, fileTab) &&
+            Field<ScintillaEditorHost>(file, "_leftEditor").GetText() == "right\ntext", "Right file path Enter changed tabs or the opposite side");
         bar.RightInput.Text = Path.Combine(right, "missing");
         Await((Task)Call(file, "LoadPathAsync", false)!);
         Check(((TextBlock)file.FindName("StatusText")).Text.Contains("열지 못했습니다"), "Missing path error hidden");
@@ -348,6 +391,70 @@ internal static class FolderCompareVerification
             typeof(DiffTabView).GetField("_leftDirty", Private)!.SetValue(view, false);
             typeof(DiffTabView).GetField("_rightDirty", Private)!.SetValue(view, false);
         }
+        DiffEndpoint LoadEndpoint(string path)
+        {
+            var load = DiffTabView.LoadFileEndpointAsync(path);
+            Await(load);
+            return load.Result;
+        }
+    }
+
+    private static void VerifyPathHistory(DiffWorkspaceWindow workspace, TabControl tabs, string left, string right)
+    {
+        var saved = new UserSettings();
+        var bar = (ComparisonPathBar)((DiffTabView)((TabItem)tabs.SelectedItem).Content).FindName("PathBar");
+        bar.ConfigureHistory(folders => folders ? saved.RecentComparisonFolders : saved.RecentComparisonFiles,
+            (folders, paths) =>
+            {
+                if (folders) saved.RecentComparisonFolders = ComparisonPathHistory.Remember(saved.RecentComparisonFolders, paths);
+                else saved.RecentComparisonFiles = ComparisonPathHistory.Remember(saved.RecentComparisonFiles, paths);
+            });
+        var path = Path.Combine(left, "changed.txt");
+        bar.RememberPaths(path);
+        bar.RememberPaths(path.ToUpperInvariant());
+        Check(saved.RecentComparisonFiles.Count == 1, "History did not deduplicate Windows paths");
+        var button = (System.Windows.Controls.Button)bar.FindName("RightHistoryButton");
+        var oldLeft = bar.LeftInput.Text;
+        var oldCount = tabs.Items.Count;
+        button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        var menu = button.ContextMenu!;
+        Check(menu.Items.Count == 1, "History menu is missing entries");
+        ((MenuItem)menu.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        menu.IsOpen = false;
+        Check(StringComparer.OrdinalIgnoreCase.Equals(bar.RightInput.Text, path) && bar.LeftInput.Text == oldLeft,
+            "History selection changed the opposite input");
+        Check(tabs.Items.Count == oldCount, "History selection opened a comparison");
+        bar.SetKind("폴더");
+        bar.RememberPaths(right);
+        Check(saved.RecentComparisonFolders.SequenceEqual([right]) && saved.RecentComparisonFiles.Count == 1, "File/folder history was mixed");
+        bar.SetKind("파일");
+        var historyFile = Path.Combine(Path.GetDirectoryName(left)!, "history-settings.json");
+        File.WriteAllText(historyFile, System.Text.Json.JsonSerializer.Serialize(saved));
+        var restored = System.Text.Json.JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(historyFile))!;
+        Check(restored.RecentComparisonFiles.SequenceEqual(saved.RecentComparisonFiles) && restored.RecentComparisonFolders.SequenceEqual(saved.RecentComparisonFolders), "History settings round trip failed");
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<UserSettings>("{}")!;
+        Check(legacy.RecentComparisonFiles.Count == 0 && legacy.RecentComparisonFolders.Count == 0, "Legacy settings need migration");
+        var capped = ComparisonPathHistory.Normalize(Enumerable.Range(0, 40).Select(index => Path.Combine(left, index.ToString())));
+        Check(capped.Count == 30, "History limit failed");
+        var promoted = ComparisonPathHistory.Remember(capped, [capped[10]]);
+        Check(promoted.Count == 30 && promoted[0] == capped[10], "History recency failed");
+        Check(ComparisonPathHistory.Normalize(["", "\0", "\"" + path + "\""]).SequenceEqual([path]), "Invalid/quoted history normalization failed");
+        Check(bar.LeftInput.FontFamily.Source == "Segoe UI" && bar.LeftInput.FontSize == 13, "Path input inherited editor font settings");
+        var submitted = 0;
+        void Submitted(bool _) => submitted++;
+        bar.SubmitRequested += Submitted;
+        var composition = new TextComposition(InputManager.Current, bar.LeftInput, "한");
+        bar.LeftInput.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, composition)
+            { RoutedEvent = TextCompositionManager.PreviewTextInputStartEvent });
+        bar.LeftInput.RaiseEvent(new System.Windows.Input.KeyEventArgs(Keyboard.PrimaryDevice,
+            PresentationSource.FromVisual(workspace)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+        Check(submitted == 0, "IME commit Enter submitted a comparison");
+        bar.LeftInput.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, composition)
+            { RoutedEvent = TextCompositionManager.PreviewTextInputEvent });
+        bar.SubmitRequested -= Submitted;
+        bar.LeftInput.Text = Path.Combine(left, "한글 경로", "file name.txt");
+        Capture(bar, "path-input");
+        Console.WriteLine("PASS same-tab file/folder Enter, history selection, recency, limit, separation, settings round trip and legacy settings");
     }
 
     private static object CallStaticScrollViewer(DataGrid list) => typeof(FolderCompareTabView)
@@ -373,7 +480,15 @@ internal static class FolderCompareVerification
         {
             Call(folder, "SetRows", rows);
             string Names() => string.Join(",", left.Items.Cast<FolderCompareTabView.Row>().Select(r => r.RelativePath));
-            void Sort(DataGrid grid, int column) => Call(folder, "Results_Sorting", grid, new DataGridSortingEventArgs(grid.Columns[column]));
+            void Sort(DataGrid grid, int column)
+            {
+                grid.UpdateLayout();
+                var header = FindVisual<System.Windows.Controls.Primitives.DataGridColumnHeader>(grid,
+                    item => ReferenceEquals(item.Column, grid.Columns[column]));
+                Check(header is not null, "Column header is missing");
+                typeof(System.Windows.Controls.Primitives.DataGridColumnHeader)
+                    .GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(header, null);
+            }
             void Files(string expected)
             {
                 Check(left.Items.Cast<FolderCompareTabView.Row>().Take(2).All(r => r.Entry.IsDirectory), "Sort put files above folders");

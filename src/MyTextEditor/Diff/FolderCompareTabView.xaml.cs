@@ -220,6 +220,7 @@ public partial class FolderCompareTabView : System.Windows.Controls.UserControl
             TabTitle = $"폴더: {Path.GetFileName(Path.TrimEndingDirectorySeparator(leftRoot))} ↔ {Path.GetFileName(Path.TrimEndingDirectorySeparator(rightRoot))}";
             StateChanged?.Invoke(this, EventArgs.Empty);
             UpdateSummary();
+            PathBar.RememberPaths(leftRoot, rightRoot);
             return true;
         }
         catch (OperationCanceledException) { if (IsCurrent(operation)) SummaryText.Text = "비교를 취소했습니다. 이전 결과를 유지합니다."; }
