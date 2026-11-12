@@ -1,0 +1,23 @@
+﻿{
+    "Version":  "1.11.18",
+    "Commit":  "296eac24a32f140507316c0ec2f5a92d131de94d",
+    "ReleaseUrl":  "https://github.com/pubill13/MyTextEditor/releases/tag/v1.11.18",
+    "PublishedUtc":  "2026-11-12T04:43:21Z",
+    "LatestTag":  "v1.11.18",
+    "Assets":  [
+                   {
+                       "Name":  "OmniEdit.exe",
+                       "Size":  80191697,
+                       "SHA256":  "6a039c97f30fc454b33e2040d38f9f6d241d0b47fe8b25595877a7be60b8277d",
+                       "ServerDigest":  "sha256:6a039c97f30fc454b33e2040d38f9f6d241d0b47fe8b25595877a7be60b8277d",
+                       "DownloadUrl":  "https://github.com/pubill13/MyTextEditor/releases/download/v1.11.18/OmniEdit.exe"
+                   },
+                   {
+                       "Name":  "OmniEdit-v1.11.18-win-x64.zip",
+                       "Size":  74465409,
+                       "SHA256":  "2649f5693387f14f3d281e64a6ebaf26c48002922191dcea4bf44d5572dc0459",
+                       "ServerDigest":  "sha256:2649f5693387f14f3d281e64a6ebaf26c48002922191dcea4bf44d5572dc0459",
+                       "DownloadUrl":  "https://github.com/pubill13/MyTextEditor/releases/download/v1.11.18/OmniEdit-v1.11.18-win-x64.zip"
+                   }
+               ]
+}
