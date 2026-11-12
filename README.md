@@ -226,6 +226,8 @@ v1.7.1은 대용량 매크로에서 원문 줄 복사와 임시 객체를 줄였
 
 최신 설치 불필요 배포본은 [GitHub Releases](https://github.com/pubill13/MyTextEditor/releases/latest)에서 `OmniEdit.exe` 또는 `OmniEdit-win-x64.zip`을 내려받을 수 있습니다.
 
+로컬 최신 실행 파일은 항상 프로젝트 루트의 `artifacts/latest/OmniEdit.exe`에 둡니다. 빌드·릴리즈 완료 안내에 이 파일의 클릭 가능한 절대 경로를 함께 제공합니다. `./scripts/Update-LatestExecutable.ps1`로 현재 코드를 Windows x64 자체 포함 단일 EXE로 빌드하여 이 경로를 갱신할 수 있습니다. 이미 생성한 최신 배포 EXE는 `-SourceExecutable artifacts/v1.11.18/win-x64/OmniEdit.exe`처럼 지정하면 재빌드 없이 버전·SHA-256 확인 후 복사합니다. 실행 중이라 교체하지 못하면 해당 앱의 메인·비교 창을 닫은 뒤 다시 실행하세요.
+
 ```powershell
 dotnet publish src/MyTextEditor/MyTextEditor.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts/win-x64
 ```
