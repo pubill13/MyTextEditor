@@ -29,7 +29,7 @@ public partial class MainWindow
     }
 
     private async void DocumentTabMenuCloseAll_Click(object sender, RoutedEventArgs e) =>
-        await CloseDocumentSetAsync(Documents.ToArray());
+        await CloseAllDocumentsAsync();
 
     private void DocumentTabMenuCopyPath_Click(object sender, RoutedEventArgs e)
     {

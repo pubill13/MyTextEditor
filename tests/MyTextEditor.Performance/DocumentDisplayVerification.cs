@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using MyTextEditor;
+using MyTextEditor.Controls;
 using MyTextEditor.Core;
 using MyTextEditor.Models;
 using Application = System.Windows.Application;
@@ -100,6 +101,7 @@ internal static class DocumentDisplayVerification
             Call(window, "RemoveDocument", document);
             Wait(closingReload);
             Check(!window.Documents.Contains(document), "Completing reload must not resurrect a closed document");
+            VerifyCloseAll(window, directory);
             Console.WriteLine("PASS encoding dirty/revert, Undo, BOM save, reload success/failure/cancel/edit/close protection, split auto-collapse");
             return 0;
         }
@@ -111,6 +113,62 @@ internal static class DocumentDisplayVerification
             window.Close(); app.Shutdown();
             Directory.Delete(directory, true);
         }
+    }
+
+    private static void VerifyCloseAll(MainWindow window, string directory)
+    {
+        var paths = Enumerable.Range(1, 3).Select(i => Path.Combine(directory, $"batch-{i}.txt")).ToArray();
+        foreach (var path in paths)
+        {
+            File.WriteAllText(path, "original");
+            Call(window, "NewDocument", "changed", path);
+        }
+        Field<MenuItem>(window, "SplitDocumentsMenuItem").IsChecked = true;
+        Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs());
+        Check(window.RightDocuments.Count > 0, "Batch close must exercise both panes");
+
+        void CloseWith(Action initiate, params string[] choices)
+        {
+            var answered = 0;
+            var unexpected = false;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+            timer.Tick += (_, _) =>
+            {
+                var dialog = window.OwnedWindows.OfType<CloseTabsPrompt>().SingleOrDefault();
+                if (dialog is null) return;
+                if (answered >= choices.Length) { unexpected = true; dialog.Close(); return; }
+                var choice = choices[answered++];
+                if (choice == "Cancel") { dialog.Close(); return; }
+                var button = (System.Windows.Controls.Button)dialog.FindName(choice);
+                if (!button.IsVisible) { unexpected = true; dialog.Close(); return; }
+                button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            };
+            timer.Start();
+            try
+            {
+                initiate();
+                var watch = Stopwatch.StartNew();
+                while (Field<bool>(window, "_closingAllDocuments") && watch.Elapsed < TimeSpan.FromSeconds(10))
+                { Pump(); Thread.Sleep(5); }
+                Check(!Field<bool>(window, "_closingAllDocuments") && !unexpected && answered == choices.Length,
+                    "Batch close did not consume the expected confirmation choices");
+            }
+            finally { timer.Stop(); }
+        }
+
+        CloseWith(() => Call(window, "DocumentTabMenuCloseAll_Click", window, new RoutedEventArgs()), "Discard", "Cancel");
+        Check(window.Documents.Count == 3 && paths.All(p => File.ReadAllText(p) == "original"), "Cancel after No must preserve all tabs and files");
+        using (File.Open(paths[0], FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            WithDialogResponse(window, 1, () => CloseWith(() => Call(window, "CloseAllTabs_Click", window, new RoutedEventArgs()), "Save"));
+        Check(window.Documents.Count == 3 && window.Documents.All(d => d.IsModified), "Failed save must stop batch close");
+        CloseWith(() => Call(window, "ExecuteShortcut", EditorShortcut.CloseAllDocuments), "Save", "DiscardAll");
+        Check(window.Documents.Count == 0 && File.ReadAllText(paths[0]) == "changed" &&
+            paths.Skip(1).All(p => File.ReadAllText(p) == "original"), "Yes then No to All must save just the first file");
+        Call(window, "NewDocument", "next batch", paths[1]);
+        CloseWith(() => Call(window, "CloseAllTabs_Click", window, new RoutedEventArgs()), "Cancel");
+        Check(window.Documents.Count == 1 && window.Documents[0].IsModified, "No to All must expire after the batch");
+        CloseWith(() => Call(window, "CloseAllTabs_Click", window, new RoutedEventArgs()), "Discard");
+        Console.WriteLine("PASS split-pane close all via menu, context menu and shortcut: cancel, save failure, save then discard remaining");
     }
 
     private static void VerifyPanes(MainWindow window, DocumentViewModel first)
@@ -153,6 +211,12 @@ internal static class DocumentDisplayVerification
                     var className = new StringBuilder(32);
                     GetClassName(dialog, className, className.Capacity);
                     if (className.ToString() != "#32770") return true;
+                    if (command == 1)
+                    {
+                        // Windows can render an OK-only error with no IDOK child window.
+                        responded = PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero); // WM_CLOSE
+                        return !responded;
+                    }
                     var button = GetDlgItem(dialog, command);
                     if (button == IntPtr.Zero || !IsWindowEnabled(button)) return true;
                     responded = PostMessage(button, 0x00F5, IntPtr.Zero, IntPtr.Zero); // BM_CLICK

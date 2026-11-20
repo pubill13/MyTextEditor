@@ -274,6 +274,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     {
         _editor.CreateControl();
         ClearUserHighlights();
+        _occurrenceView = null;
+        _editor.DoubleClickSelection = false;
         _markedCurrentLine = -1;
         _lastNotifiedFirstVisibleLine = -1;
         _lastNotifiedHorizontalOffset = -1;
@@ -400,7 +402,9 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     public void SetSelection(EditorTextRange range)
     {
         ValidateRange(range);
+        _editor.DoubleClickSelection = false;
         _editor.SetSelection(range.End, range.Start);
+        RefreshSelectionOccurrences();
     }
 
     public void SetFirstVisibleLine(int zeroBasedLine)
@@ -485,19 +489,21 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         var end = line.EndPosition;
         if (end > line.Position && _editor.GetCharAt(end - 1) == '\n') end--;
         if (end > line.Position && _editor.GetCharAt(end - 1) == '\r') end--;
-        _editor.SetSelection(end, line.Position);
-        _editor.ScrollCaret();
-        if (focusEditor) _editor.Focus();
+        SelectAndReveal(new EditorTextRange(line.Position, end - line.Position), focusEditor);
     }
 
     public void Undo() => _editor.Undo();
     public void Redo() => _editor.Redo();
-    public void SelectAll() => _editor.SelectAll();
+    public void SelectAll()
+    {
+        _editor.DoubleClickSelection = false;
+        _editor.SelectAll();
+        RefreshSelectionOccurrences();
+    }
 
     public void SelectAndReveal(EditorTextRange range, bool focusEditor = true)
     {
-        ValidateRange(range);
-        _editor.SetSelection(range.End, range.Start);
+        SetSelection(range);
         _editor.ScrollCaret();
         if (focusEditor) _editor.Focus();
     }
@@ -547,6 +553,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
         _editor.Styles[ScintillaNET.Style.LineNumber].ForeColor = marginFore;
         _editor.Margins[0].Width = Math.Max(36, (int)Math.Round(44 * Math.Max(1f, dpiScale)));
         ConfigureDiffMarkers(darkTheme);
+        ConfigureIndicator(OccurrenceIndicator, darkTheme ? DrawingColor.LightGreen : DrawingColor.ForestGreen);
+        _occurrenceView = null;
         Background = new MediaBrush(MediaColor.FromRgb(editorBack.R, editorBack.G, editorBack.B));
     }
 
@@ -666,6 +674,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
     private void Editor_UpdateUI(object? sender, UpdateUIEventArgs e)
     {
+        RefreshSelectionOccurrences();
         if ((e.Change & UpdateChange.VScroll) != 0) NotifyVerticalScroll();
         if ((e.Change & UpdateChange.HScroll) != 0) NotifyHorizontalScroll();
         CaretChanged?.Invoke(this, EventArgs.Empty);
@@ -802,6 +811,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
     private sealed class ShortcutScintilla : Scintilla
     {
+        internal bool DoubleClickSelection;
         private Func<Forms.Keys, bool>? _shortcutProcessor;
         private Action? _viewportProcessor;
         public bool IsComposing { get; private set; }
@@ -818,6 +828,8 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
 
         protected override void WndProc(ref Forms.Message message)
         {
+            if (message.Msg is 0x0201 or 0x0100) DoubleClickSelection = false; // Mouse down or key down
+            if (message.Msg == 0x0203) DoubleClickSelection = true; // WM_LBUTTONDBLCLK
             if (message.Msg == 0x010D) IsComposing = true; // WM_IME_STARTCOMPOSITION
             if (message.Msg == 0x010E) IsComposing = false; // WM_IME_ENDCOMPOSITION
             const int mouseWheel = 0x020A;

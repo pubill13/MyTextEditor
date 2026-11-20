@@ -548,13 +548,26 @@ public partial class MainWindow : Window
         _searchSnapshots.Clear();
     }
 
-    private async Task<bool> ConfirmCloseAllAsync()
+    private async Task<bool> ConfirmCloseAllAsync(bool closingTabs = false)
     {
         var approvedVersions = CaptureCloseVersions(Documents);
-        foreach (var document in Documents.Where(item => item.IsModified).ToArray())
+        var modified = Documents.Where(item => item.IsModified).ToArray();
+        for (var index = 0; index < modified.Length; index++)
         {
+            var document = modified[index];
             SelectDocument(document);
-            var answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "프로그램 종료", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            MessageBoxResult answer;
+            if (closingTabs)
+            {
+                var dialog = new CloseTabsPrompt(document.DisplayName, modified.Length - index) { Owner = this };
+                dialog.ShowDialog();
+                if (dialog.DiscardRemaining) break;
+                answer = dialog.Answer;
+            }
+            else
+            {
+                answer = MessageBox.Show(this, $"'{document.DisplayName}'의 변경 내용을 저장할까요?", "프로그램 종료", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            }
             if (answer == MessageBoxResult.Cancel) return false;
             if (answer == MessageBoxResult.Yes && !await SaveDocumentCoreAsync(document, false, allowClosing: true)) return false;
             approvedVersions[document] = CloseVersion(document);
@@ -668,7 +681,7 @@ public partial class MainWindow : Window
         _closingAllDocuments = true;
         try
         {
-            if (!await ConfirmCloseAllAsync()) return;
+            if (!await ConfirmCloseAllAsync(closingTabs: true)) return;
             var approvedVersions = CaptureCloseVersions(Documents);
             foreach (var document in Documents.ToArray())
                 if (!await DiscardRecoveryAsync(document)) return;
@@ -759,6 +772,7 @@ public partial class MainWindow : Window
     private void ConfigureEditor(DocumentViewModel document)
     {
         var editor = document.Editor;
+        editor.EnableSelectionOccurrences();
         editor.SetWordWrap(_settings.DefaultWordWrap);
         ConnectEditor(document);
         editor.HighlightColor = _settings.HighlightColor;

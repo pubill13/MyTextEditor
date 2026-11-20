@@ -68,6 +68,7 @@ internal static class Program
         if (args.Contains("--verify-tools-window")) return ToolsWindowVerification.Run();
         if (args.Contains("--results-close")) return ResultsCloseVerification.Run();
         if (args.Contains("--tab-visibility")) return TabVisibilityVerification.Run();
+        if (args.Contains("--selection-occurrences")) return SelectionOccurrenceVerification.Run();
         if (args.Contains("--selection-ux")) return SelectionUxVerification.Run();
         if (args.Contains("--panel-ux")) return PanelUxVerification.Run();
         if (args.Contains("--folder-shortcut")) return SearchActionsVerification.Run(folderShortcutOnly: true);
