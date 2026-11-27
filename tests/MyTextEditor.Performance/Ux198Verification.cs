@@ -97,9 +97,12 @@ internal static class Ux198Verification
             Field<TabControl>(window, "ToolTabs").SelectedIndex = 0;
             Field<System.Windows.Controls.CheckBox>(window, "UseConditionSearchCheck").IsChecked = false;
             var input = Field<TextBox>(window, "LiteralFindBox");
+            window.UpdateLayout();
+            Pump();
             var opening = (Task)Call(window, "OpenFilesAsync", new object[] { new[] { delayed } })!;
             Check(!opening.IsCompleted, "File-open fixture failed to yield before focus arbitration");
             input.BringIntoView(); input.Focus(); Keyboard.Focus(input);
+            Check(input.IsKeyboardFocused, "File-open fixture could not focus the search input before the delayed load completed");
             Wait(opening);
             Check(input.IsKeyboardFocused, "Delayed file load stole search input focus");
             TypeKeys("preserved");
@@ -115,7 +118,8 @@ internal static class Ux198Verification
                     var tabs = Field<TabControl>(window, "DocumentTabs");
                     var tab = (TabItem)tabs.ItemContainerGenerator.ContainerFromItem(Current(window));
                     Check(tab.ActualHeight == 28, "Document header height drifted");
-                    Check(Field<Grid>(window, "MainToolbarGrid").ActualHeight <= 34, "Main toolbar exceeded compact height");
+                    var toolbarHeight = Field<Grid>(window, "MainToolbarGrid").ActualHeight;
+                    Check(toolbarHeight <= (width == window.MinWidth ? 64 : 34), "Main toolbar exceeded its available rows");
                 }
             }
             Console.WriteLine("PASS v1.9.9 native typing: initial/Ctrl+N/toolbar/multiple/duplicate file focus and load-time focus cancellation; compact main toolbar/document tabs across five palettes and two widths");

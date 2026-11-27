@@ -80,7 +80,8 @@ public partial class MainWindow
         // A tab header is a valid left-pane target even when the split view is off.
         if (ResolveDocumentTabDropIndex(point, false) is not null) return false;
         // Keep the rest of the editor neutral; only the edge creates a split.
-        return point.X >= DocumentPanesGrid.ActualWidth - Math.Min(160, DocumentPanesGrid.ActualWidth * .25) ? true : null;
+        var splitZoneWidth = Math.Min(280, DocumentPanesGrid.ActualWidth / 3);
+        return point.X >= DocumentPanesGrid.ActualWidth - splitZoneWidth ? true : null;
     }
 
     private void DocumentTabDragMove(object sender, MouseEventArgs e)

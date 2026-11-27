@@ -819,7 +819,12 @@ public partial class MainWindow : Window
         RenderSimpleTags();
         UpdateConditionSummary();
     }
-    private void SearchInput_KeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter && SearchAllButton.IsEnabled) { Search_Click(sender, new RoutedEventArgs()); e.Handled = true; } }
+    private void SearchInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || !SearchAllButton.IsEnabled) return;
+        e.Handled = true;
+        Search_Click(sender, new RoutedEventArgs());
+    }
 
     private void UpdateConditionSummary()
     {
@@ -955,7 +960,8 @@ public partial class MainWindow : Window
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
         if (FolderSearchCheck.IsChecked == true) { SearchFolder_Click(sender, e); return; }
-        if (CurrentDocument is null || _folderSearchCancellation is not null) return;
+        if (_windowClosed || _closingInProgress || CurrentDocument is null || _folderSearchCancellation is not null) return;
+        var owner = SearchDialogOwner(sender);
         using var cancellation = new CancellationTokenSource();
         _folderSearchCancellation = cancellation;
         CancelFolderSearchButton.Visibility = Visibility.Visible;
@@ -994,7 +1000,8 @@ public partial class MainWindow : Window
                 return (matched, ordered);
             }
             var preparedRows = snapshot.Text.Length < 1_000_000 ? PrepareRows() : await Task.Run(PrepareRows, cancellation.Token);
-            if (_closingInProgress) return;
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (_windowClosed || _closingInProgress) return;
             RecordRecentSearch(summary, options);
             var shortSummary = summary.Length > 28 ? summary[..28] + "…" : summary;
             var session = new SearchResultSession
@@ -1023,6 +1030,7 @@ public partial class MainWindow : Window
                 ShowSearchResults();
             RefreshSearchSessionState();
             StatusMessage.Text = results.Count == 0 ? "일치하는 줄이 없습니다." : $"{results.Count:N0}개 줄을 찾았습니다.";
+            if (results.Count == 0) ShowNoSearchResults(owner);
         }
         catch (OperationCanceledException) { StatusMessage.Text = "검색을 중단했습니다."; }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -1739,7 +1747,7 @@ public partial class MainWindow : Window
         _settings.WindowState = WindowState == WindowState.Maximized ? "Maximized" : "Normal";
         _settings.ToolPanelVisible = IsToolsVisible;
         _settings.ResultPanelVisible = !_resultsMinimized && ResultPanel.Visibility == Visibility.Visible;
-        if (_toolsWindow is null && ToolColumn.Width.Value > 0) _settings.ToolPanelWidth = ToolColumn.ActualWidth;
+        if (_toolsWindow is null && ToolColumn.Width.Value >= 280) _settings.ToolPanelWidth = ToolColumn.Width.Value;
         RememberResultHeight();
         var serialized = JsonSerializer.Serialize(_settings);
         if (serialized == _settingsSnapshot) return true;

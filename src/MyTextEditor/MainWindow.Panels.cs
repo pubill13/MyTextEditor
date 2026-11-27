@@ -33,6 +33,10 @@ public partial class MainWindow
                 }));
         };
         FavoriteToolbarHost.SizeChanged += (_, _) => UpdateFavoriteOverflow();
+        MainContentGrid.SizeChanged += (_, e) =>
+        {
+            if (e.WidthChanged) ToolColumn.MaxWidth = Math.Max(280, e.NewSize.Width - 240 - 5);
+        };
         Loaded += (_, _) => UpdateToolbarLayout();
     }
 
@@ -66,8 +70,8 @@ public partial class MainWindow
         if (!show)
         {
             ++_panelFocusGeneration;
-            if (ToolPanel.Visibility == Visibility.Visible && ToolColumn.ActualWidth >= 280)
-                _settings.ToolPanelWidth = ToolColumn.ActualWidth;
+            if (ToolPanel.Visibility == Visibility.Visible && ToolColumn.Width.Value >= 280)
+                _settings.ToolPanelWidth = ToolColumn.Width.Value;
         }
         var wasVisible = ToolPanel.Visibility == Visibility.Visible && ToolColumn.Width.Value > 0;
         ToolsMenuItem.IsChecked = show;
@@ -157,14 +161,25 @@ public partial class MainWindow
     {
         if (!IsLoaded) return;
         var unlimited = new System.Windows.Size(double.PositiveInfinity, 40);
+        var decorations = new FrameworkElement[] { FileToolbarSeparator, ToolsToolbarSeparator, ExtraToolsLabel, UndoToolbarSeparator };
+        foreach (var decoration in decorations) decoration.Visibility = Visibility.Visible;
         PrimaryToolbarPanel.Measure(unlimited);
         ToolbarFontPanel.Visibility = Visibility.Visible;
         ToolbarFontPanel.Measure(unlimited);
+        ToolbarOverflowPanel.Visibility = Visibility.Visible;
+        ToolbarOverflowPanel.Measure(unlimited);
         FavoriteOverflowButton.Measure(unlimited);
         FavoriteToolsEditButton.Measure(unlimited);
-        var required = PrimaryToolbarPanel.DesiredSize.Width + ToolbarFontPanel.DesiredSize.Width +
+        var commandWidth = PrimaryToolbarPanel.DesiredSize.Width +
             FavoriteOverflowButton.DesiredSize.Width + FavoriteToolsEditButton.DesiredSize.Width + 24;
-        var overflow = MainToolbarGrid.ActualWidth < required;
+        var overflow = MainToolbarGrid.ActualWidth < commandWidth + ToolbarFontPanel.DesiredSize.Width;
+        var wrap = overflow && MainToolbarGrid.ActualWidth < commandWidth + ToolbarOverflowPanel.DesiredSize.Width;
+        foreach (var decoration in decorations) decoration.Visibility = wrap ? Visibility.Collapsed : Visibility.Visible;
+        Grid.SetColumnSpan(PrimaryToolbarPanel, wrap ? 3 : 1);
+        Grid.SetRow(FavoriteToolbarHost, wrap ? 1 : 0);
+        Grid.SetColumn(FavoriteToolbarHost, wrap ? 0 : 1);
+        Grid.SetColumnSpan(FavoriteToolbarHost, wrap ? 2 : 1);
+        Grid.SetRow(ToolbarOverflowPanel, wrap ? 1 : 0);
         ToolbarFontPanel.Visibility = overflow ? Visibility.Collapsed : Visibility.Visible;
         ToolbarOverflowPanel.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
         if (!overflow) ToolbarOverflowPopup.IsOpen = false;

@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using MyTextEditor;
 using MyTextEditor.Models;
@@ -28,7 +30,7 @@ internal static class OmniSearchVerification
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative) });
-        var window = new MainWindow { ShowInTaskbar = false };
+        var window = new MainWindow { ShowInTaskbar = false, Topmost = true };
         Set(window, "_settingsReady", false);
         Field<DispatcherTimer>(window, "_settingsSaveTimer").Stop();
         try
@@ -49,6 +51,7 @@ internal static class OmniSearchVerification
             Require(!Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Condition mode must disable literal Find");
             Field<CheckBox>(window, "UseConditionSearchCheck").IsChecked = false;
             Require(Field<System.Windows.Controls.Button>(window, "SearchButton").IsEnabled, "Leaving condition mode must restore literal Find");
+            VerifyRepeatedEnter(window);
             Call(window, "FindOccurrence_Click", window, new RoutedEventArgs());
             Require(window.Documents[0].Editor.SelectedText == "AAA" && window.SearchSessions.Count == 0,
                 "Ordinary find must select one occurrence without creating results");
@@ -117,6 +120,7 @@ internal static class OmniSearchVerification
             Require(window.SearchSessions.Last().Rows.Count == 1 && window.SearchSessions.Last().Rows[0].Text == "AAA retained 😀" &&
                 window.SearchSessions.Last().Rows[0].Source!.Snapshot is null,
                 "Large open-document scan lost match content or retained a full snapshot");
+            VerifyNoResults(window, otherFolder);
             Console.WriteLine("PASS startup file, Unicode ordinary find, All Find, open-file and folder results");
             return 0;
         }
@@ -132,6 +136,114 @@ internal static class OmniSearchVerification
                 Directory.Delete(directory, true);
         }
     }
+
+    private static void VerifyRepeatedEnter(MainWindow window)
+    {
+        var document = window.Documents[0];
+        window.Activate();
+        document.Editor.SelectUtf16Range(0, 0);
+        Call(window, "ShowSearchInput");
+        var input = Field<TextBox>(window, "LiteralFindBox");
+        PumpUntil(() => input.IsKeyboardFocused);
+        var original = document.Text;
+        foreach (var expectedLine in new[] { 0, 2, 0 })
+        {
+            PressEnter();
+            Require(input.IsKeyboardFocused && document.Editor.CurrentLine == expectedLine &&
+                document.Editor.SelectedText == "AAA" && document.Text == original && !document.IsModified,
+                "Find Enter must advance, wrap and keep the query focused without changing the document");
+        }
+        document.Editor.FocusEditor();
+        PressEnter();
+        Require(document.IsModified && document.Text != original, "Editor Enter must still edit after returning focus");
+        document.Editor.Undo();
+        document.Editor.SelectUtf16Range(0, 0);
+        Console.WriteLine("PASS physical Enter advances and wraps without editing, then edits normally with editor focus");
+    }
+
+    private static void PressEnter()
+    {
+        keybd_event(0x0D, 0, 0, UIntPtr.Zero);
+        try { Thread.Sleep(30); Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle); }
+        finally
+        {
+            keybd_event(0x0D, 0, 2, UIntPtr.Zero);
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        }
+    }
+
+    private static void VerifyNoResults(MainWindow window, string folder)
+    {
+        var input = Field<TextBox>(window, "LiteralFindBox");
+        input.Text = "no-result-" + Guid.NewGuid();
+        var total = window.SearchSessions.Count;
+        var args = new RoutedEventArgs();
+        ExpectNoResultsDialog(window, () => Call(window, "FindOccurrence_Click", input, args));
+        ExpectNoResultsDialog(window, () => Call(window, "Search_Click", input, args));
+        ExpectNoResultsDialog(window, () => Call(window, "SearchOpenDocuments_Click", input, args));
+        Call(window, "DetachTools_Click", window, args);
+        var detached = Field<Window>(window, "_toolsWindow");
+        Field<CheckBox>(window, "FolderSearchCheck").IsChecked = true;
+        Field<TextBox>(window, "SearchFolderPathBox").Text = folder;
+        ExpectNoResultsDialog(detached, () => Call(window, "Search_Click", input, args));
+        Require(window.SearchSessions.Count == total + 3 &&
+            window.SearchSessions.Skip(total).All(session => session.Rows.Count == 0), "Zero-result searches lost their empty sessions");
+        Call(window, "DockToolsWindow", detached);
+        Console.WriteLine("PASS zero-result dialogs for Find, All Find, open files and detached folder search");
+    }
+
+    private static void ExpectNoResultsDialog(Window owner, Action search)
+    {
+        var handle = new WindowInteropHelper(owner).Handle;
+        var threadId = GetWindowThreadProcessId(handle, out var processId);
+        Require(processId == Environment.ProcessId, "Dialog verification must target this test process");
+        var capture = Task.Run(() =>
+        {
+            var watch = Stopwatch.StartNew();
+            while (watch.Elapsed < TimeSpan.FromSeconds(8))
+            {
+                var observedOwner = IntPtr.Zero;
+                EnumThreadWindows(threadId, (dialog, _) =>
+                {
+                    if (!IsWindowVisible(dialog)) return true;
+                    var name = new StringBuilder(32);
+                    GetClassName(dialog, name, name.Capacity);
+                    if (name.ToString() != "#32770") return true;
+                    var caption = new StringBuilder(64);
+                    GetWindowText(dialog, caption, caption.Capacity);
+                    if (caption.ToString() != "검색 결과") return true;
+                    var dialogOwner = GetWindow(dialog, 4); // GW_OWNER
+                    if (!PostMessage(dialog, 0x0010, IntPtr.Zero, IntPtr.Zero)) return true; // WM_CLOSE
+                    observedOwner = dialogOwner;
+                    return false;
+                }, IntPtr.Zero);
+                if (observedOwner != IntPtr.Zero) return observedOwner;
+                Thread.Sleep(15);
+            }
+            return IntPtr.Zero;
+        });
+        search();
+        WaitFor(capture);
+        Require(capture.Result == handle, "Zero-result popup missing or owned by the wrong window");
+    }
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")]
+    private static extern bool EnumThreadWindows(uint threadId, EnumWindowsCallback callback, IntPtr parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr window, StringBuilder caption, int maxCount);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
     private static void VerifyLegacySearchMode()
     {

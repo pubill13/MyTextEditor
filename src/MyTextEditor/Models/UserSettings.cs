@@ -2,6 +2,8 @@ namespace MyTextEditor.Models;
 
 public sealed class UserSettings
 {
+    public const double MinimumWindowWidth = 720;
+
     public string Theme { get; set; } = "Light";
     public string EditorFontFamily { get; set; } = "Cascadia Mono";
     public double EditorFontSize { get; set; } = 15;

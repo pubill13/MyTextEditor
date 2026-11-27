@@ -82,9 +82,15 @@ public partial class MainWindow
     private void SetDocumentSplit(bool enabled)
     {
         SplitDocumentsMenuItem.IsChecked = enabled;
+        if (enabled == (RightDocumentTabs.Visibility == Visibility.Visible)) return;
+
+        const double minimumPaneWidth = 112;
         RightDocumentTabs.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
-        DocumentPaneSplitterColumn.Width = new GridLength(enabled ? 5 : 0);
-        RightDocumentColumn.Width = enabled ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        DocumentPaneSplitter.Visibility = RightDocumentTabs.Visibility;
+        DocumentPaneSplitterColumn.Width = new GridLength(enabled ? 8 : 0);
+        LeftDocumentColumn.MinWidth = RightDocumentColumn.MinWidth = enabled ? minimumPaneWidth : 0;
+        LeftDocumentColumn.Width = new GridLength(1, GridUnitType.Star);
+        RightDocumentColumn.Width = enabled ? LeftDocumentColumn.Width : new GridLength(0);
     }
 
     private void ToggleDocumentSplit_Click(object sender, RoutedEventArgs e)

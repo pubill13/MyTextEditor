@@ -1,0 +1,18 @@
+{
+  "Version": "1.11.21.0",
+  "ZipExecutableSHA256": "B3DBA13EF62EECE326050372D6C6EB2434C098BC1F1428D3FBBCD3646809C664",
+  "FixedExecutableSHA256": "B3DBA13EF62EECE326050372D6C6EB2434C098BC1F1428D3FBBCD3646809C664",
+  "Assets": [
+    {
+      "Name": "OmniEdit.exe",
+      "Size": 80196187,
+      "SHA256": "B3DBA13EF62EECE326050372D6C6EB2434C098BC1F1428D3FBBCD3646809C664"
+    },
+    {
+      "Name": "OmniEdit-v1.11.21-win-x64.zip",
+      "Size": 74669612,
+      "SHA256": "3DE1B3BE3EEEE4E8B4D257CA59CFD1A3BAFDFD7F6A5BF41A043A588705C80E13"
+    }
+  ],
+  "Verification": "Core 44/44; GUI search, document panes, keyboard shortcuts, focus, panel UX and five-theme layout checks; release package version/SHA-256 verified"
+}

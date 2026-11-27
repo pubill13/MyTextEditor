@@ -110,25 +110,50 @@ public partial class MainWindow
     private void LiteralFindBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key != System.Windows.Input.Key.Enter) return;
-        FindOccurrence(false);
         e.Handled = true;
+        FindOccurrence(false);
     }
 
-    private void FindOccurrence_Click(object sender, RoutedEventArgs e) => FindOccurrence(false);
+    private void FindOccurrence_Click(object sender, RoutedEventArgs e)
+    {
+        LiteralFindBox.Focus();
+        FindOccurrence(false);
+    }
 
     private void FindOccurrence(bool previous)
     {
-        if (CurrentEditor is not { } editor || string.IsNullOrEmpty(LiteralFindBox.Text)) return;
+        if (_windowClosed || _closingInProgress || CurrentEditor is not { } editor ||
+            string.IsNullOrEmpty(LiteralFindBox.Text)) return;
+        var keepInputFocus = LiteralFindBox.IsKeyboardFocusWithin;
+        var owner = keepInputFocus ? Window.GetWindow(LiteralFindBox) : this;
         UseConditionSearchCheck.IsChecked = false;
         var found = editor.FindOccurrence(LiteralFindBox.Text, MatchCaseCheck.IsChecked == true,
-            WholeWordCheck.IsChecked == true, previous, out var wrapped);
-        if (!found) { StatusMessage.Text = $"'{LiteralFindBox.Text}'을(를) 찾지 못했습니다."; return; }
-        StatusMessage.Text = wrapped ? "문서 끝에서 다시 검색했습니다." : $"{editor.CurrentLine + 1:N0}번째 줄에서 찾았습니다.";
+            WholeWordCheck.IsChecked == true, previous, out var wrapped, focusEditor: !keepInputFocus);
+        if (!found)
+        {
+            StatusMessage.Text = $"'{LiteralFindBox.Text}'을(를) 찾지 못했습니다.";
+            ShowNoSearchResults(owner);
+            return;
+        }
+        StatusMessage.Text = wrapped ? (previous ? "문서 끝에서 이어서 찾았습니다." : "문서 처음부터 이어서 찾았습니다.")
+            : $"{editor.CurrentLine + 1:N0}번째 줄에서 찾았습니다.";
+    }
+
+    private Window? SearchDialogOwner(object sender) => sender is DependencyObject source ? Window.GetWindow(source) : this;
+
+    private void ShowNoSearchResults(Window? owner, int fileFailures = 0)
+    {
+        if (_windowClosed || _closingInProgress) return;
+        var message = "일치하는 항목이 없습니다.";
+        if (fileFailures > 0) message += $"\n읽지 못했거나 검색 중에 변경된 파일이 {fileFailures:N0}개 있습니다.";
+        MessageBox.Show(owner is { IsVisible: true } ? owner : this, message, "검색 결과",
+            MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private async void SearchOpenDocuments_Click(object sender, RoutedEventArgs e)
     {
         if (_windowClosed || _closingInProgress || Documents.Count == 0 || _folderSearchCancellation is not null) return;
+        var owner = SearchDialogOwner(sender);
         using var cancellation = new CancellationTokenSource();
         _folderSearchCancellation = cancellation;
         CancelFolderSearchButton.Visibility = Visibility.Visible;
@@ -162,9 +187,11 @@ public partial class MainWindow
             if (_windowClosed || _closingInProgress) return;
             var count = groups.Sum(group => group.Item2.Count);
             await AddMultiSourceSessionAsync($"열린 파일 · {count:N0}", $"열린 문서 {groups.Count:N0}개에서 {count:N0}개 일치 · 결과를 누르면 해당 문서로 이동", groups, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             if (_windowClosed || _closingInProgress) return;
             RecordRecentSearch(summary, options);
             StatusMessage.Text = $"열린 파일에서 {count:N0}개를 찾았습니다.";
+            if (count == 0) ShowNoSearchResults(owner);
         }
         catch (OperationCanceledException) { StatusMessage.Text = "열린 파일 검색을 중단했습니다."; }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -221,6 +248,7 @@ public partial class MainWindow
         if (_windowClosed || _closingInProgress) return;
         NormalizeFolderPattern();
         if (_folderSearchCancellation is not null) return;
+        var owner = SearchDialogOwner(sender);
         var folder = SearchFolderPathBox.Text;
         if (!Directory.Exists(folder))
         {
@@ -236,13 +264,15 @@ public partial class MainWindow
             CancelFolderSearchButton.Visibility = Visibility.Visible;
             UpdateConditionSummary();
             StatusMessage.Text = $"{folder} 폴더 검색 중…";
+            var searchCompleted = false;
             var progress = new Progress<FolderSearchProgress>(update =>
             {
-                if (!_windowClosed && !_closingInProgress && !cancellation.IsCancellationRequested)
+                if (!searchCompleted && !_windowClosed && !_closingInProgress && !cancellation.IsCancellationRequested)
                     StatusMessage.Text = $"폴더 검색 중 · {update.FilesScanned:N0}개 파일 · {update.MatchingLines:N0}개 일치";
             });
             var result = await _folderSearch.SearchAsync(folder, condition, options,
                 new FolderSearchOptions(IncludeSubfoldersCheck.IsChecked == true, FolderPatternBox.Text), progress, cancellation.Token);
+            searchCompleted = true;
             cancellation.Token.ThrowIfCancellationRequested();
             if (_windowClosed || _closingInProgress) return;
             var groups = result.Files.Select(file =>
@@ -251,11 +281,13 @@ public partial class MainWindow
             var count = groups.Sum(group => group.Matches.Count);
             await AddMultiSourceSessionAsync($"폴더 · {count:N0}",
                 $"{folder} · 검사 {result.FilesScanned:N0}개 · 일치 {count:N0}개 · 실패 {result.Failures.Count:N0}개", groups, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             if (_windowClosed || _closingInProgress) return;
             if (result.Failures.Count > 0)
                 StatusMessage.Text = $"검색 완료 · {count:N0}개 일치 · 읽기 실패/변경 {result.Failures.Count:N0}개: {string.Join("; ", result.Failures.Take(3).Select(f => Path.GetFileName(f.FilePath) + " " + f.Message))}";
             else StatusMessage.Text = $"검색 완료 · {result.FilesScanned:N0}개 파일 · {count:N0}개 일치";
             RecordRecentSearch(ActiveSearchSummary(), options);
+            if (count == 0) ShowNoSearchResults(owner, result.Failures.Count);
         }
         catch (OperationCanceledException) { StatusMessage.Text = "폴더 검색을 중단했습니다."; }
         catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)

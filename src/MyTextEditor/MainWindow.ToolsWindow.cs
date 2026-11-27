@@ -17,7 +17,7 @@ public partial class MainWindow
             DockToolsWindow(existing);
             return;
         }
-        if (ToolColumn.ActualWidth >= 280) _settings.ToolPanelWidth = ToolColumn.ActualWidth;
+        if (ToolColumn.Width.Value >= 280) _settings.ToolPanelWidth = ToolColumn.Width.Value;
         ToolPanel.DataContext = this;
         MainContentGrid.Children.Remove(ToolPanel);
         ToolColumn.MinWidth = 0;

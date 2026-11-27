@@ -97,7 +97,7 @@ public static class SettingsService
         if (settings.HighlightColor is not { Length: 7 } color || color[0] != '#' ||
             !int.TryParse(color.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out _))
             settings.HighlightColor = "#F2CC60";
-        settings.WindowWidth = double.IsFinite(settings.WindowWidth) ? Math.Max(1040, settings.WindowWidth) : 1380;
+        settings.WindowWidth = double.IsFinite(settings.WindowWidth) ? Math.Max(UserSettings.MinimumWindowWidth, settings.WindowWidth) : 1380;
         settings.WindowHeight = double.IsFinite(settings.WindowHeight) ? Math.Max(680, settings.WindowHeight) : 860;
         settings.ToolPanelWidth = double.IsFinite(settings.ToolPanelWidth) ? Math.Max(280, settings.ToolPanelWidth) : 360;
         settings.ToolsWindowWidth = double.IsFinite(settings.ToolsWindowWidth) ? Math.Max(360, settings.ToolsWindowWidth) : 420;

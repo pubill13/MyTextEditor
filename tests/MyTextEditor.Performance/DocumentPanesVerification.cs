@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
 using MyTextEditor;
 using MyTextEditor.Models;
+using MyTextEditor.Services;
 using Application = System.Windows.Application;
 using MenuItem = System.Windows.Controls.MenuItem;
 using TabControl = System.Windows.Controls.TabControl;
@@ -20,6 +22,11 @@ internal static class DocumentPanesVerification
 
     public static int Run()
     {
+        var savedSettings = JsonSerializer.Serialize(new UserSettings { WindowWidth = 720 });
+        var restoredSettings = JsonSerializer.Deserialize<UserSettings>(savedSettings)!;
+        typeof(SettingsService).GetMethod("Normalize", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [restoredSettings]);
+        Check(restoredSettings.WindowWidth == 720, "Restored narrow window width must survive settings normalization");
+
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(ThemePalette.Get("Light").CreateResources());
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/OmniEdit;component/Themes/Controls.xaml", UriKind.Relative) });
@@ -41,6 +48,7 @@ internal static class DocumentPanesVerification
             Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs()); Pump();
             Check(window.LeftDocuments.SequenceEqual(new[] { first }) && window.RightDocuments.SequenceEqual(new[] { second }), "Split did not move current document right");
             Check(first.Editor.IsVisible && second.Editor.IsVisible, "Both native editors must be visible");
+            VerifySplitSizing(window);
             VerifyHeaderClicks(window, first, second);
             first.Editor.FocusEditor(); Pump();
             Call(window, "Undo_Click", window, new RoutedEventArgs());
@@ -103,7 +111,9 @@ internal static class DocumentPanesVerification
     {
         var grid = Field<System.Windows.Controls.Grid>(window, "DocumentPanesGrid");
         Check(Call(window, "ResolveDocumentTabDrop", new Point(grid.ActualWidth / 2, 80)) is null, "Editor center must not split accidentally");
-        Check((bool?)Call(window, "ResolveDocumentTabDrop", new Point(grid.ActualWidth - 5, 80)) == true, "Right edge must offer split");
+        var splitBoundary = grid.ActualWidth - Math.Min(280, grid.ActualWidth / 3);
+        Check(Call(window, "ResolveDocumentTabDrop", new Point(splitBoundary - 2, 80)) is null, "Drop just outside the split area must stay neutral");
+        Check((bool?)Call(window, "ResolveDocumentTabDrop", new Point(splitBoundary + 2, 80)) == true, "Drop inside the expanded area must offer split");
         Check(Call(window, "ResolveDocumentTabDrop", new Point(-10, 80)) is null, "Outside editor must cancel drop");
         Set(window, "_dragDocument", document); Set(window, "_tabDropRight", true);
         Call(window, "ShowDocumentTabDropPreview");
@@ -120,13 +130,47 @@ internal static class DocumentPanesVerification
         document.Editor.Undo(); Check(document.Text == "오른쪽 문서", "Drag lost Undo history"); document.Editor.Redo();
         Field<MenuItem>(window, "SplitDocumentsMenuItem").IsChecked = false;
         Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs()); Pump();
-        DragTab(window, document, new Point(grid.ActualWidth - 10, grid.ActualHeight / 2));
+        DragTab(window, document, new Point(splitBoundary + 10, grid.ActualHeight / 2));
         Check(window.RightDocuments.Contains(document), "Physical mouse drag across native editor did not split");
         DragTab(window, document, new Point(20, grid.ActualHeight / 2));
         Check(window.LeftDocuments.Contains(document), "Physical mouse drag back across native editor failed");
         Field<MenuItem>(window, "SplitDocumentsMenuItem").IsChecked = false;
         Call(window, "ToggleDocumentSplit_Click", window, new RoutedEventArgs()); Pump();
         Console.WriteLine("PASS tab drag edge targeting, native preview, cancellation, bidirectional move and Undo preservation");
+    }
+
+    private static void VerifySplitSizing(MainWindow window)
+    {
+        var restoreWidth = window.Width;
+        var tools = Field<System.Windows.Controls.ColumnDefinition>(window, "ToolColumn");
+        var preferredTools = tools.Width;
+        var left = Field<System.Windows.Controls.ColumnDefinition>(window, "LeftDocumentColumn");
+        var right = Field<System.Windows.Controls.ColumnDefinition>(window, "RightDocumentColumn");
+        var splitter = Field<System.Windows.Controls.GridSplitter>(window, "DocumentPaneSplitter");
+        Call(window, "SetToolsVisible", true, false);
+        window.WindowState = WindowState.Normal;
+        window.Width = 1200;
+        tools.Width = new GridLength(600);
+        window.UpdateLayout(); Pump();
+        Check(Math.Abs(left.ActualWidth - right.ActualWidth) <= 1, "New split must open at 50:50");
+        var start = splitter.PointToScreen(new Point(splitter.ActualWidth / 2, splitter.ActualHeight / 2));
+        DragPointer(start, new Point(start.X + 90, start.Y));
+        Check(left.ActualWidth - right.ActualWidth > 90, "Dragging the splitter must resize both panes");
+        var ratio = left.Width.Value / (left.Width.Value + right.Width.Value);
+        Call(window, "SetDocumentSplit", true);
+        window.Width = window.MinWidth;
+        window.UpdateLayout(); Pump();
+        Check(left.ActualWidth >= 112 && right.ActualWidth >= 112 &&
+            left.ActualWidth + right.ActualWidth + splitter.ActualWidth >= 240, "Narrow split must keep both panes usable");
+        Check(tools.ActualWidth < 600 && tools.Width.Value == 600, "Narrow window must cap the tools panel without losing its preferred width");
+        window.Width = 1200;
+        window.UpdateLayout(); Pump();
+        Check(Math.Abs(left.ActualWidth / (left.ActualWidth + right.ActualWidth) - ratio) < 0.01 && Math.Abs(tools.ActualWidth - 600) <= 1,
+            "Widening must recover the split ratio and preferred panel width");
+        tools.Width = preferredTools;
+        window.Width = restoreWidth;
+        window.UpdateLayout(); Pump();
+        Console.WriteLine("PASS physical splitter resize, narrow split bounds and width restoration");
     }
 
     private static void VerifyHeaderClicks(MainWindow window, params DocumentViewModel[] documents)
@@ -159,6 +203,11 @@ internal static class DocumentPanesVerification
         var header = (System.Windows.Controls.TabItem)tabs.ItemContainerGenerator.ContainerFromItem(document);
         var start = header.PointToScreen(new Point(18, header.ActualHeight / 2));
         var end = grid.PointToScreen(destination);
+        DragPointer(start, end);
+    }
+
+    private static void DragPointer(Point start, Point end)
+    {
         SetCursorPos((int)start.X, (int)start.Y); Pump();
         mouse_event(2, 0, 0, 0, UIntPtr.Zero);
         Thread.Sleep(30); Pump();

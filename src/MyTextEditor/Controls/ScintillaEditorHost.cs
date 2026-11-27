@@ -178,7 +178,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
     {
         SelectAndReveal(new EditorTextRange(start, length), focusEditor);
     }
-    public bool FindOccurrence(string text, bool matchCase, bool wholeWord, bool previous, out bool wrapped)
+    public bool FindOccurrence(string text, bool matchCase, bool wholeWord, bool previous, out bool wrapped, bool focusEditor = true)
     {
         wrapped = false;
         if (string.IsNullOrEmpty(text)) return false;
@@ -197,7 +197,7 @@ public sealed partial class ScintillaEditorHost : WindowsFormsHost
                 : _editor.FindText(flags, text, 0, boundary);
         }
         if (found < 0) return false;
-        SelectAndReveal(new EditorTextRange(found, text.Length));
+        SelectAndReveal(new EditorTextRange(found, text.Length), focusEditor);
         return true;
     }
     public int LineCount => _editor.Lines.Count;
